@@ -46,20 +46,29 @@ def create_executable():
     """Create executable with PyInstaller"""
     print("🎯 Creating Windows executable...")
     
-    # Verify critical dependencies are available
-    print("🔍 Checking dependencies...")
+    # Install Python dependencies first
+    print("📦 Installing Python dependencies...")
+    if Path("requirements.txt").exists():
+        run_command("pip install -r requirements.txt")
+    else:
+        # Install core dependencies manually if requirements.txt doesn't exist
+        print("📦 Installing core dependencies...")
+        run_command("pip install fastapi uvicorn sqlmodel aiohttp pillow edge-tts twitchio")
+    
+    # Verify critical dependencies are now available
+    print("🔍 Verifying dependencies...")
     try:
         import uvicorn
         print(f"✅ uvicorn found: {uvicorn.__version__}")
     except ImportError:
-        print("❌ uvicorn not found - install with: pip install uvicorn")
+        print("❌ uvicorn still not found after installation")
         sys.exit(1)
 
     try:
         import fastapi
         print(f"✅ fastapi found: {fastapi.__version__}")
     except ImportError:
-        print("❌ fastapi not found - install with: pip install fastapi")
+        print("❌ fastapi still not found after installation")
         sys.exit(1)
     
     # Install PyInstaller
