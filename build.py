@@ -157,22 +157,31 @@ exe = EXE(
     with open('ChatYapper.spec', 'w') as f:
         f.write(spec_content)
     
-    # Build with PyInstaller - try different ways to call it
+    # Build with PyInstaller using Python module execution (most reliable)
+    print("🛠️  Running PyInstaller...")
     try:
-        run_command("pyinstaller --clean ChatYapper.spec")
+        # First try as a Python module (most reliable method)
+        run_command("python -m PyInstaller --clean ChatYapper.spec")
     except:
         try:
-            # Try calling it as a module
-            run_command("python -m PyInstaller --clean ChatYapper.spec")
+            # Try direct command
+            run_command("pyinstaller --clean ChatYapper.spec")
         except:
-            # Try the full path
-            import site
-            user_scripts = os.path.join(site.getusersitepackages(), "..", "Scripts")
-            pyinstaller_path = os.path.join(user_scripts, "pyinstaller.exe")
-            if os.path.exists(pyinstaller_path):
-                run_command(f'"{pyinstaller_path}" --clean ChatYapper.spec')
-            else:
-                print("❌ PyInstaller not found. Please install it manually: pip install pyinstaller")
+            try:
+                # Try with pip show to find the scripts directory
+                result = subprocess.run("pip show pyinstaller", shell=True, capture_output=True, text=True)
+                if result.returncode == 0:
+                    # PyInstaller is installed, but maybe not in PATH
+                    print("📝 PyInstaller is installed but not in PATH, trying alternative methods...")
+                    
+                    # Try using python -c to execute PyInstaller directly
+                    run_command('python -c "import PyInstaller.__main__; PyInstaller.__main__.run([\'--clean\', \'ChatYapper.spec\'])"')
+                else:
+                    print("❌ PyInstaller not found. Please install it manually: pip install pyinstaller")
+                    sys.exit(1)
+            except Exception as e:
+                print(f"❌ Failed to run PyInstaller: {e}")
+                print("💡 Try running this manually: python -m PyInstaller --clean ChatYapper.spec")
                 sys.exit(1)
     
     # Check if the executable was created successfully
