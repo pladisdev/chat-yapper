@@ -28,6 +28,13 @@ MANIFEST
 .venv
 env/
 venv/
+
+# Logs
+logs/*.log
+logs/chatyapper_*.log
+logs/backend_*.log
+logs/build_*.log
+!logs/.gitkeep
 ENV/
 env.bak/
 venv.bak/

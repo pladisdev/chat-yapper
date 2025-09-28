@@ -9,9 +9,51 @@ import threading
 import time
 import webbrowser
 import subprocess
+import logging
 from pathlib import Path
+from datetime import datetime
 
 import socket
+
+# Set up logging
+def setup_logging():
+    """Set up logging to both file and console"""
+    # Create logs directory
+    logs_dir = Path("logs")
+    logs_dir.mkdir(exist_ok=True)
+    
+    # Create log filename with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_filename = logs_dir / f"chatyapper_{timestamp}.log"
+    
+    # Configure logging
+    # File handler - logs everything
+    file_handler = logging.FileHandler(log_filename, encoding='utf-8')
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    
+    # Console handler - only errors and warnings
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.WARNING)
+    console_handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
+    
+    # Configure root logger
+    logging.basicConfig(
+        level=logging.DEBUG,
+        handlers=[file_handler, console_handler]
+    )
+    
+    logger = logging.getLogger('ChatYapper')
+    logger.info(f"Logging initialized - log file: {log_filename}")
+    return logger
+
+# Initialize logging
+logger = setup_logging()
+
+def log_important(message):
+    """Log important messages that should appear in both console and file"""
+    logger.warning(f"IMPORTANT: {message}")  # WARNING level ensures console output
+    print(f"ℹ️  {message}")  # Also print directly for immediate visibility
 
 # Add backend to Python path
 backend_dir = Path(__file__).parent / "backend"
@@ -27,16 +69,21 @@ def find_available_port(start_port=8000, max_attempts=10):
     """Find an available port starting from start_port"""
     import socket
     
+    logger.info(f"Searching for available port starting from {start_port}")
     for port in range(start_port, start_port + max_attempts):
         try:
             # Try to bind to the port to see if it's available
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.bind(('localhost', port))
+                logger.info(f"Found available port: {port}")
                 return port
-        except OSError:
+        except OSError as e:
+            logger.debug(f"Port {port} not available: {e}")
             continue
     
-    raise RuntimeError(f"Could not find an available port in range {start_port}-{start_port + max_attempts}")
+    error_msg = f"Could not find an available port in range {start_port}-{start_port + max_attempts}"
+    logger.error(error_msg)
+    raise RuntimeError(error_msg)
 
 def start_backend(port):
     """Start the FastAPI backend server"""
@@ -45,34 +92,48 @@ def start_backend(port):
         # Change to backend directory first
         original_cwd = os.getcwd()
         os.chdir(backend_dir)
+        logger.info(f"Changed to backend directory: {backend_dir}")
         
         # Import dependencies
-        print("Importing dependencies...")
+        logger.info("Importing dependencies...")
         try:
             import uvicorn
-        except ImportError:
-            raise ImportError("uvicorn not found. Install with: pip install -r requirements.txt")
+            logger.info(f"Uvicorn imported successfully, version: {uvicorn.__version__}")
+        except ImportError as e:
+            error_msg = f"uvicorn not found: {e}. Install with: pip install -r requirements.txt"
+            logger.error(error_msg)
+            raise ImportError(error_msg)
         
         # Import the app from the current directory
         try:
             import backend.app as backend_app
+            logger.info("Backend app imported successfully")
         except ImportError as e:
             if "fastapi.middleware" in str(e):
-                raise ImportError(f"FastAPI import error: {e}. Install with: pip install -r requirements.txt")
+                error_msg = f"FastAPI import error: {e}. Install with: pip install -r requirements.txt"
+                logger.error(error_msg)
+                raise ImportError(error_msg)
             else:
-                raise ImportError(f"Backend app import error: {e}")
+                error_msg = f"Backend app import error: {e}"
+                logger.error(error_msg)
+                raise ImportError(error_msg)
         
         # Use the pre-determined available port
-        print(f"Starting Chat Yapper backend server on port {port}...")
-        uvicorn.run(backend_app.app, host="0.0.0.0", port=port, log_level="info")
+        logger.info(f"Starting Chat Yapper backend server on port {port}...")
+        log_important(f"Starting Chat Yapper backend server on port {port}...")
+        uvicorn.run(backend_app.app, host="0.0.0.0", port=port, log_level="warning")
         
     except ImportError as e:
+        logger.error(f"Import error: {e}")
         print(f"Import error: {e}")
         print("Make sure all dependencies are installed:")
         print(" pip install -r requirements.txt")
         input("Press Enter to exit...")
         sys.exit(1)
     except Exception as e:
+        logger.error(f"Failed to start backend: {e}")
+        logger.error(f"Current directory: {os.getcwd()}")
+        logger.error(f"Backend directory: {backend_dir}")
         print(f"Failed to start backend: {e}")
         print(f"Current directory: {os.getcwd()}")
         print(f"Backend directory: {backend_dir}")
@@ -81,16 +142,21 @@ def start_backend(port):
 
 def open_browser(port):
     """Open the web browser to the application"""
+    logger.info("Waiting 3 seconds for server to start...")
     time.sleep(3)  # Wait for server to start
     url = f"http://localhost:{port}/settings"
-    print(f"Opening Chat Yapper in your browser: {url}")
+    logger.info(f"Opening Chat Yapper in browser: {url}")
+    print(f"🌐 Opening Chat Yapper in your browser: {url}")
     try:
         webbrowser.open(url)
+        logger.info("Browser opened successfully")
     except Exception as e:
-        print(f"Could not auto-open browser: {e}")
-        print(f"Please manually open: {url}")
+        logger.error(f"Could not auto-open browser: {e}")
+        print(f"❌ Could not auto-open browser: {e}")
+        print(f"📋 Please manually open: {url}")
 
 def main():
+    logger.info("Starting Chat Yapper application...")
     
     print("=" * 50)
     print("Chat Yapper - Voice Avatar TTS System")
@@ -100,32 +166,37 @@ def main():
     # Find an available port before starting threads
     try:
         server_port = find_available_port(8000)
-        print(f"Found available port: {server_port}")
+        log_important(f"Found available port: {server_port}")
     except RuntimeError as e:
-        print(f"Could not find available port: {e}")
+        logger.error(f"Could not find available port: {e}")
+        print(f"❌ Could not find available port: {e}")
         input("Press Enter to exit...")
         sys.exit(1)
     
     # Start backend in a separate thread
+    logger.info("Starting backend server thread...")
     backend_thread = threading.Thread(target=start_backend, args=(server_port,), daemon=True)
     backend_thread.start()
     
     # Open browser after a short delay
+    logger.info("Starting browser opening thread...")
     browser_thread = threading.Thread(target=open_browser, args=(server_port,), daemon=True)
     browser_thread.start()
     
     try:
-        print("Chat Yapper is running!")
-        print(f"Web interface: http://localhost:{server_port}/settings")
-        print("Do not close this window while using Chat Yapper")
+        logger.info("Chat Yapper application is now running")
+        log_important("Chat Yapper is running!")
+        print(f"🌐 Web interface: http://localhost:{server_port}/settings")
+        print("⚠️  Do not close this window while using Chat Yapper")
         print()
-        print("Press Ctrl+C to stop the server")
+        print("🛑 Press Ctrl+C to stop the server")
         
         # Keep the main thread alive
         while True:
             time.sleep(1)
             
     except KeyboardInterrupt:
+        logger.info("Received shutdown signal (Ctrl+C)")
         print("\nShutting down Chat Yapper...")
         sys.exit(0)
 

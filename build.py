@@ -6,27 +6,74 @@ import os
 import sys
 import shutil
 import subprocess
+import logging
+from datetime import datetime
 from pathlib import Path
+
+# Set up build logging
+def setup_build_logging():
+    """Set up logging for the build process"""
+    # Create logs directory
+    logs_dir = Path("logs")
+    logs_dir.mkdir(exist_ok=True)
+    
+    # Create log filename with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_filename = logs_dir / f"build_{timestamp}.log"
+    
+    # Configure logging
+    # File handler - logs everything
+    file_handler = logging.FileHandler(log_filename, encoding='utf-8')
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    
+    # Console handler - only errors and warnings
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.WARNING)
+    console_handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
+    
+    logging.basicConfig(
+        level=logging.DEBUG,
+        handlers=[file_handler, console_handler]
+    )
+    
+    logger = logging.getLogger('ChatYapper.Build')
+    logger.info(f"Build logging initialized - log file: {log_filename}")
+    return logger
+
+# Initialize logging
+logger = setup_build_logging()
+
+def log_important(message):
+    """Log important messages that should appear in both console and file"""
+    logger.warning(f"IMPORTANT: {message}")  # WARNING level ensures console output
 
 def run_command(cmd, cwd=None):
     """Run a command and print output"""
+    logger.info(f"Running command: {cmd}" + (f" (cwd: {cwd})" if cwd else ""))
     print(f"🔧 Running: {cmd}")
     result = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True)
     if result.returncode != 0:
+        logger.error(f"Command failed with return code {result.returncode}: {cmd}")
+        logger.error(f"Error output: {result.stderr}")
         print(f"❌ Command failed: {result.stderr}")
         if result.stdout:
+            logger.info(f"Command stdout: {result.stdout}")
             print(f"📝 Output: {result.stdout}")
         sys.exit(1)
     if result.stdout.strip():
+        logger.info(f"Command output: {result.stdout.strip()}")
         print(f"✅ Success")
     return result
 
 def build_frontend():
     """Build the React frontend"""
-    print("📦 Building frontend...")
+    logger.info("Starting frontend build process")
+    log_important("Building frontend...")
     frontend_dir = Path("frontend")
     
     if not frontend_dir.exists():
+        logger.error(f"Frontend directory not found: {frontend_dir}")
         print("❌ Frontend directory not found")
         sys.exit(1)
     
@@ -37,21 +84,28 @@ def build_frontend():
     # Copy build to backend/public
     backend_public = Path("backend/public")
     if backend_public.exists():
+        logger.info("Removing existing backend/public directory")
         shutil.rmtree(backend_public)
     
+    logger.info(f"Copying frontend build from {frontend_dir / 'dist'} to {backend_public}")
     shutil.copytree(frontend_dir / "dist", backend_public)
-    print("✅ Frontend built and copied to backend/public")
+    logger.info("Frontend built and copied successfully")
+    log_important("Frontend built and copied to backend/public")
 
 def create_executable():
     """Create executable with PyInstaller"""
-    print("🎯 Creating Windows executable...")
+    logger.info("Starting executable creation process")
+    log_important("Creating Windows executable...")
     
     # Install Python dependencies first
+    logger.info("Installing Python dependencies")
     print("📦 Installing Python dependencies...")
     if Path("requirements.txt").exists():
+        logger.info("Found requirements.txt, installing from file")
         run_command("pip install -r requirements.txt")
     else:
         # Install core dependencies manually if requirements.txt doesn't exist
+        logger.warning("requirements.txt not found, installing core dependencies manually")
         print("📦 Installing core dependencies...")
         run_command("pip install fastapi uvicorn sqlmodel aiohttp pillow edge-tts twitchio")
     
@@ -258,27 +312,34 @@ exe = EXE(
     exe_path = Path("dist/ChatYapper.exe")
     if exe_path.exists():
         file_size = exe_path.stat().st_size / (1024 * 1024)  # Size in MB
+        logger.info(f"Executable created successfully: {exe_path} ({file_size:.1f} MB)")
         print(f"✅ Executable created: dist/ChatYapper.exe ({file_size:.1f} MB)")
     else:
+        logger.error("Executable not found after build process completed")
         print("❌ Executable not found after build")
         sys.exit(1)
     
     # Clean up build artifacts (optional)
     cleanup_paths = ["build", "ChatYapper.spec"]
+    logger.info("Cleaning up build artifacts")
     for path in cleanup_paths:
         if Path(path).exists():
+            logger.info(f"Removing {path}")
             if Path(path).is_dir():
                 shutil.rmtree(path)
             else:
                 Path(path).unlink()
+    logger.info("Build artifacts cleaned up successfully")
     print("🧹 Cleaned up build artifacts")
 
 def main():
+    logger.info("=== Starting Chat Yapper build process ===")
     print("🏗️  Building Chat Yapper for Windows distribution...")
     print()
     
     # Check if we're in the right directory
     if not Path("main.py").exists():
+        logger.error("main.py not found - script must be run from Chat Yapper root directory")
         print("❌ Please run this script from the Chat Yapper root directory")
         sys.exit(1)
     
@@ -289,8 +350,9 @@ def main():
         # Create executable
         create_executable()
         
+        logger.info("=== Build process completed successfully ===")
+        log_important("Build complete!")
         print()
-        print("🎉 Build complete!")
         print("📁 Executable location: dist/ChatYapper.exe")
         print("📋 Distribution folder: dist/")
         print()
@@ -300,6 +362,7 @@ def main():
         print("   3. It will start a local server and open their browser")
         
     except Exception as e:
+        logger.error(f"Build process failed: {e}", exc_info=True)
         print(f"❌ Build failed: {e}")
         sys.exit(1)
 

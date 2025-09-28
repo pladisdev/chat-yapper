@@ -1,9 +1,12 @@
 from __future__ import annotations
 import asyncio
 import json
+import logging
 import os
 import random
 import time
+from datetime import datetime
+from pathlib import Path
 from typing import Dict, Any, List
 from collections import defaultdict
 
@@ -14,6 +17,49 @@ from sqlmodel import SQLModel, Session, select, create_engine
 
 from models import Setting, Voice, AvatarImage
 from tts import get_provider, get_hybrid_provider, TTSJob
+
+# Set up backend logging
+def setup_backend_logging():
+    """Set up logging for the backend"""
+    # Create logs directory
+    logs_dir = Path("../logs") if Path("../logs").exists() else Path("logs")
+    logs_dir.mkdir(exist_ok=True)
+    
+    # Create log filename with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_filename = logs_dir / f"backend_{timestamp}.log"
+    
+    # Configure logging for this module
+    backend_logger = logging.getLogger('ChatYapper.Backend')
+    backend_logger.setLevel(logging.INFO)
+    
+    # Only add handlers if not already configured
+    if not backend_logger.handlers:
+        # File handler - logs everything
+        file_handler = logging.FileHandler(log_filename, encoding='utf-8')
+        file_handler.setLevel(logging.DEBUG)
+        file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        file_handler.setFormatter(file_formatter)
+        
+        # Console handler - only errors and warnings
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.WARNING)
+        console_formatter = logging.Formatter('%(levelname)s: %(message)s')
+        console_handler.setFormatter(console_formatter)
+        
+        # Add handlers
+        backend_logger.addHandler(file_handler)
+        backend_logger.addHandler(console_handler)
+    
+    backend_logger.info(f"Backend logging initialized - log file: {log_filename}")
+    return backend_logger
+
+# Initialize backend logging
+logger = setup_backend_logging()
+
+def log_important(message):
+    """Log important messages that should appear in both console and file"""
+    logger.warning(f"IMPORTANT: {message}")  # WARNING level ensures console output
 
 # Voice usage tracking for distribution analysis
 voice_usage_stats = defaultdict(int)
@@ -36,8 +82,10 @@ with Session(engine) as s:
         s.commit()
 
 # Voice database starts empty - users need to add voices manually
-print("🎤 Voice management system initialized - users can add voices through the settings page")
+logger.info("Voice management system initialized - users can add voices through the settings page")
+log_important("Voice management system initialized")
 
+logger.info("Initializing FastAPI application")
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
@@ -131,9 +179,12 @@ hub = Hub()
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
+    client_info = f"{ws.client.host}:{ws.client.port}" if ws.client else "unknown"
+    logger.info(f"WebSocket connection attempt from {client_info}")
     print(f"🔌 WebSocket connection attempt from {ws.client}")
     try:
         await hub.connect(ws)
+        logger.info(f"WebSocket connected successfully. Total clients: {len(hub.clients)}")
         print(f"✅ WebSocket connected successfully. Total clients: {len(hub.clients)}")
         
         # Send a welcome message to confirm connection
@@ -143,16 +194,20 @@ async def ws_endpoint(ws: WebSocket):
             "client_count": len(hub.clients)
         }
         await ws.send_text(json.dumps(welcome_msg))
+        logger.info(f"Sent welcome message to WebSocket client {client_info}")
         print(f"📤 Sent welcome message to WebSocket client")
         
         while True:
             # In this app, server pushes; but you can accept pings or config messages:
             message = await ws.receive_text()
+            logger.debug(f"WebSocket received message from {client_info}: {message}")
             print(f"📨 WebSocket received: {message}")
     except WebSocketDisconnect:
+        logger.info(f"WebSocket disconnected from {client_info}. Remaining clients: {len(hub.clients)-1}")
         print(f"🔌 WebSocket disconnected. Remaining clients: {len(hub.clients)-1}")
         hub.unregister(ws)
     except Exception as e:
+        logger.error(f"WebSocket error from {client_info}: {e}")
         print(f"❌ WebSocket error: {e}")
         hub.unregister(ws)
 
@@ -172,14 +227,16 @@ def save_settings(data: Dict[str, Any]):
 
 @app.get("/api/settings")
 async def api_get_settings():
-    print("🔧 API: GET /api/settings called")
+    logger.info("API: GET /api/settings called")
     settings = get_settings()
-    print(f"🔧 API: Returning settings: {len(json.dumps(settings))} characters")
+    logger.info(f"API: Returning settings: {len(json.dumps(settings))} characters")
     return settings
 
 @app.post("/api/settings")
 async def api_set_settings(payload: Dict[str, Any]):
+    logger.info("API: POST /api/settings called")
     save_settings(payload)
+    logger.info("Settings saved successfully")
     return {"ok": True}
 
 @app.get("/api/status")
@@ -232,9 +289,11 @@ async def api_get_avatars():
 @app.post("/api/avatars/upload")
 async def api_upload_avatar(file: UploadFile, avatar_name: str = Form(...), avatar_type: str = Form("default"), avatar_group_id: str = Form(None)):
     """Upload a new avatar image"""
+    logger.info(f"API: POST /api/avatars/upload called - name: {avatar_name}, type: {avatar_type}, group: {avatar_group_id}")
     try:
         # Validate file type
         if not file.content_type or not file.content_type.startswith('image/'):
+            logger.error(f"Invalid file type uploaded: {file.content_type}")
             return {"error": "File must be an image", "success": False}
         
         # Validate file size (max 5MB)
