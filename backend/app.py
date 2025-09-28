@@ -74,6 +74,26 @@ PUBLIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "public"))
 print(f"🌐 Static files directory: {PUBLIC_DIR}")
 print(f"📁 Directory exists: {os.path.isdir(PUBLIC_DIR)}")
 
+# Create a persistent directory for user-uploaded avatars
+# This will be in the user's AppData/Local/ChatYapper directory
+import tempfile
+import getpass
+
+def get_user_data_dir():
+    """Get a persistent directory for user data"""
+    if os.name == 'nt':  # Windows
+        base_dir = os.path.join(os.environ.get('LOCALAPPDATA', tempfile.gettempdir()), 'ChatYapper')
+    else:  # Linux/Mac
+        base_dir = os.path.join(os.path.expanduser('~'), '.chatyapper')
+    
+    os.makedirs(base_dir, exist_ok=True)
+    return base_dir
+
+USER_DATA_DIR = get_user_data_dir()
+PERSISTENT_AVATARS_DIR = os.path.join(USER_DATA_DIR, "voice_avatars")
+os.makedirs(PERSISTENT_AVATARS_DIR, exist_ok=True)
+print(f"📁 Persistent avatars directory: {PERSISTENT_AVATARS_DIR}")
+
 # Debug: List files in the public directory
 if os.path.isdir(PUBLIC_DIR):
     print("📂 Files in static directory:")
@@ -182,24 +202,32 @@ async def api_test():
 
 @app.get("/api/avatars")
 async def api_get_avatars():
-    """Return list of available avatar images"""
-    avatars_dir = os.path.join(PUBLIC_DIR, "voice_avatars")
-    if not os.path.exists(avatars_dir):
-        return {"avatars": []}
-    
+    """Return list of available avatar images from both built-in and user-uploaded"""
     avatar_files = []
     valid_extensions = {'.png', '.jpg', '.jpeg', '.gif', '.webp'}
     
-    try:
-        for filename in os.listdir(avatars_dir):
-            if any(filename.lower().endswith(ext) for ext in valid_extensions):
-                avatar_files.append(f"/voice_avatars/{filename}")
-        
-        # Sort for consistent ordering
-        avatar_files.sort()
-        return {"avatars": avatar_files}
-    except Exception as e:
-        return {"avatars": [], "error": str(e)}
+    # Get built-in avatars from the static directory
+    builtin_avatars_dir = os.path.join(PUBLIC_DIR, "voice_avatars")
+    if os.path.exists(builtin_avatars_dir):
+        try:
+            for filename in os.listdir(builtin_avatars_dir):
+                if any(filename.lower().endswith(ext) for ext in valid_extensions):
+                    avatar_files.append(f"/voice_avatars/{filename}")
+        except Exception as e:
+            print(f"⚠️ Error reading built-in avatars: {e}")
+    
+    # Get user-uploaded avatars from the persistent directory
+    if os.path.exists(PERSISTENT_AVATARS_DIR):
+        try:
+            for filename in os.listdir(PERSISTENT_AVATARS_DIR):
+                if any(filename.lower().endswith(ext) for ext in valid_extensions):
+                    avatar_files.append(f"/user_avatars/{filename}")
+        except Exception as e:
+            print(f"⚠️ Error reading user avatars: {e}")
+    
+    # Sort for consistent ordering
+    avatar_files.sort()
+    return {"avatars": avatar_files}
 
 @app.post("/api/avatars/upload")
 async def api_upload_avatar(file: UploadFile, avatar_name: str = Form(...), avatar_type: str = Form("default"), avatar_group_id: str = Form(None)):
@@ -222,9 +250,9 @@ async def api_upload_avatar(file: UploadFile, avatar_name: str = Form(...), avat
             )
             existing_avatar = session.exec(query).first()
         
-        # Create avatars directory if it doesn't exist
-        avatars_dir = os.path.join(PUBLIC_DIR, "voice_avatars")
-        os.makedirs(avatars_dir, exist_ok=True)
+        # Use the persistent avatars directory for uploads
+        avatars_dir = PERSISTENT_AVATARS_DIR
+        print(f"🖼️  Saving avatar to persistent directory: {avatars_dir}")
         
         # Generate unique filename or reuse existing if replacing
         import uuid
@@ -298,7 +326,7 @@ async def api_upload_avatar(file: UploadFile, avatar_name: str = Form(...), avat
                 avatar = AvatarImage(
                     name=avatar_name,
                     filename=unique_filename,
-                    file_path=f"/voice_avatars/{unique_filename}",
+                    file_path=f"/user_avatars/{unique_filename}",
                     upload_date=str(int(time.time())),
                     file_size=len(content),
                     avatar_type=avatar_type,
@@ -357,10 +385,11 @@ async def api_delete_avatar(avatar_id: int):
             if not avatar:
                 return {"error": "Avatar not found", "success": False}
             
-            # Delete file from disk
-            full_path = os.path.join(PUBLIC_DIR, "voice_avatars", avatar.filename)
+            # Delete file from disk (user-uploaded avatars are in persistent directory)
+            full_path = os.path.join(PERSISTENT_AVATARS_DIR, avatar.filename)
             if os.path.exists(full_path):
                 os.remove(full_path)
+                print(f"🗑️  Deleted avatar file: {full_path}")
             
             # Delete from database
             session.delete(avatar)
@@ -395,9 +424,10 @@ async def api_delete_avatar_group(group_id: str):
             # Delete files from disk and database
             for avatar in avatars:
                 if avatar:  # Check in case of single avatar that might be None
-                    full_path = os.path.join(PUBLIC_DIR, "voice_avatars", avatar.filename)
+                    full_path = os.path.join(PERSISTENT_AVATARS_DIR, avatar.filename)
                     if os.path.exists(full_path):
                         os.remove(full_path)
+                        print(f"🗑️  Deleted avatar file: {full_path}")
                     session.delete(avatar)
             
             session.commit()
@@ -938,13 +968,20 @@ if os.path.isdir(PUBLIC_DIR):
     else:
         print(f"❌ Assets directory not found: {assets_dir}")
     
-    # Mount voice avatars normally (images should work fine)
+    # Mount built-in voice avatars
     voice_avatars_dir = os.path.join(PUBLIC_DIR, "voice_avatars")
     if os.path.isdir(voice_avatars_dir):
         print(f"✅ Mounting /voice_avatars from: {voice_avatars_dir}")
         app.mount("/voice_avatars", StaticFiles(directory=voice_avatars_dir), name="voice_avatars")
     else:
-        print(f"❌ Voice avatars directory not found: {voice_avatars_dir}")
+        print(f"❌ Built-in voice avatars directory not found: {voice_avatars_dir}")
+    
+    # Mount user-uploaded avatars from persistent directory
+    if os.path.isdir(PERSISTENT_AVATARS_DIR):
+        print(f"✅ Mounting /user_avatars from: {PERSISTENT_AVATARS_DIR}")
+        app.mount("/user_avatars", StaticFiles(directory=PERSISTENT_AVATARS_DIR), name="user_avatars")
+    else:
+        print(f"❌ User avatars directory not found: {PERSISTENT_AVATARS_DIR}")
     
     # Handle specific routes for SPA
     @app.get("/settings")
