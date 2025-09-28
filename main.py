@@ -187,6 +187,7 @@ def main():
         logger.info("Chat Yapper application is now running")
         log_important("Chat Yapper is running!")
         print(f"Web interface: http://localhost:{server_port}/settings")
+        print(f"Avatar display (copy into OBS and enable Audio): http://localhost:{server_port}/yappers")
         print("Do not close this window while using Chat Yapper")
         print()
         print("Press Ctrl+C to stop the server")
