@@ -46,6 +46,22 @@ def create_executable():
     """Create executable with PyInstaller"""
     print("🎯 Creating Windows executable...")
     
+    # Verify critical dependencies are available
+    print("🔍 Checking dependencies...")
+    try:
+        import uvicorn
+        print(f"✅ uvicorn found: {uvicorn.__version__}")
+    except ImportError:
+        print("❌ uvicorn not found - install with: pip install uvicorn")
+        sys.exit(1)
+
+    try:
+        import fastapi
+        print(f"✅ fastapi found: {fastapi.__version__}")
+    except ImportError:
+        print("❌ fastapi not found - install with: pip install fastapi")
+        sys.exit(1)
+    
     # Install PyInstaller
     run_command("pip install pyinstaller")
     
@@ -101,22 +117,67 @@ a = Analysis(
     binaries=[],
     datas=data_files,
     hiddenimports=[
+        # Uvicorn and all its components
         'uvicorn',
+        'uvicorn.main',
+        'uvicorn.server',
+        'uvicorn.config',
         'uvicorn.loops',
         'uvicorn.loops.auto',
+        'uvicorn.loops.asyncio',
         'uvicorn.protocols',
         'uvicorn.protocols.http',
         'uvicorn.protocols.http.auto',
+        'uvicorn.protocols.http.h11_impl',
         'uvicorn.protocols.websockets',
         'uvicorn.protocols.websockets.auto',
+        'uvicorn.protocols.websockets.websockets_impl',
         'uvicorn.lifespan',
         'uvicorn.lifespan.on',
+        'uvicorn.middleware',
+        'uvicorn.middleware.proxy_headers',
+        'uvicorn.supervisors',
+        'uvicorn.supervisors.basereload',
+        'uvicorn.supervisors.multiprocess',
+        'uvicorn.supervisors.statreload',
+        'uvicorn.supervisors.watchgodreload',
+        # FastAPI and dependencies
+        'fastapi',
+        'fastapi.applications',
+        'fastapi.routing',
+        'fastapi.middleware',
+        'fastapi.middleware.cors',
+        'fastapi.staticfiles',
+        'fastapi.responses',
+        'fastapi.exceptions',
+        'starlette',
+        'starlette.applications',
+        'starlette.routing',
+        'starlette.middleware',
+        'starlette.responses',
+        'starlette.staticfiles',
+        'starlette.websockets',
+        # Other dependencies
+        'pydantic',
+        'pydantic.main',
+        'anyio',
+        'sniffio',
+        'h11',
+        'websockets',
+        'websockets.server',
+        'websockets.client',
         'edge_tts',
         'aiohttp',
+        'aiohttp.client',
+        'aiohttp.web',
         'PIL',
+        'PIL.Image',
         'twitchio',
         'sqlmodel',
-        'fastapi',
+        'sqlalchemy',
+        'sqlalchemy.engine',
+        'sqlalchemy.pool',
+        'sqlite3',
     ],
     hookspath=[],
     hooksconfig={{}},
