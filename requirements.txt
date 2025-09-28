@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+sqlmodel
+pydantic
+pydantic-settings
+python-multipart
+edge-tts==7.2.3
+aiohttp>=3.8.0
+twitchio
+Pillow

@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root { height: 100%; }
+body { margin: 0; }
+
+/* Force maximum 200px resolution for all avatar images */
+.avatar-image {
+  max-width: 200px !important;
+  max-height: 200px !important;
+  object-fit: cover;
+}
+
+/* Ensure avatar containers don't exceed 200px */
+.avatar-container {
+  max-width: 200px !important;
+  max-height: 200px !important;
+}
