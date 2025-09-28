@@ -65,21 +65,49 @@ def log_important(message):
 voice_usage_stats = defaultdict(int)
 voice_selection_count = 0
 
+# Create a persistent directory for user-uploaded avatars
+# This will be in the user's AppData/Local/ChatYapper directory
+import tempfile
+import getpass
+
+def get_user_data_dir():
+    """Get a persistent directory for user data"""
+    if os.name == 'nt':  # Windows
+        base_dir = os.path.join(os.environ.get('LOCALAPPDATA', tempfile.gettempdir()), 'ChatYapper')
+    else:  # Linux/Mac
+        base_dir = os.path.join(os.path.expanduser('~'), '.chatyapper')
+    
+    os.makedirs(base_dir, exist_ok=True)
+    return base_dir
+
 # ---------- Config & DB ----------
-DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(__file__), "app.db"))
+# Use persistent user data directory for database (same as avatars)
+USER_DATA_DIR = get_user_data_dir()
+DB_PATH = os.environ.get("DB_PATH", os.path.join(USER_DATA_DIR, "app.db"))
+logger.info(f"Database path: {DB_PATH}")
+logger.info(f"User data directory: {USER_DATA_DIR}")
 engine = create_engine(f"sqlite:///{DB_PATH}", echo=False)
 SQLModel.metadata.create_all(engine)
 
 # Seed settings if empty
 DEFAULTS_PATH = os.path.join(os.path.dirname(__file__), "settings_defaults.json")
+logger.info(f"Looking for settings defaults at: {DEFAULTS_PATH}")
 if not os.path.exists(DEFAULTS_PATH):
+    logger.error(f"Missing settings_defaults.json at {DEFAULTS_PATH}")
     raise SystemExit("Missing settings_defaults.json")
+else:
+    logger.info("Found settings_defaults.json")
 
 with Session(engine) as s:
     exists = s.exec(select(Setting).where(Setting.key == "settings")).first()
     if not exists:
-        s.add(Setting(key="settings", value_json=open(DEFAULTS_PATH, "r", encoding="utf-8").read()))
+        logger.info(f"No settings found, creating default settings from {DEFAULTS_PATH}")
+        default_settings = open(DEFAULTS_PATH, "r", encoding="utf-8").read()
+        s.add(Setting(key="settings", value_json=default_settings))
         s.commit()
+        logger.info("Default settings created and saved to database")
+    else:
+        logger.info("Existing settings found in database")
 
 # Voice database starts empty - users need to add voices manually
 logger.info("Voice management system initialized - users can add voices through the settings page")
@@ -103,12 +131,12 @@ import time
 async def log_requests(request: Request, call_next):
     start_time = time.time()
     # Only log important requests, not headers
-    print(f"🌐 HTTP Request: {request.method} {request.url}")
+    print(f"HTTP Request: {request.method} {request.url}")
     
     response = await call_next(request)
     
     process_time = time.time() - start_time
-    print(f"🌐 Response: {response.status_code} (took {process_time:.2f}s)")
+    print(f"Response: {response.status_code} (took {process_time:.2f}s)")
     
     return response
 
@@ -119,28 +147,12 @@ app.mount("/audio", StaticFiles(directory=AUDIO_DIR), name="audio")
 
 # Store PUBLIC_DIR for mounting later (after routes are defined)
 PUBLIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "public"))
-print(f"🌐 Static files directory: {PUBLIC_DIR}")
-print(f"📁 Directory exists: {os.path.isdir(PUBLIC_DIR)}")
+print(f"Static files directory: {PUBLIC_DIR}")
+print(f"Directory exists: {os.path.isdir(PUBLIC_DIR)}")
 
-# Create a persistent directory for user-uploaded avatars
-# This will be in the user's AppData/Local/ChatYapper directory
-import tempfile
-import getpass
-
-def get_user_data_dir():
-    """Get a persistent directory for user data"""
-    if os.name == 'nt':  # Windows
-        base_dir = os.path.join(os.environ.get('LOCALAPPDATA', tempfile.gettempdir()), 'ChatYapper')
-    else:  # Linux/Mac
-        base_dir = os.path.join(os.path.expanduser('~'), '.chatyapper')
-    
-    os.makedirs(base_dir, exist_ok=True)
-    return base_dir
-
-USER_DATA_DIR = get_user_data_dir()
 PERSISTENT_AVATARS_DIR = os.path.join(USER_DATA_DIR, "voice_avatars")
 os.makedirs(PERSISTENT_AVATARS_DIR, exist_ok=True)
-print(f"📁 Persistent avatars directory: {PERSISTENT_AVATARS_DIR}")
+logger.info(f"Persistent avatars directory: {PERSISTENT_AVATARS_DIR}")
 
 # Debug: List files in the public directory
 if os.path.isdir(PUBLIC_DIR):
@@ -153,7 +165,7 @@ if os.path.isdir(PUBLIC_DIR):
         for file in files:
             print(f"{subindent}{file}")
 else:
-    print("❌ Static files directory not found")
+    print("Static files directory not found")
 
 # ---------- WebSocket Hub ----------
 class Hub:
@@ -181,11 +193,11 @@ hub = Hub()
 async def ws_endpoint(ws: WebSocket):
     client_info = f"{ws.client.host}:{ws.client.port}" if ws.client else "unknown"
     logger.info(f"WebSocket connection attempt from {client_info}")
-    print(f"🔌 WebSocket connection attempt from {ws.client}")
+    print(f"WebSocket connection attempt from {ws.client}")
     try:
         await hub.connect(ws)
         logger.info(f"WebSocket connected successfully. Total clients: {len(hub.clients)}")
-        print(f"✅ WebSocket connected successfully. Total clients: {len(hub.clients)}")
+        print(f"WebSocket connected successfully. Total clients: {len(hub.clients)}")
         
         # Send a welcome message to confirm connection
         welcome_msg = {
@@ -195,20 +207,20 @@ async def ws_endpoint(ws: WebSocket):
         }
         await ws.send_text(json.dumps(welcome_msg))
         logger.info(f"Sent welcome message to WebSocket client {client_info}")
-        print(f"📤 Sent welcome message to WebSocket client")
+        print(f"Sent welcome message to WebSocket client")
         
         while True:
             # In this app, server pushes; but you can accept pings or config messages:
             message = await ws.receive_text()
             logger.debug(f"WebSocket received message from {client_info}: {message}")
-            print(f"📨 WebSocket received: {message}")
+            print(f"WebSocket received: {message}")
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected from {client_info}. Remaining clients: {len(hub.clients)-1}")
-        print(f"🔌 WebSocket disconnected. Remaining clients: {len(hub.clients)-1}")
+        print(f"WebSocket disconnected. Remaining clients: {len(hub.clients)-1}")
         hub.unregister(ws)
     except Exception as e:
         logger.error(f"WebSocket error from {client_info}: {e}")
-        print(f"❌ WebSocket error: {e}")
+        print(f"WebSocket error: {e}")
         hub.unregister(ws)
 
 # ---------- Settings CRUD ----------
@@ -216,14 +228,24 @@ async def ws_endpoint(ws: WebSocket):
 def get_settings() -> Dict[str, Any]:
     with Session(engine) as s:
         row = s.exec(select(Setting).where(Setting.key == "settings")).first()
-        return json.loads(row.value_json)
+        if row:
+            settings = json.loads(row.value_json)
+            logger.info(f"Loaded settings from database: {DB_PATH}")
+            return settings
+        else:
+            logger.error("No settings found in database!")
+            return {}
 
 def save_settings(data: Dict[str, Any]):
     with Session(engine) as s:
         row = s.exec(select(Setting).where(Setting.key == "settings")).first()
-        row.value_json = json.dumps(data)
-        s.add(row)
-        s.commit()
+        if row:
+            row.value_json = json.dumps(data)
+            s.add(row)
+            s.commit()
+            logger.info(f"Settings saved to database: {DB_PATH}")
+        else:
+            logger.error("Could not find settings row to update!")
 
 @app.get("/api/settings")
 async def api_get_settings():
@@ -242,19 +264,19 @@ async def api_set_settings(payload: Dict[str, Any]):
 @app.get("/api/status")
 async def api_get_status():
     """Simple status check endpoint"""
-    print("🔧 API: GET /api/status called")
+    print("API: GET /api/status called")
     status = {
         "status": "running",
         "websocket_clients": len(hub.clients),
         "message": "Chat Yapper backend is running!"
     }
-    print(f"🔧 API: Returning status: {status}")
+    print(f"API: Returning status: {status}")
     return status
 
 @app.get("/api/test")
 async def api_test():
     """Simple test endpoint for debugging"""
-    print("🔧 API: GET /api/test called - React app is working!")
+    print("API: GET /api/test called - React app is working!")
     return {"success": True, "message": "API connection successful"}
 
 @app.get("/api/avatars")
@@ -271,7 +293,7 @@ async def api_get_avatars():
                 if any(filename.lower().endswith(ext) for ext in valid_extensions):
                     avatar_files.append(f"/voice_avatars/{filename}")
         except Exception as e:
-            print(f"⚠️ Error reading built-in avatars: {e}")
+            print(f"Error reading built-in avatars: {e}")
     
     # Get user-uploaded avatars from the persistent directory
     if os.path.exists(PERSISTENT_AVATARS_DIR):
@@ -280,7 +302,7 @@ async def api_get_avatars():
                 if any(filename.lower().endswith(ext) for ext in valid_extensions):
                     avatar_files.append(f"/user_avatars/{filename}")
         except Exception as e:
-            print(f"⚠️ Error reading user avatars: {e}")
+            print(f"Error reading user avatars: {e}")
     
     # Sort for consistent ordering
     avatar_files.sort()
@@ -311,7 +333,7 @@ async def api_upload_avatar(file: UploadFile, avatar_name: str = Form(...), avat
         
         # Use the persistent avatars directory for uploads
         avatars_dir = PERSISTENT_AVATARS_DIR
-        print(f"🖼️  Saving avatar to persistent directory: {avatars_dir}")
+        print(f"Saving avatar to persistent directory: {avatars_dir}")
         
         # Generate unique filename or reuse existing if replacing
         import uuid
@@ -618,7 +640,7 @@ async def api_get_available_voices(provider: str, api_key: str = None):
                 async with session.post("https://api.console.tts.monster/voices", headers=headers) as response:
                     if response.status == 200:
                         voices_data = await response.json()
-                        print(f"🔍 MonsterTTS API Response: {voices_data}")
+                        print(f"MonsterTTS API Response: {voices_data}")
                         
                         # Transform the API response to our format
                         monster_voices = []
@@ -633,7 +655,7 @@ async def api_get_available_voices(provider: str, api_key: str = None):
                                         "name": voice.get("name", voice.get("display_name", f"Voice {voice.get('id', 'Unknown')[:8]}"))
                                     })
                                 else:
-                                    print(f"⚠️ Unexpected voice format: {voice} (type: {type(voice)})")
+                                    print(f"Unexpected voice format: {voice} (type: {type(voice)})")
                         elif isinstance(voices_data, dict):
                             # Response might be wrapped in an object
                             voices_list = voices_data.get("voices", voices_data.get("data", [voices_data]))
@@ -644,7 +666,7 @@ async def api_get_available_voices(provider: str, api_key: str = None):
                                         "name": voice.get("name", voice.get("display_name", f"Voice {voice.get('id', 'Unknown')[:8]}"))
                                     })
                         
-                        print(f"✅ Parsed {len(monster_voices)} MonsterTTS voices")
+                        print(f"Parsed {len(monster_voices)} MonsterTTS voices")
                         return {"voices": monster_voices}
                     else:
                         error_text = await response.text()
@@ -711,7 +733,7 @@ async def handle_test_voice_event(evt: Dict[str, Any]):
     
     test_voice_data = evt.get("testVoice")
     if not test_voice_data:
-        print("❌ No test voice data provided")
+        print("No test voice data provided")
         return
     
     # Create a temporary voice object for testing
@@ -725,7 +747,7 @@ async def handle_test_voice_event(evt: Dict[str, Any]):
             self.enabled = True
     
     selected_voice = TestVoice(test_voice_data)
-    print(f"🎤 Test voice: {selected_voice.name} ({selected_voice.provider})")
+    print(f"Test voice: {selected_voice.name} ({selected_voice.provider})")
 
     # Get TTS configuration - Use hybrid provider that handles all providers
     tts_config = settings.get("tts", {})
@@ -751,14 +773,14 @@ async def handle_test_voice_event(evt: Dict[str, Any]):
     
     # Create TTS job with the test voice
     job = TTSJob(text=evt.get('text', '').strip(), voice=selected_voice.voice_id, audio_format=audio_format)
-    print(f"🎤 Test TTS Job: text='{job.text}', voice='{selected_voice.name}' ({selected_voice.provider}:{selected_voice.voice_id}), format='{job.audio_format}'")
+    print(f"Test TTS Job: text='{job.text}', voice='{selected_voice.name}' ({selected_voice.provider}:{selected_voice.voice_id}), format='{job.audio_format}'")
 
     # Fire-and-forget to allow overlap
     async def _run():
         try:
-            print(f"🔄 Starting test TTS synthesis...")
+            print(f"Starting test TTS synthesis...")
             path = await provider.synth(job)
-            print(f"✅ Test TTS generated: {path}")
+            print(f"Test TTS generated: {path}")
             
             # Broadcast to clients to play
             voice_info = {
@@ -775,10 +797,10 @@ async def handle_test_voice_event(evt: Dict[str, Any]):
                 "voice": voice_info,
                 "audioUrl": f"/audio/{os.path.basename(path)}"
             }
-            print(f"📡 Broadcasting test voice to {len(hub.clients)} clients: {payload}")
+            print(f"Broadcasting test voice to {len(hub.clients)} clients: {payload}")
             await hub.broadcast(payload)
         except Exception as e:
-            print(f"❌ Test TTS synthesis error: {e}")
+            print(f"Test TTS synthesis error: {e}")
 
     asyncio.create_task(_run())
 
@@ -793,7 +815,7 @@ async def handle_event(evt: Dict[str, Any]):
         enabled_voices = session.exec(select(Voice).where(Voice.enabled == True)).all()
     
     if not enabled_voices:
-        print("⚠️ No enabled voices found in database. Please add voices through the settings page.")
+        print("No enabled voices found in database. Please add voices through the settings page.")
         return
 
     event_type = evt.get("eventType", "chat")
@@ -807,9 +829,9 @@ async def handle_event(evt: Dict[str, Any]):
     if not selected_voice:
         # Random selection from enabled voices
         selected_voice = random.choice(enabled_voices)
-        print(f"🎲 Random voice selected: {selected_voice.name} ({selected_voice.provider})")
+        print(f"Random voice selected: {selected_voice.name} ({selected_voice.provider})")
     else:
-        print(f"🎯 Special event voice selected: {selected_voice.name} ({selected_voice.provider})")
+        print(f"Special event voice selected: {selected_voice.name} ({selected_voice.provider})")
     
     # Track voice usage for distribution analysis
     global voice_usage_stats, voice_selection_count
@@ -819,14 +841,14 @@ async def handle_event(evt: Dict[str, Any]):
     
     # Log distribution every 10 selections
     if voice_selection_count % 10 == 0:
-        print(f"\n📊 Voice Distribution Summary (after {voice_selection_count} selections):")
+        print(f"\nVoice Distribution Summary (after {voice_selection_count} selections):")
         total_usage = sum(voice_usage_stats.values())
         for voice_name, count in sorted(voice_usage_stats.items(), key=lambda x: x[1], reverse=True):
             percentage = (count / total_usage) * 100
             print(f"   {voice_name}: {count} times ({percentage:.1f}%)")
         print("---")
     
-    print(f"🎤 Selected voice: {selected_voice.name} ({selected_voice.provider})")
+    print(f"Selected voice: {selected_voice.name} ({selected_voice.provider})")
 
     # Get TTS configuration - Use hybrid provider that handles both MonsterTTS and Edge TTS
     tts_config = settings.get("tts", {})
@@ -855,14 +877,14 @@ async def handle_event(evt: Dict[str, Any]):
     
     # Create TTS job with the selected voice
     job = TTSJob(text=evt.get('text', '').strip(), voice=selected_voice.voice_id, audio_format=audio_format)
-    print(f"🎤 TTS Job: text='{job.text}', voice='{selected_voice.name}' ({selected_voice.provider}:{selected_voice.voice_id}), format='{job.audio_format}'")
+    print(f"TTS Job: text='{job.text}', voice='{selected_voice.name}' ({selected_voice.provider}:{selected_voice.voice_id}), format='{job.audio_format}'")
 
     # Fire-and-forget to allow overlap
     async def _run():
         try:
-            print(f"🔄 Starting TTS synthesis...")
+            print(f"Starting TTS synthesis...")
             path = await provider.synth(job)
-            print(f"✅ TTS generated: {path}")
+            print(f"TTS generated: {path}")
             
             # Broadcast to clients to play
             # Use the selected voice from database
@@ -880,10 +902,10 @@ async def handle_event(evt: Dict[str, Any]):
                 "voice": voice_info,
                 "audioUrl": f"/audio/{os.path.basename(path)}"
             }
-            print(f"📡 Broadcasting to {len(hub.clients)} clients: {payload}")
+            print(f"Broadcasting to {len(hub.clients)} clients: {payload}")
             await hub.broadcast(payload)
         except Exception as e:
-            print(f"❌ TTS Error: {e}")
+            print(f"TTS Error: {e}")
     asyncio.create_task(_run())
 
 # ---------- Simulate messages (for local testing) ----------
@@ -894,7 +916,7 @@ async def api_simulate(
     eventType: str = Form("chat"),
     testVoice: str = Form(None)
 ):
-    print(f"🧪 Simulate request: user={user}, text={text}, eventType={eventType}, testVoice={testVoice}")
+    print(f"Simulate request: user={user}, text={text}, eventType={eventType}, testVoice={testVoice}")
     
     # If testVoice is provided, parse it and use it directly
     if testVoice:
@@ -907,7 +929,7 @@ async def api_simulate(
                 "testVoice": test_voice_data
             })
         except json.JSONDecodeError:
-            print("❌ Invalid testVoice JSON data")
+            print("Invalid testVoice JSON data")
             return {"ok": False, "error": "Invalid testVoice data"}
     else:
         await handle_event({"user": user, "text": text, "eventType": eventType})
@@ -963,7 +985,7 @@ async def api_reset_voice_stats():
     # Reset fallback stats
     reset_fallback_stats()
     
-    print("📊 Voice distribution statistics have been reset")
+    print("Voice distribution statistics have been reset")
     return {"ok": True, "message": "Voice statistics reset successfully"}
 
 # ---------- Twitch integration (optional) ----------
@@ -989,7 +1011,7 @@ async def startup():
 # Mount static files AFTER all API routes and WebSocket endpoints are defined
 # This ensures that /api/* and /ws routes take precedence over static file serving
 if os.path.isdir(PUBLIC_DIR):
-    print(f"✅ Mounting static files from: {PUBLIC_DIR}")
+    print(f"Mounting static files from: {PUBLIC_DIR}")
     
     from fastapi import Request
     from fastapi.responses import FileResponse
@@ -997,17 +1019,17 @@ if os.path.isdir(PUBLIC_DIR):
     # Handle assets manually with proper MIME types
     assets_dir = os.path.join(PUBLIC_DIR, "assets")
     if os.path.isdir(assets_dir):
-        print(f"✅ Assets directory found: {assets_dir}")
-        print(f"📁 Assets directory contents: {os.listdir(assets_dir)}")
+        print(f"Assets directory found: {assets_dir}")
+        print(f"Assets directory contents: {os.listdir(assets_dir)}")
         
         @app.get("/assets/{filename}")
         async def serve_assets(filename: str):
             """Serve assets with correct MIME types"""
             file_path = os.path.join(assets_dir, filename)
-            print(f"🔧 Assets request: {filename} -> {file_path}")
+            print(f"Assets request: {filename} -> {file_path}")
             
             if not os.path.isfile(file_path):
-                print(f"❌ Asset file not found: {file_path}")
+                print(f"Asset file not found: {file_path}")
                 from fastapi import HTTPException
                 raise HTTPException(status_code=404, detail="Asset not found")
             
@@ -1015,32 +1037,32 @@ if os.path.isdir(PUBLIC_DIR):
             media_type = None
             if filename.endswith('.js'):
                 media_type = 'application/javascript'
-                print(f"🔧 Setting JavaScript MIME type for: {filename}")
+                print(f"Setting JavaScript MIME type for: {filename}")
             elif filename.endswith('.css'):
                 media_type = 'text/css'
-                print(f"🔧 Setting CSS MIME type for: {filename}")
+                print(f"Setting CSS MIME type for: {filename}")
             elif filename.endswith('.map'):
                 media_type = 'application/json'
             
-            print(f"🔧 Serving asset: {filename} with MIME type: {media_type}")
+            print(f"Serving asset: {filename} with MIME type: {media_type}")
             return FileResponse(file_path, media_type=media_type)
     else:
-        print(f"❌ Assets directory not found: {assets_dir}")
+        print(f"Assets directory not found: {assets_dir}")
     
     # Mount built-in voice avatars
     voice_avatars_dir = os.path.join(PUBLIC_DIR, "voice_avatars")
     if os.path.isdir(voice_avatars_dir):
-        print(f"✅ Mounting /voice_avatars from: {voice_avatars_dir}")
+        print(f"Mounting /voice_avatars from: {voice_avatars_dir}")
         app.mount("/voice_avatars", StaticFiles(directory=voice_avatars_dir), name="voice_avatars")
     else:
-        print(f"❌ Built-in voice avatars directory not found: {voice_avatars_dir}")
+        print(f"Built-in voice avatars directory not found: {voice_avatars_dir}")
     
     # Mount user-uploaded avatars from persistent directory
     if os.path.isdir(PERSISTENT_AVATARS_DIR):
-        print(f"✅ Mounting /user_avatars from: {PERSISTENT_AVATARS_DIR}")
+        print(f"Mounting /user_avatars from: {PERSISTENT_AVATARS_DIR}")
         app.mount("/user_avatars", StaticFiles(directory=PERSISTENT_AVATARS_DIR), name="user_avatars")
     else:
-        print(f"❌ User avatars directory not found: {PERSISTENT_AVATARS_DIR}")
+        print(f"User avatars directory not found: {PERSISTENT_AVATARS_DIR}")
     
     # Handle specific routes for SPA
     @app.get("/settings")
@@ -1073,7 +1095,7 @@ if os.path.isdir(PUBLIC_DIR):
         index_path = os.path.join(PUBLIC_DIR, "index.html")
         return FileResponse(index_path, media_type='text/html')
 else:
-    print(f"❌ Static files directory not found: {PUBLIC_DIR}")
+    print(f"Static files directory not found: {PUBLIC_DIR}")
 
 if __name__ == "__main__":
     import uvicorn

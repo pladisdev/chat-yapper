@@ -53,7 +53,7 @@ logger = setup_logging()
 def log_important(message):
     """Log important messages that should appear in both console and file"""
     logger.warning(f"IMPORTANT: {message}")  # WARNING level ensures console output
-    print(f"ℹ️  {message}")  # Also print directly for immediate visibility
+    print(f"{message}")  # Also print directly for immediate visibility
 
 # Add backend to Python path
 backend_dir = Path(__file__).parent / "backend"
@@ -146,14 +146,14 @@ def open_browser(port):
     time.sleep(3)  # Wait for server to start
     url = f"http://localhost:{port}/settings"
     logger.info(f"Opening Chat Yapper in browser: {url}")
-    print(f"🌐 Opening Chat Yapper in your browser: {url}")
+    print(f"Opening Chat Yapper in your browser: {url}")
     try:
         webbrowser.open(url)
         logger.info("Browser opened successfully")
     except Exception as e:
         logger.error(f"Could not auto-open browser: {e}")
-        print(f"❌ Could not auto-open browser: {e}")
-        print(f"📋 Please manually open: {url}")
+        print(f"Could not auto-open browser: {e}")
+        print(f"Please manually open: {url}")
 
 def main():
     logger.info("Starting Chat Yapper application...")
@@ -169,7 +169,7 @@ def main():
         log_important(f"Found available port: {server_port}")
     except RuntimeError as e:
         logger.error(f"Could not find available port: {e}")
-        print(f"❌ Could not find available port: {e}")
+        print(f"Could not find available port: {e}")
         input("Press Enter to exit...")
         sys.exit(1)
     
@@ -186,10 +186,10 @@ def main():
     try:
         logger.info("Chat Yapper application is now running")
         log_important("Chat Yapper is running!")
-        print(f"🌐 Web interface: http://localhost:{server_port}/settings")
-        print("⚠️  Do not close this window while using Chat Yapper")
+        print(f"Web interface: http://localhost:{server_port}/settings")
+        print("Do not close this window while using Chat Yapper")
         print()
-        print("🛑 Press Ctrl+C to stop the server")
+        print("Press Ctrl+C to stop the server")
         
         # Keep the main thread alive
         while True:

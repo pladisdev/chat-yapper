@@ -51,19 +51,19 @@ def log_important(message):
 def run_command(cmd, cwd=None):
     """Run a command and print output"""
     logger.info(f"Running command: {cmd}" + (f" (cwd: {cwd})" if cwd else ""))
-    print(f"🔧 Running: {cmd}")
+    print(f"Running: {cmd}")
     result = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True)
     if result.returncode != 0:
         logger.error(f"Command failed with return code {result.returncode}: {cmd}")
         logger.error(f"Error output: {result.stderr}")
-        print(f"❌ Command failed: {result.stderr}")
+        print(f"Command failed: {result.stderr}")
         if result.stdout:
             logger.info(f"Command stdout: {result.stdout}")
-            print(f"📝 Output: {result.stdout}")
+            print(f"Output: {result.stdout}")
         sys.exit(1)
     if result.stdout.strip():
         logger.info(f"Command output: {result.stdout.strip()}")
-        print(f"✅ Success")
+        print(f"Success")
     return result
 
 def build_frontend():
@@ -74,7 +74,7 @@ def build_frontend():
     
     if not frontend_dir.exists():
         logger.error(f"Frontend directory not found: {frontend_dir}")
-        print("❌ Frontend directory not found")
+        print("Frontend directory not found")
         sys.exit(1)
     
     # Install dependencies and build
@@ -99,30 +99,30 @@ def create_executable():
     
     # Install Python dependencies first
     logger.info("Installing Python dependencies")
-    print("📦 Installing Python dependencies...")
+    print("Installing Python dependencies...")
     if Path("requirements.txt").exists():
         logger.info("Found requirements.txt, installing from file")
         run_command("pip install -r requirements.txt")
     else:
         # Install core dependencies manually if requirements.txt doesn't exist
         logger.warning("requirements.txt not found, installing core dependencies manually")
-        print("📦 Installing core dependencies...")
+        print("Installing core dependencies...")
         run_command("pip install fastapi uvicorn sqlmodel aiohttp pillow edge-tts twitchio")
     
     # Verify critical dependencies are now available
-    print("🔍 Verifying dependencies...")
+    print("Verifying dependencies...")
     try:
         import uvicorn
-        print(f"✅ uvicorn found: {uvicorn.__version__}")
+        print(f"uvicorn found: {uvicorn.__version__}")
     except ImportError:
-        print("❌ uvicorn still not found after installation")
+        print("uvicorn still not found after installation")
         sys.exit(1)
 
     try:
         import fastapi
-        print(f"✅ fastapi found: {fastapi.__version__}")
+        print(f"fastapi found: {fastapi.__version__}")
     except ImportError:
-        print("❌ fastapi still not found after installation")
+        print("fastapi still not found after installation")
         sys.exit(1)
     
     # Install PyInstaller
@@ -133,11 +133,11 @@ def create_executable():
     for icon_file in ['icon.ico', 'logo.ico', 'app.ico']:
         if Path(icon_file).exists():
             icon_path = icon_file
-            print(f"✅ Found icon: {icon_file}")
+            print(f"Found icon: {icon_file}")
             break
     
     if not icon_path:
-        print("ℹ️  No icon file found - executable will use default icon")
+        print("No icon file found - executable will use default icon")
     
     # Create spec file for PyInstaller
     icon_line = f"icon='{icon_path}'" if icon_path else "icon=None"
@@ -282,7 +282,7 @@ exe = EXE(
         f.write(spec_content)
     
     # Build with PyInstaller using Python module execution (most reliable)
-    print("🛠️  Running PyInstaller...")
+    print("Running PyInstaller...")
     try:
         # First try as a Python module (most reliable method)
         run_command("python -m PyInstaller --clean ChatYapper.spec")
@@ -296,15 +296,15 @@ exe = EXE(
                 result = subprocess.run("pip show pyinstaller", shell=True, capture_output=True, text=True)
                 if result.returncode == 0:
                     # PyInstaller is installed, but maybe not in PATH
-                    print("📝 PyInstaller is installed but not in PATH, trying alternative methods...")
+                    print("PyInstaller is installed but not in PATH, trying alternative methods...")
                     
                     # Try using python -c to execute PyInstaller directly
                     run_command('python -c "import PyInstaller.__main__; PyInstaller.__main__.run([\'--clean\', \'ChatYapper.spec\'])"')
                 else:
-                    print("❌ PyInstaller not found. Please install it manually: pip install pyinstaller")
+                    print("PyInstaller not found. Please install it manually: pip install pyinstaller")
                     sys.exit(1)
             except Exception as e:
-                print(f"❌ Failed to run PyInstaller: {e}")
+                print(f"Failed to run PyInstaller: {e}")
                 print("💡 Try running this manually: python -m PyInstaller --clean ChatYapper.spec")
                 sys.exit(1)
     
@@ -313,10 +313,10 @@ exe = EXE(
     if exe_path.exists():
         file_size = exe_path.stat().st_size / (1024 * 1024)  # Size in MB
         logger.info(f"Executable created successfully: {exe_path} ({file_size:.1f} MB)")
-        print(f"✅ Executable created: dist/ChatYapper.exe ({file_size:.1f} MB)")
+        print(f"Executable created: dist/ChatYapper.exe ({file_size:.1f} MB)")
     else:
         logger.error("Executable not found after build process completed")
-        print("❌ Executable not found after build")
+        print("Executable not found after build")
         sys.exit(1)
     
     # Clean up build artifacts (optional)
@@ -330,17 +330,17 @@ exe = EXE(
             else:
                 Path(path).unlink()
     logger.info("Build artifacts cleaned up successfully")
-    print("🧹 Cleaned up build artifacts")
+    print("Cleaned up build artifacts")
 
 def main():
     logger.info("=== Starting Chat Yapper build process ===")
-    print("🏗️  Building Chat Yapper for Windows distribution...")
+    print(" Building Chat Yapper for Windows distribution...")
     print()
     
     # Check if we're in the right directory
     if not Path("main.py").exists():
         logger.error("main.py not found - script must be run from Chat Yapper root directory")
-        print("❌ Please run this script from the Chat Yapper root directory")
+        print("Please run this script from the Chat Yapper root directory")
         sys.exit(1)
     
     try:
@@ -353,17 +353,17 @@ def main():
         logger.info("=== Build process completed successfully ===")
         log_important("Build complete!")
         print()
-        print("📁 Executable location: dist/ChatYapper.exe")
-        print("📋 Distribution folder: dist/")
+        print("Executable location: dist/ChatYapper.exe")
+        print("Distribution folder: dist/")
         print()
-        print("📤 To distribute:")
+        print("To distribute:")
         print("   1. Copy the dist/ChatYapper.exe file")
         print("   2. Users can run it directly - no installation needed!")
         print("   3. It will start a local server and open their browser")
         
     except Exception as e:
         logger.error(f"Build process failed: {e}", exc_info=True)
-        print(f"❌ Build failed: {e}")
+        print(f"Build failed: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":

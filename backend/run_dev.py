@@ -17,11 +17,11 @@ if __name__ == "__main__":
     # Change to backend directory
     os.chdir(backend_dir)
     
-    print("🚀 Starting Chat Yapper FastAPI application...")
-    print("📁 Working directory:", os.getcwd())
-    print("🌐 Server will be available at: http://localhost:8000")
-    print("⚙️  API endpoints at: http://localhost:8000/api/")
-    print("🔧 Press Ctrl+C to stop the server")
+    print("Starting Chat Yapper FastAPI application...")
+    print("Working directory:", os.getcwd())
+    print("Server will be available at: http://localhost:8000")
+    print("API endpoints at: http://localhost:8000/api/")
+    print("Press Ctrl+C to stop the server")
     print("-" * 50)
     
     try:
@@ -35,7 +35,7 @@ if __name__ == "__main__":
             log_level="info"
         )
     except KeyboardInterrupt:
-        print("\n👋 Server stopped gracefully")
+        print("\nServer stopped gracefully")
     except Exception as e:
-        print(f"❌ Error starting server: {e}")
+        print(f"Error starting server: {e}")
         sys.exit(1)
