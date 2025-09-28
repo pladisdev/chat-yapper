@@ -1,0 +1,30 @@
+{
+"specialVoices": {
+},
+"audioFormat": "mp3",
+"avatarRows": 3,
+"avatarRowConfig": [4, 4, 4],
+"avatarSize": 200,
+"avatarSpacing": 150,
+"avatarSpacingX": 180,
+"avatarSpacingY": 100,
+"tts": {
+"monstertts": {
+"apiKey": ""
+},
+"google": {
+"apiKey": ""
+},
+"polly": {
+"accessKey": "",
+"secretKey": "",
+"region": "us-east-1"
+}
+},
+"twitch": {
+"enabled": false,
+"channel": "",
+"token": "",
+"nick": ""
+}
+}

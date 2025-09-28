@@ -103,7 +103,7 @@ Thumbs.db
 *.temp
 
 # API keys and sensitive configuration
-settings_defaults.json
+
 **/apikey*
 **/api_key*
 **/*secret*
