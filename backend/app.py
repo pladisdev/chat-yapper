@@ -47,13 +47,45 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add middleware to log all requests for debugging
+from fastapi import Request
+import time
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start_time = time.time()
+    # Only log important requests, not headers
+    print(f"🌐 HTTP Request: {request.method} {request.url}")
+    
+    response = await call_next(request)
+    
+    process_time = time.time() - start_time
+    print(f"🌐 Response: {response.status_code} (took {process_time:.2f}s)")
+    
+    return response
+
 # Serve generated audio files under /audio
 AUDIO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "audio"))
 os.makedirs(AUDIO_DIR, exist_ok=True)
 app.mount("/audio", StaticFiles(directory=AUDIO_DIR), name="audio")
 
 # Store PUBLIC_DIR for mounting later (after routes are defined)
-PUBLIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "public"))
+PUBLIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "public"))
+print(f"🌐 Static files directory: {PUBLIC_DIR}")
+print(f"📁 Directory exists: {os.path.isdir(PUBLIC_DIR)}")
+
+# Debug: List files in the public directory
+if os.path.isdir(PUBLIC_DIR):
+    print("📂 Files in static directory:")
+    for root, dirs, files in os.walk(PUBLIC_DIR):
+        level = root.replace(PUBLIC_DIR, '').count(os.sep)
+        indent = ' ' * 2 * level
+        print(f"{indent}{os.path.basename(root)}/")
+        subindent = ' ' * 2 * (level + 1)
+        for file in files:
+            print(f"{subindent}{file}")
+else:
+    print("❌ Static files directory not found")
 
 # ---------- WebSocket Hub ----------
 class Hub:
@@ -80,15 +112,28 @@ hub = Hub()
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
     print(f"🔌 WebSocket connection attempt from {ws.client}")
-    await hub.connect(ws)
-    print(f"✅ WebSocket connected. Total clients: {len(hub.clients)}")
     try:
+        await hub.connect(ws)
+        print(f"✅ WebSocket connected successfully. Total clients: {len(hub.clients)}")
+        
+        # Send a welcome message to confirm connection
+        welcome_msg = {
+            "type": "connection",
+            "message": "WebSocket connected successfully",
+            "client_count": len(hub.clients)
+        }
+        await ws.send_text(json.dumps(welcome_msg))
+        print(f"📤 Sent welcome message to WebSocket client")
+        
         while True:
             # In this app, server pushes; but you can accept pings or config messages:
             message = await ws.receive_text()
             print(f"📨 WebSocket received: {message}")
     except WebSocketDisconnect:
         print(f"🔌 WebSocket disconnected. Remaining clients: {len(hub.clients)-1}")
+        hub.unregister(ws)
+    except Exception as e:
+        print(f"❌ WebSocket error: {e}")
         hub.unregister(ws)
 
 # ---------- Settings CRUD ----------
@@ -107,7 +152,10 @@ def save_settings(data: Dict[str, Any]):
 
 @app.get("/api/settings")
 async def api_get_settings():
-    return get_settings()
+    print("🔧 API: GET /api/settings called")
+    settings = get_settings()
+    print(f"🔧 API: Returning settings: {len(json.dumps(settings))} characters")
+    return settings
 
 @app.post("/api/settings")
 async def api_set_settings(payload: Dict[str, Any]):
@@ -117,11 +165,20 @@ async def api_set_settings(payload: Dict[str, Any]):
 @app.get("/api/status")
 async def api_get_status():
     """Simple status check endpoint"""
-    return {
+    print("🔧 API: GET /api/status called")
+    status = {
         "status": "running",
         "websocket_clients": len(hub.clients),
         "message": "Chat Yapper backend is running!"
     }
+    print(f"🔧 API: Returning status: {status}")
+    return status
+
+@app.get("/api/test")
+async def api_test():
+    """Simple test endpoint for debugging"""
+    print("🔧 API: GET /api/test called - React app is working!")
+    return {"success": True, "message": "API connection successful"}
 
 @app.get("/api/avatars")
 async def api_get_avatars():
@@ -843,7 +900,84 @@ async def startup():
 # Mount static files AFTER all API routes and WebSocket endpoints are defined
 # This ensures that /api/* and /ws routes take precedence over static file serving
 if os.path.isdir(PUBLIC_DIR):
-    app.mount("/", StaticFiles(directory=PUBLIC_DIR, html=True), name="public")
+    print(f"✅ Mounting static files from: {PUBLIC_DIR}")
+    
+    from fastapi import Request
+    from fastapi.responses import FileResponse
+    
+    # Handle assets manually with proper MIME types
+    assets_dir = os.path.join(PUBLIC_DIR, "assets")
+    if os.path.isdir(assets_dir):
+        print(f"✅ Assets directory found: {assets_dir}")
+        print(f"📁 Assets directory contents: {os.listdir(assets_dir)}")
+        
+        @app.get("/assets/{filename}")
+        async def serve_assets(filename: str):
+            """Serve assets with correct MIME types"""
+            file_path = os.path.join(assets_dir, filename)
+            print(f"🔧 Assets request: {filename} -> {file_path}")
+            
+            if not os.path.isfile(file_path):
+                print(f"❌ Asset file not found: {file_path}")
+                from fastapi import HTTPException
+                raise HTTPException(status_code=404, detail="Asset not found")
+            
+            # Determine MIME type based on file extension
+            media_type = None
+            if filename.endswith('.js'):
+                media_type = 'application/javascript'
+                print(f"🔧 Setting JavaScript MIME type for: {filename}")
+            elif filename.endswith('.css'):
+                media_type = 'text/css'
+                print(f"🔧 Setting CSS MIME type for: {filename}")
+            elif filename.endswith('.map'):
+                media_type = 'application/json'
+            
+            print(f"🔧 Serving asset: {filename} with MIME type: {media_type}")
+            return FileResponse(file_path, media_type=media_type)
+    else:
+        print(f"❌ Assets directory not found: {assets_dir}")
+    
+    # Mount voice avatars normally (images should work fine)
+    voice_avatars_dir = os.path.join(PUBLIC_DIR, "voice_avatars")
+    if os.path.isdir(voice_avatars_dir):
+        print(f"✅ Mounting /voice_avatars from: {voice_avatars_dir}")
+        app.mount("/voice_avatars", StaticFiles(directory=voice_avatars_dir), name="voice_avatars")
+    else:
+        print(f"❌ Voice avatars directory not found: {voice_avatars_dir}")
+    
+    # Handle specific routes for SPA
+    @app.get("/settings")
+    async def serve_settings():
+        """Serve settings page"""
+        index_path = os.path.join(PUBLIC_DIR, "index.html")
+        return FileResponse(index_path, media_type='text/html')
+    
+    @app.get("/yappers")
+    async def serve_yappers():
+        """Serve yappers page"""
+        index_path = os.path.join(PUBLIC_DIR, "index.html")
+        return FileResponse(index_path, media_type='text/html')
+    
+    # Handle vite.svg specifically
+    @app.get("/vite.svg")
+    async def serve_vite_svg():
+        """Serve vite.svg placeholder"""
+        from fastapi.responses import Response
+        svg_content = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="m9 12 2 2 4-4"/>
+        </svg>'''
+        return Response(content=svg_content, media_type="image/svg+xml")
+    
+    # Handle root path
+    @app.get("/")
+    async def serve_root():
+        """Serve root page"""
+        index_path = os.path.join(PUBLIC_DIR, "index.html")
+        return FileResponse(index_path, media_type='text/html')
+else:
+    print(f"❌ Static files directory not found: {PUBLIC_DIR}")
 
 if __name__ == "__main__":
     import uvicorn

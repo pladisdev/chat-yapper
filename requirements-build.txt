@@ -1,0 +1,2 @@
+# Development and build requirements
+pyinstaller>=5.0

@@ -47,6 +47,7 @@ jspm_packages/
 /frontend/dist/
 /frontend/build/
 /frontend/public/*
+/backend/public/*
 
 # Environment variables and secrets
 .env
