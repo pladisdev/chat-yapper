@@ -84,8 +84,41 @@ The build process:
 
 | Setting | Description | Required |
 |---------|-------------|----------|
-| **Channel Name** | Your Twitch channel name (without #) | Yes |
-| **Enable Chat** | Toggle Twitch chat reading on/off | Yes |
+| **Channel Name** | Your Twitch channel name (without #) | ✅ Yes |
+| **Bot Username** | Twitch account that will read chat | ✅ Yes |
+| **Access Token** | OAuth token for the bot account | ✅ Yes |
+| **Enable Chat** | Toggle Twitch chat reading on/off | ✅ Yes |
+
+#### Getting Twitch Access Tokens
+
+**Option 1: Twitch Token Generator (Easiest)**
+1. Go to [Twitch Token Generator](https://twitchtokengenerator.com/)
+2. Click "Generate Token"  
+3. Login with your Twitch account (or bot account)
+4. Copy the **Access Token** (long string of letters/numbers)
+5. Paste into Chat Yapper settings
+
+**Option 2: Official Twitch Developer Console**
+1. Go to [Twitch Developer Console](https://dev.twitch.tv/console)
+2. Create a new application
+3. Use Client ID/Secret to generate tokens via OAuth flow
+
+#### Bot Account Options
+
+**Use Your Main Account (Simple)**
+- Bot Username: Your Twitch username
+- Access Token: Token generated with your main account
+- ✅ Quick setup, works immediately
+- ❌ Chat appears to come from your main account
+
+**Create Dedicated Bot Account (Recommended)**
+1. Create new Twitch account (e.g., `YourChannelBot`)
+2. Generate token for this new account
+3. Bot Username: The new bot account name
+4. ✅ Professional appearance, clean separation
+5. ❌ Requires extra setup
+
+> **Note**: Chat Yapper only *reads* chat messages - no special permissions needed!
 
 ### TTS Provider Configuration
 

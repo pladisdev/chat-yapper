@@ -125,6 +125,13 @@ def create_executable():
         print("fastapi still not found after installation")
         sys.exit(1)
     
+    try:
+        import twitchio
+        print(f"twitchio found: {twitchio.__version__}")
+    except ImportError:
+        print("twitchio still not found after installation")
+        sys.exit(1)
+    
     # Install PyInstaller
     run_command("pip install pyinstaller")
     
@@ -226,16 +233,31 @@ a = Analysis(
         'anyio',
         'sniffio',
         'h11',
+        'asyncio',
+        'concurrent',
+        'concurrent.futures',
         'websockets',
         'websockets.server',
         'websockets.client',
+        'websockets.protocol',
+        'websockets.exceptions',
         'edge_tts',
+        'edge_tts.communicate',
+        'edge_tts.exceptions',
         'aiohttp',
         'aiohttp.client',
         'aiohttp.web',
         'PIL',
         'PIL.Image',
         'twitchio',
+        'twitchio.ext',
+        'twitchio.ext.commands',
+        'twitchio.websocket',
+        'twitchio.client',
+        'twitchio.channel',
+        'twitchio.user',
+        'twitchio.message',
+        'twitchio.errors',
         'sqlmodel',
         'sqlalchemy',
         'sqlalchemy.engine',
@@ -243,9 +265,37 @@ a = Analysis(
         'sqlite3',
     ],
     hookspath=[],
-    hooksconfig={{}},
+    hooksconfig={{
+        # Configure matplotlib hook to avoid numpy issues
+        'matplotlib': {{
+            'backends': [],  # Don't include any matplotlib backends
+        }},
+    }},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        # Exclude matplotlib and related packages that cause numpy import issues
+        'matplotlib',
+        'matplotlib.pyplot',
+        'pandas',
+        'scipy',
+        'sklearn',
+        'jupyter',
+        'notebook', 
+        'IPython',
+        # Exclude other heavy packages we don't need
+        'tensorflow',
+        'torch',
+        'numpy.distutils',
+        'setuptools',
+        'pip',
+        'wheel',
+        'distutils',
+        # Exclude test and dev packages
+        'pytest',
+        'unittest',
+        'test',
+        'tests',
+    ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
@@ -284,12 +334,13 @@ exe = EXE(
     # Build with PyInstaller using Python module execution (most reliable)
     print("Running PyInstaller...")
     try:
-        # First try as a Python module (most reliable method)
-        run_command("python -m PyInstaller --clean ChatYapper.spec")
+        # First try as a Python module (most reliable method) with additional exclusions
+        cmd = "python -m PyInstaller --clean --exclude-module matplotlib --exclude-module numpy --exclude-module pandas ChatYapper.spec"
+        run_command(cmd)
     except:
         try:
-            # Try direct command
-            run_command("pyinstaller --clean ChatYapper.spec")
+            # Try direct command with exclusions
+            run_command("pyinstaller --clean --exclude-module matplotlib --exclude-module numpy --exclude-module pandas ChatYapper.spec")
         except:
             try:
                 # Try with pip show to find the scripts directory
@@ -305,7 +356,7 @@ exe = EXE(
                     sys.exit(1)
             except Exception as e:
                 print(f"Failed to run PyInstaller: {e}")
-                print("💡 Try running this manually: python -m PyInstaller --clean ChatYapper.spec")
+                print("Try running this manually: python -m PyInstaller --clean ChatYapper.spec")
                 sys.exit(1)
     
     # Check if the executable was created successfully

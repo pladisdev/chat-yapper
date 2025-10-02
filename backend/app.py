@@ -244,8 +244,41 @@ def save_settings(data: Dict[str, Any]):
             s.add(row)
             s.commit()
             logger.info(f"Settings saved to database: {DB_PATH}")
+            
+            # Restart Twitch bot if settings changed
+            asyncio.create_task(restart_twitch_if_needed(data))
         else:
             logger.error("Could not find settings row to update!")
+
+async def restart_twitch_if_needed(settings: Dict[str, Any]):
+    """Restart Twitch bot when settings change"""
+    global TwitchTask
+    try:
+        # Stop existing task if running
+        if TwitchTask and not TwitchTask.done():
+            logger.info("Stopping existing Twitch bot")
+            TwitchTask.cancel()
+            try:
+                await TwitchTask
+            except asyncio.CancelledError:
+                pass
+        
+        # Start new task if enabled
+        if run_twitch_bot and settings.get("twitch", {}).get("enabled"):
+            logger.info("Restarting Twitch bot with new settings")
+            twitch_config = settings["twitch"]
+            TwitchTask = asyncio.create_task(run_twitch_bot(
+                token=twitch_config["token"],
+                nick=twitch_config["nick"],
+                channel=twitch_config["channel"],
+                on_event=lambda e: asyncio.create_task(handle_event(e))
+            ))
+            logger.info("Twitch bot restarted")
+        else:
+            TwitchTask = None
+            logger.info("Twitch bot disabled")
+    except Exception as e:
+        logger.error(f"Failed to restart Twitch bot: {e}", exc_info=True)
 
 @app.get("/api/settings")
 async def api_get_settings():
@@ -426,7 +459,7 @@ async def api_upload_avatar(file: UploadFile, avatar_name: str = Form(...), avat
                 "file_path": avatar.file_path,
                 "file_size": avatar.file_size,
                 "avatar_type": avatar.avatar_type,
-                "avatar_group_id": avatar.avatar_group_id
+                "avatar_group_id": avatar_group_id
             }
         }
     
@@ -992,21 +1025,41 @@ async def api_reset_voice_stats():
 TwitchTask = None
 try:
     from twitch_listener import run_twitch_bot
-except Exception:
+    logger.info("Twitch listener imported successfully")
+except Exception as e:
+    logger.error(f"Failed to import twitch_listener: {e}")
+    print(f"❌ Failed to import Twitch listener: {e}")
     run_twitch_bot = None
 
 @app.on_event("startup")
 async def startup():
-    settings = get_settings()
-    if run_twitch_bot and settings.get("twitch", {}).get("enabled"):
-        global TwitchTask
-        t = asyncio.create_task(run_twitch_bot(
-            token=settings["twitch"]["token"],
-            nick=settings["twitch"]["nick"],
-            channel=settings["twitch"]["channel"],
-            on_event=lambda e: asyncio.create_task(handle_event(e))
-        ))
-        TwitchTask = t
+    logger.info("FastAPI startup event triggered")
+    try:
+        settings = get_settings()
+        logger.info(f"Settings loaded, Twitch enabled: {settings.get('twitch', {}).get('enabled')}")
+        
+        if run_twitch_bot and settings.get("twitch", {}).get("enabled"):
+            logger.info("Starting Twitch bot...")
+            twitch_config = settings["twitch"]
+            logger.info(f"Twitch config: channel={twitch_config.get('channel')}, nick={twitch_config.get('nick')}, token={'***' if twitch_config.get('token') else 'None'}")
+            
+            global TwitchTask
+            t = asyncio.create_task(run_twitch_bot(
+                token=twitch_config["token"],
+                nick=twitch_config["nick"], 
+                channel=twitch_config["channel"],
+                on_event=lambda e: asyncio.create_task(handle_event(e))
+            ))
+            TwitchTask = t
+            logger.info("Twitch bot task created")
+        else:
+            if not run_twitch_bot:
+                logger.warning("Twitch bot not available (import failed)")
+            else:
+                logger.info("Twitch integration disabled in settings")
+    except Exception as e:
+        logger.error(f"Startup event failed: {e}", exc_info=True)
+        print(f"❌ Startup failed: {e}")
 
 # Mount static files AFTER all API routes and WebSocket endpoints are defined
 # This ensures that /api/* and /ws routes take precedence over static file serving
@@ -1096,6 +1149,27 @@ if os.path.isdir(PUBLIC_DIR):
         return FileResponse(index_path, media_type='text/html')
 else:
     print(f"Static files directory not found: {PUBLIC_DIR}")
+
+@app.post("/api/twitch/test")
+async def api_test_twitch():
+    """Test Twitch connection manually"""
+    try:
+        settings = get_settings()
+        twitch_config = settings.get("twitch", {})
+        
+        if not twitch_config.get("enabled"):
+            return {"success": False, "error": "Twitch not enabled in settings"}
+        
+        if not all([twitch_config.get("token"), twitch_config.get("nick"), twitch_config.get("channel")]):
+            return {"success": False, "error": "Missing Twitch configuration (token, nick, or channel)"}
+        
+        # Force restart Twitch connection
+        await restart_twitch_if_needed(settings)
+        
+        return {"success": True, "message": "Twitch connection test initiated"}
+    except Exception as e:
+        logger.error(f"Twitch test failed: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
 
 if __name__ == "__main__":
     import uvicorn
