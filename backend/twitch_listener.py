@@ -14,13 +14,23 @@ class TwitchBot(commands.Bot):
         self.channel_name = channel
 
     async def event_ready(self):
-        print(f"Twitch bot connected successfully as {self.nick}")
-        print(f"Listening to channel: {self.channel_name}")
+        print(f"✅ Twitch bot connected successfully as {self.nick}")
+        print(f"📺 Listening to channel: {self.channel_name}")
         # Also log to help debug executable issues
         try:
             import logging
             logger = logging.getLogger('ChatYapper.Twitch')
             logger.info(f"Twitch bot ready as {self.nick}, listening to {self.channel_name}")
+        except:
+            pass
+            
+    async def event_error(self, error, data=None):
+        """Handle Twitch connection errors"""
+        print(f"❌ Twitch bot error: {error}")
+        try:
+            import logging
+            logger = logging.getLogger('ChatYapper.Twitch')
+            logger.error(f"Twitch bot error: {error}", exc_info=True)
         except:
             pass
 
@@ -39,7 +49,6 @@ class TwitchBot(commands.Bot):
         }
         self.on_event_cb(payload)
 
-    @commands.Cog.event()
     async def event_raw_usernotice(self, channel, tags):
         # Covers subs, raids, etc.
         msgid = tags.get('msg-id')
