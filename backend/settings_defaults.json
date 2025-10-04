@@ -26,5 +26,14 @@
 "channel": "",
 "token": "",
 "nick": ""
+},
+"messageFiltering": {
+"enabled": true,
+"minLength": 1,
+"maxLength": 500,
+"skipCommands": true,
+"skipEmotes": false,
+"removeUrls": true,
+"ignoredUsers": []
 }
 }

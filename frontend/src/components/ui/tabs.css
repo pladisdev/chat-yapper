@@ -1,0 +1,113 @@
+/* Minimal, modern styling for shadcn-like Tabs without Tailwind */
+:root {
+  /* Default to dark theme variables */
+  --ui-app-bg: radial-gradient(120% 120% at 50% 0%, #0b0f15 0%, #0b0f15 35%, #0a0e14 100%);
+  --ui-bg: #0b0f15;
+  --ui-elev-1: #111827;
+  --ui-elev-2: #0f172a;
+  --ui-text: #e5e7eb;
+  --ui-muted: #94a3b8;
+  --ui-accent: #7c3aed;
+  --ui-accent-2: #a78bfa;
+  --ui-border: rgba(148, 163, 184, 0.18);
+  --ui-ring: rgba(167, 139, 250, 0.45);
+}
+
+/* Ensure predictable sizing and avoid layout overflow */
+*, *::before, *::after { box-sizing: border-box; }
+
+/* Light theme overrides */
+:root[data-theme="light"] {
+  --ui-app-bg: radial-gradient(120% 120% at 50% 0%, #ffffff 0%, #f9fafb 45%, #f3f4f6 100%);
+  --ui-bg: #ffffff;
+  --ui-elev-1: #ffffff;
+  --ui-elev-2: #f9fafb;
+  --ui-text: #0f172a;
+  --ui-muted: #475569;
+  --ui-accent: #7c3aed;
+  --ui-accent-2: #6d28d9;
+  --ui-border: rgba(15, 23, 42, 0.12);
+  --ui-ring: rgba(124, 58, 237, 0.45);
+}
+
+/* Global canvas so the page fills the viewport nicely */
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--ui-app-bg);
+  color: var(--ui-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+}
+
+.ui-tabs-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px; /* a bit larger to scale for big viewports */
+  width: 100%;
+}
+
+.ui-tabs-list {
+  display: flex; /* full width list */
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+  background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+  padding: 8px;
+  border-radius: 12px;
+  border: 1px solid var(--ui-border);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.02) inset;
+}
+
+/* Light theme specific subtle surface */
+:root[data-theme="light"] .ui-tabs-list {
+  background: linear-gradient(180deg, rgba(15,23,42,0.03), rgba(15,23,42,0.02));
+}
+
+.ui-tabs-trigger {
+  -webkit-tap-highlight-color: transparent;
+  appearance: none;
+  background: transparent;
+  color: var(--ui-muted);
+  font: 500 14px/1.15 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  padding: 12px 16px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 160ms ease;
+}
+.ui-tabs-trigger:hover {
+  color: var(--ui-text);
+  background: rgba(255,255,255,0.05);
+}
+:root[data-theme="light"] .ui-tabs-trigger:hover {
+  background: rgba(15,23,42,0.05);
+}
+.ui-tabs-trigger[data-state="active"] {
+  color: white;
+  background: radial-gradient(120% 120% at 50% 0%, rgba(167,139,250,0.25), rgba(167,139,250,0.08) 45%, transparent 70%),
+             linear-gradient(180deg, rgba(124,58,237,0.24), rgba(124,58,237,0.12));
+  border-color: rgba(167, 139, 250, 0.28);
+  box-shadow: 0 0 0 2px var(--ui-ring);
+}
+:root[data-theme="light"] .ui-tabs-trigger[data-state="active"] {
+  color: #0f172a;
+  background: linear-gradient(180deg, rgba(124,58,237,0.14), rgba(124,58,237,0.08));
+}
+.ui-tabs-trigger:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ui-ring);
+}
+
+.ui-tabs-content {
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.015));
+  border: 1px solid var(--ui-border);
+  border-radius: 14px;
+  padding: 22px; /* slightly larger */
+  width: 100%;
+}
+:root[data-theme="light"] .ui-tabs-content {
+  background: linear-gradient(180deg, rgba(15,23,42,0.02), rgba(15,23,42,0.015));
+}

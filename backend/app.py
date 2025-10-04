@@ -756,6 +756,80 @@ async def api_get_webspeech_voices():
     ]
     return {"voices": webspeech_voices}
 
+# ---------- Message Filtering ----------
+
+def should_process_message(text: str, settings: Dict[str, Any], username: str = None) -> tuple[bool, str]:
+    """
+    Check if a message should be processed based on filtering settings.
+    Returns (should_process, filtered_text)
+    """
+    filtering = settings.get("messageFiltering", {})
+    
+    if not filtering.get("enabled", True):
+        return True, text
+    
+    # Skip ignored users
+    if username and filtering.get("ignoredUsers"):
+        ignored_users = filtering.get("ignoredUsers", [])
+        # Case-insensitive comparison
+        if any(username.lower() == ignored_user.lower() for ignored_user in ignored_users):
+            logger.info(f"Skipping message from ignored user: {username}")
+            return False, text
+    
+    # Skip commands if enabled (messages starting with ! or /)
+    if filtering.get("skipCommands", True):
+        stripped = text.strip()
+        if stripped.startswith('!') or stripped.startswith('/'):
+            logger.info(f"Skipping command message: {text[:50]}...")
+            return False, text
+    
+    # Skip emote-only messages if enabled
+    if filtering.get("skipEmotes", False):
+        # Simple check for common emote patterns
+        import re
+        # Remove common emote patterns and whitespace
+        clean_text = re.sub(r'\b\w+\d+\b', '', text)  # Remove emotes like PogChamp123
+        clean_text = re.sub(r'[^\w\s]', '', clean_text)  # Remove special characters
+        clean_text = clean_text.strip()
+        
+        if not clean_text:
+            logger.info(f"Skipping emote-only message: {text[:50]}...")
+            return False, text
+    
+    # Remove URLs if enabled
+    filtered_text = text
+    if filtering.get("removeUrls", True):
+        import re
+        # URL regex pattern that matches http/https, www, and common TLDs
+        url_pattern = r'https?://[^\s]+|www\.[^\s]+|[^\s]+\.(com|org|net|edu|gov|mil|int|co|io|ly|me|tv|fm|gg|tk|ml|ga|cf)[^\s]*'
+        original_length = len(filtered_text)
+        filtered_text = re.sub(url_pattern, '', filtered_text, flags=re.IGNORECASE)
+        filtered_text = re.sub(r'\s+', ' ', filtered_text).strip()  # Clean up extra spaces
+        
+        if len(filtered_text) != original_length:
+            logger.info(f"Removed URLs from message: '{text[:50]}...' -> '{filtered_text[:50]}...'")
+    
+    # Check minimum length (after URL removal)
+    min_length = filtering.get("minLength", 1)
+    if len(filtered_text) < min_length:
+        logger.info(f"Skipping message too short after filtering ({len(filtered_text)} < {min_length}): {filtered_text}")
+        return False, filtered_text
+    
+    # Truncate if over maximum length
+    max_length = filtering.get("maxLength", 500)
+    if len(filtered_text) > max_length:
+        truncated_text = filtered_text[:max_length].strip()
+        # Try to end at a word boundary
+        if ' ' in truncated_text:
+            last_space = truncated_text.rfind(' ')
+            if last_space > max_length * 0.8:  # Only use word boundary if it's not too short
+                truncated_text = truncated_text[:last_space]
+        
+        logger.info(f"Truncating message from {len(filtered_text)} to {len(truncated_text)} characters")
+        return True, truncated_text
+    
+    return True, filtered_text
+
 # ---------- TTS Pipeline ----------
 
 async def handle_test_voice_event(evt: Dict[str, Any]):
@@ -840,6 +914,21 @@ async def handle_test_voice_event(evt: Dict[str, Any]):
 async def handle_event(evt: Dict[str, Any]):
     print(f"🎵 Handling event: {evt}")
     settings = get_settings()
+    
+    # Apply message filtering
+    original_text = evt.get('text', '').strip()
+    username = evt.get('user', '')
+    should_process, filtered_text = should_process_message(original_text, settings, username)
+    
+    if not should_process:
+        print(f"Skipping message due to filtering: {original_text[:50]}... (user: {username})")
+        return
+    
+    # Update event with filtered text
+    if filtered_text != original_text:
+        evt['text'] = filtered_text
+        print(f"Message filtered: '{original_text[:50]}...' -> '{filtered_text[:50]}...'")
+    
     audio_format = settings.get("audioFormat", "mp3")
     special = settings.get("specialVoices", {})
 
@@ -951,13 +1040,24 @@ async def api_simulate(
 ):
     print(f"Simulate request: user={user}, text={text}, eventType={eventType}, testVoice={testVoice}")
     
+    # Apply message filtering for simulation as well
+    settings = get_settings()
+    should_process, filtered_text = should_process_message(text, settings, user)
+    
+    if not should_process:
+        print(f"Simulation message filtered out: {text} (user: {user})")
+        return {"ok": False, "message": "Message was filtered out", "reason": "Message filtering"}
+    
+    # Use filtered text
+    final_text = filtered_text
+    
     # If testVoice is provided, parse it and use it directly
     if testVoice:
         try:
             test_voice_data = json.loads(testVoice)
             await handle_test_voice_event({
                 "user": user, 
-                "text": text, 
+                "text": final_text, 
                 "eventType": eventType,
                 "testVoice": test_voice_data
             })
@@ -965,9 +1065,15 @@ async def api_simulate(
             print("Invalid testVoice JSON data")
             return {"ok": False, "error": "Invalid testVoice data"}
     else:
-        await handle_event({"user": user, "text": text, "eventType": eventType})
+        await handle_event({"user": user, "text": final_text, "eventType": eventType})
     
-    return {"ok": True}
+    result = {"ok": True}
+    if final_text != text:
+        result["filtered"] = True
+        result["original_text"] = text
+        result["filtered_text"] = final_text
+    
+    return result
 
 # ---------- Voice Distribution Stats ----------
 @app.get("/api/voice-stats")
@@ -1169,6 +1275,29 @@ async def api_test_twitch():
         return {"success": True, "message": "Twitch connection test initiated"}
     except Exception as e:
         logger.error(f"Twitch test failed: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/message-filter/test")
+async def api_test_message_filter(test_data: dict):
+    """Test message filtering with a sample message"""
+    try:
+        settings = get_settings()
+        test_message = test_data.get("message", "")
+        test_username = test_data.get("username", "")
+        
+        should_process, filtered_text = should_process_message(test_message, settings, test_username)
+        
+        return {
+            "success": True,
+            "original_message": test_message,
+            "test_username": test_username,
+            "filtered_message": filtered_text,
+            "should_process": should_process,
+            "was_modified": filtered_text != test_message,
+            "filtering_settings": settings.get("messageFiltering", {})
+        }
+    except Exception as e:
+        logger.error(f"Message filter test failed: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
 
 if __name__ == "__main__":

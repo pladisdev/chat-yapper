@@ -179,8 +179,15 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans p-6">
-      <div className="flex items-center gap-4 mb-6">
+      <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Chat Yapper Settings</h1>
+        <a 
+          href="/settings2" 
+          className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-lg font-medium transition-all shadow-lg flex items-center gap-2"
+        >
+          <span>✨</span>
+          <span>Try New Design</span>
+        </a>
       </div>
 
       <section className="mb-6">
@@ -781,6 +788,159 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
+        </div>
+      </section>
+
+      <section className="mb-6">
+        <div className="bg-neutral-900 rounded-2xl p-6 shadow">
+          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+            <span className="text-2xl">🔇</span>
+            Message Filtering
+          </h2>
+          <p className="text-sm opacity-70 mb-4">Control which messages get processed for TTS</p>
+          
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <input 
+                type="checkbox"
+                id="messageFilteringEnabled"
+                className="w-4 h-4 text-blue-600 bg-neutral-800 border-neutral-600 rounded focus:ring-blue-500 focus:ring-2"
+                checked={settings.messageFiltering?.enabled ?? true}
+                onChange={e => updateSettings({ 
+                  messageFiltering: { 
+                    ...settings.messageFiltering, 
+                    enabled: e.target.checked 
+                  } 
+                })}
+              />
+              <label htmlFor="messageFilteringEnabled" className="text-sm font-medium">
+                Enable Message Filtering
+              </label>
+            </div>
+
+            {settings.messageFiltering?.enabled !== false && (
+              <div className="space-y-4 pl-7">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium opacity-90">Minimum Length</label>
+                    <input 
+                      type="number" 
+                      min="1" 
+                      max="100"
+                      className="w-full bg-neutral-800 rounded-lg p-3 text-sm border border-neutral-700 focus:border-blue-500 focus:outline-none"
+                      value={settings.messageFiltering?.minLength ?? 1}
+                      onChange={e => updateSettings({ 
+                        messageFiltering: { 
+                          ...settings.messageFiltering, 
+                          minLength: parseInt(e.target.value) || 1 
+                        } 
+                      })}
+                    />
+                    <p className="text-xs opacity-60">Messages shorter than this will be skipped</p>
+                  </div>
+                  
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium opacity-90">Maximum Length</label>
+                    <input 
+                      type="number" 
+                      min="10" 
+                      max="2000"
+                      className="w-full bg-neutral-800 rounded-lg p-3 text-sm border border-neutral-700 focus:border-blue-500 focus:outline-none"
+                      value={settings.messageFiltering?.maxLength ?? 500}
+                      onChange={e => updateSettings({ 
+                        messageFiltering: { 
+                          ...settings.messageFiltering, 
+                          maxLength: parseInt(e.target.value) || 500 
+                        } 
+                      })}
+                    />
+                    <p className="text-xs opacity-60">Messages longer than this will be truncated</p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <input 
+                      type="checkbox"
+                      id="skipCommands"
+                      className="w-4 h-4 text-blue-600 bg-neutral-800 border-neutral-600 rounded focus:ring-blue-500 focus:ring-2"
+                      checked={settings.messageFiltering?.skipCommands ?? true}
+                      onChange={e => updateSettings({ 
+                        messageFiltering: { 
+                          ...settings.messageFiltering, 
+                          skipCommands: e.target.checked 
+                        } 
+                      })}
+                    />
+                    <label htmlFor="skipCommands" className="text-sm font-medium">
+                      Skip Commands
+                    </label>
+                  </div>
+                  <p className="text-xs opacity-60 pl-7">Skip messages that start with ! or / (bot commands)</p>
+
+                  <div className="flex items-center gap-3">
+                    <input 
+                      type="checkbox"
+                      id="skipEmotes"
+                      className="w-4 h-4 text-blue-600 bg-neutral-800 border-neutral-600 rounded focus:ring-blue-500 focus:ring-2"
+                      checked={settings.messageFiltering?.skipEmotes ?? false}
+                      onChange={e => updateSettings({ 
+                        messageFiltering: { 
+                          ...settings.messageFiltering, 
+                          skipEmotes: e.target.checked 
+                        } 
+                      })}
+                    />
+                    <label htmlFor="skipEmotes" className="text-sm font-medium">
+                      Skip Emote-Only Messages
+                    </label>
+                  </div>
+                  <p className="text-xs opacity-60 pl-7">Skip messages that contain only emotes (experimental)</p>
+
+                  <div className="flex items-center gap-3">
+                    <input 
+                      type="checkbox"
+                      id="removeUrls"
+                      className="w-4 h-4 text-blue-600 bg-neutral-800 border-neutral-600 rounded focus:ring-blue-500 focus:ring-2"
+                      checked={settings.messageFiltering?.removeUrls ?? true}
+                      onChange={e => updateSettings({ 
+                        messageFiltering: { 
+                          ...settings.messageFiltering, 
+                          removeUrls: e.target.checked 
+                        } 
+                      })}
+                    />
+                    <label htmlFor="removeUrls" className="text-sm font-medium">
+                      Remove URLs
+                    </label>
+                  </div>
+                  <p className="text-xs opacity-60 pl-7">Remove web links from messages before TTS processing</p>
+                </div>
+
+                <div className="space-y-3">
+                  <h4 className="text-sm font-medium">Ignored Users</h4>
+                  <IgnoredUsersManager 
+                    ignoredUsers={settings.messageFiltering?.ignoredUsers || []}
+                    onUpdate={(users) => updateSettings({ 
+                      messageFiltering: { 
+                        ...settings.messageFiltering, 
+                        ignoredUsers: users 
+                      } 
+                    })}
+                  />
+                  <p className="text-xs opacity-60">Messages from these users will be completely ignored</p>
+                </div>
+
+                <div className="p-4 bg-neutral-800 rounded-lg">
+                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                    <span>🧪</span>
+                    Test Message Filter
+                  </h4>
+                  <MessageFilterTester apiUrl={apiUrl} />
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </section>
 
@@ -1465,6 +1625,209 @@ function Simulator({ onSend }) {
           Send Test Message
         </button>
       </div>
+    </div>
+  )
+}
+
+function MessageFilterTester({ apiUrl }) {
+  const [testMessage, setTestMessage] = useState('')
+  const [testUsername, setTestUsername] = useState('')
+  const [testResult, setTestResult] = useState(null)
+  const [testing, setTesting] = useState(false)
+
+  const testFilter = async () => {
+    if (!testMessage.trim()) return
+    
+    setTesting(true)
+    try {
+      const response = await fetch(`${apiUrl}/api/message-filter/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          message: testMessage,
+          username: testUsername 
+        })
+      })
+      const result = await response.json()
+      setTestResult(result)
+    } catch (error) {
+      setTestResult({ success: false, error: error.message })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+        <input
+          type="text"
+          placeholder="Username (optional)"
+          className="bg-neutral-700 rounded-lg p-2 text-sm border border-neutral-600 focus:border-blue-500 focus:outline-none"
+          value={testUsername}
+          onChange={e => setTestUsername(e.target.value)}
+          onKeyPress={e => e.key === 'Enter' && testFilter()}
+        />
+        <input
+          type="text"
+          placeholder="Enter a test message to see if it passes filtering..."
+          className="md:col-span-2 bg-neutral-700 rounded-lg p-2 text-sm border border-neutral-600 focus:border-blue-500 focus:outline-none"
+          value={testMessage}
+          onChange={e => setTestMessage(e.target.value)}
+          onKeyPress={e => e.key === 'Enter' && testFilter()}
+        />
+      </div>
+      <button
+        onClick={testFilter}
+        disabled={testing || !testMessage.trim()}
+        className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-neutral-600 disabled:cursor-not-allowed transition-colors rounded-lg px-4 py-2 text-sm font-medium"
+      >
+        {testing ? 'Testing...' : 'Test Message Filter'}
+      </button>
+      
+      {testResult && (
+        <div className={`p-3 rounded-lg text-sm ${
+          testResult.success 
+            ? testResult.should_process 
+              ? 'bg-green-900/30 border border-green-700/50' 
+              : 'bg-yellow-900/30 border border-yellow-700/50'
+            : 'bg-red-900/30 border border-red-700/50'
+        }`}>
+          {testResult.success ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">
+                  {testResult.should_process ? '✅' : '⚠️'}
+                </span>
+                <span className="font-medium">
+                  {testResult.should_process ? 'Message will be processed' : 'Message will be filtered out'}
+                </span>
+              </div>
+              
+              {testResult.test_username && (
+                <div className="text-xs opacity-80">
+                  <strong>Username:</strong> {testResult.test_username}
+                </div>
+              )}
+              
+              {testResult.was_modified && (
+                <div className="space-y-1">
+                  <p className="text-xs opacity-80">Original: "{testResult.original_message}"</p>
+                  <p className="text-xs opacity-80">Filtered: "{testResult.filtered_message}"</p>
+                </div>
+              )}
+              
+              <div className="text-xs opacity-70">
+                <strong>Current settings:</strong>
+                <ul className="mt-1 space-y-0.5 ml-4">
+                  <li>• Enabled: {testResult.filtering_settings.enabled ? 'Yes' : 'No'}</li>
+                  <li>• Min length: {testResult.filtering_settings.minLength}</li>
+                  <li>• Max length: {testResult.filtering_settings.maxLength}</li>
+                  <li>• Skip commands: {testResult.filtering_settings.skipCommands ? 'Yes' : 'No'}</li>
+                  <li>• Skip emotes: {testResult.filtering_settings.skipEmotes ? 'Yes' : 'No'}</li>
+                  <li>• Remove URLs: {testResult.filtering_settings.removeUrls ? 'Yes' : 'No'}</li>
+                  <li>• Ignored users: {testResult.filtering_settings.ignoredUsers?.length || 0} users</li>
+                </ul>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-lg">❌</span>
+              <span>Error: {testResult.error}</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function IgnoredUsersManager({ ignoredUsers, onUpdate }) {
+  const [newUser, setNewUser] = useState('')
+
+  const addUser = () => {
+    const username = newUser.trim()
+    if (!username) return
+    
+    // Check if user is already in the list (case-insensitive)
+    if (ignoredUsers.some(user => user.toLowerCase() === username.toLowerCase())) {
+      alert('User is already in the ignored list')
+      return
+    }
+    
+    onUpdate([...ignoredUsers, username])
+    setNewUser('')
+  }
+
+  const removeUser = (userToRemove) => {
+    onUpdate(ignoredUsers.filter(user => user !== userToRemove))
+  }
+
+  const clearAllUsers = () => {
+    if (ignoredUsers.length === 0) return
+    if (confirm(`Are you sure you want to remove all ${ignoredUsers.length} ignored users?`)) {
+      onUpdate([])
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Add single user */}
+      <div className="flex gap-2">
+        <input
+          type="text"
+          placeholder="Enter username to ignore..."
+          className="flex-1 bg-neutral-700 rounded-lg p-2 text-sm border border-neutral-600 focus:border-blue-500 focus:outline-none"
+          value={newUser}
+          onChange={e => setNewUser(e.target.value)}
+          onKeyPress={e => e.key === 'Enter' && addUser()}
+        />
+        <button
+          onClick={addUser}
+          disabled={!newUser.trim()}
+          className="bg-blue-600 hover:bg-blue-700 disabled:bg-neutral-600 disabled:cursor-not-allowed transition-colors rounded-lg px-4 py-2 text-sm font-medium"
+        >
+          Add
+        </button>
+      </div>
+
+      {/* Current ignored users list */}
+      {ignoredUsers.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium opacity-90">
+              Ignored Users ({ignoredUsers.length})
+            </span>
+            <button
+              onClick={clearAllUsers}
+              className="text-xs text-red-400 hover:text-red-300 underline"
+            >
+              Clear All
+            </button>
+          </div>
+          
+          <div className="max-h-32 overflow-y-auto space-y-1">
+            {ignoredUsers.map((user, index) => (
+              <div key={index} className="flex items-center justify-between bg-neutral-800 rounded-lg p-2">
+                <span className="text-sm font-mono">{user}</span>
+                <button
+                  onClick={() => removeUser(user)}
+                  className="text-red-400 hover:text-red-300 text-xs font-medium"
+                  title={`Remove ${user}`}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {ignoredUsers.length === 0 && (
+        <p className="text-xs opacity-60 text-center py-2">
+          No users ignored yet
+        </p>
+      )}
     </div>
   )
 }
