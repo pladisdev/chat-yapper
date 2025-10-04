@@ -179,16 +179,7 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 font-sans p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Chat Yapper Settings</h1>
-        <a 
-          href="/settings2" 
-          className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-lg font-medium transition-all shadow-lg flex items-center gap-2"
-        >
-          <span>✨</span>
-          <span>Try New Design</span>
-        </a>
-      </div>
+      <h1 className="text-2xl font-bold mb-6">Chat Yapper Settings</h1>
 
       <section className="mb-6">
         <div className="bg-neutral-900 rounded-2xl p-6 shadow">
