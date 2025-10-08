@@ -131,8 +131,8 @@ class TestMonsterTTSProvider:
         provider = MonsterTTSProvider(api_key="test_key")
         job = TTSJob(text="test message", voice="test-voice")
         
-        # Mock audio data
-        mock_audio = b"fake audio data"
+        # Mock audio data (needs to be larger than minimum threshold)
+        mock_audio = b"fake audio data" * 100  # Make it larger to pass validation
         mock_json_response = b'{"url": "https://example.com/audio.mp3"}'
         
         # Mock the HTTP responses
@@ -173,19 +173,21 @@ class TestMonsterTTSProvider:
 class TestGetProvider:
     """Tests for get_provider factory function"""
     
-    def test_get_provider_edge(self):
+    @pytest.mark.asyncio
+    async def test_get_provider_edge(self):
         """Test getting Edge TTS provider"""
         config = {
             "provider": "edge",
             "voice_id": "en-US-GuyNeural"
         }
         
-        provider = get_provider(config)
+        provider = await get_provider(config)
         
         # Should return some provider (actual type depends on availability)
         assert provider is not None
     
-    def test_get_provider_elevenlabs(self):
+    @pytest.mark.asyncio
+    async def test_get_provider_elevenlabs(self):
         """Test getting ElevenLabs provider configuration"""
         config = {
             "provider": "elevenlabs",
@@ -193,12 +195,13 @@ class TestGetProvider:
             "voice_id": "test_voice"
         }
         
-        provider = get_provider(config)
+        provider = await get_provider(config)
         
         # Should return some provider
         assert provider is not None
     
-    def test_get_provider_openai(self):
+    @pytest.mark.asyncio
+    async def test_get_provider_openai(self):
         """Test getting OpenAI provider configuration"""
         config = {
             "provider": "openai",
@@ -206,12 +209,13 @@ class TestGetProvider:
             "voice_id": "alloy"
         }
         
-        provider = get_provider(config)
+        provider = await get_provider(config)
         
         # Should return some provider
         assert provider is not None
     
-    def test_get_provider_invalid(self):
+    @pytest.mark.asyncio
+    async def test_get_provider_invalid(self):
         """Test getting provider with invalid configuration"""
         config = {
             "provider": "invalid_provider"
@@ -219,7 +223,7 @@ class TestGetProvider:
         
         # Should handle gracefully or raise appropriate error
         try:
-            provider = get_provider(config)
+            provider = await get_provider(config)
             # If it doesn't raise, should at least return something
             assert provider is not None
         except (ValueError, KeyError, RuntimeError):

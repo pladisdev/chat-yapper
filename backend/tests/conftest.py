@@ -94,21 +94,15 @@ def test_avatar_image():
 
 
 @pytest.fixture
-def client(session):
+def client():
     """Create a FastAPI test client"""
     # Import here to avoid circular imports
-    from app import app, get_session
+    from app import app
     
-    # Override the get_session dependency
-    def get_session_override():
-        return session
-    
-    app.dependency_overrides[get_session] = get_session_override
-    
+    # Create test client without database override
+    # Tests will use the actual app database configuration
     with TestClient(app) as test_client:
         yield test_client
-    
-    app.dependency_overrides.clear()
 
 
 @pytest.fixture(autouse=True)

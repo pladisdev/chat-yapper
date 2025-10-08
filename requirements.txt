@@ -3,7 +3,7 @@ uvicorn[standard]
 sqlmodel
 pydantic
 pydantic-settings
-python-multipart
+python-multipart>=0.0.6
 edge-tts==7.2.3
 aiohttp>=3.8.0
 twitchio>=2.5.0
