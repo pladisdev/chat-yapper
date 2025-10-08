@@ -1140,27 +1140,7 @@ function MessageFiltering({ settings, updateSettings, apiUrl }) {
                 </Label>
               </div>
 
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="ignoreIfUserSpeaking"
-                  checked={settings.messageFiltering?.ignoreIfUserSpeaking ?? true}
-                  onCheckedChange={checked => updateSettings({ 
-                    messageFiltering: { 
-                      ...settings.messageFiltering, 
-                      ignoreIfUserSpeaking: checked 
-                    } 
-                  })}
-                />
-                <div className="space-y-1">
-                  <Label htmlFor="ignoreIfUserSpeaking" className="text-sm font-normal">
-                    Ignore new messages from a user who is already speaking
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    When enabled, if a user sends a new message while their previous message is still playing, 
-                    the new message will be ignored.
-                  </p>
-                </div>
-              </div>
+
             </div>
 
             <Separator />
@@ -1228,6 +1208,113 @@ function MessageFiltering({ settings, updateSettings, apiUrl }) {
                   </div>
                 </div>
               )}
+            </div>
+
+            <Separator />
+
+            <div className="space-y-6">
+              <h4 className="font-medium flex items-center gap-2 text-lg">
+                <span>⏱️</span>
+                Rate Limiting & Message Control
+              </h4>
+              
+              <div className="space-y-4">
+                <div className="p-4 rounded-lg border-2 border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30">
+                  <div className="flex items-center space-x-2 mb-3">
+                    <Checkbox
+                      id="enableSpamFilter"
+                      checked={settings.messageFiltering?.enableSpamFilter ?? true}
+                      onCheckedChange={checked => updateSettings({ 
+                        messageFiltering: { 
+                          ...settings.messageFiltering, 
+                          enableSpamFilter: checked 
+                        } 
+                      })}
+                    />
+                    <div className="space-y-1 flex-1">
+                      <Label htmlFor="enableSpamFilter" className="text-base font-medium">
+                        🚫 Rate Limit Users
+                      </Label>
+                      <p className="text-sm text-muted-foreground">
+                        Prevent users from sending too many messages in a short time period. New messages from rate-limited users are completely ignored.
+                      </p>
+                    </div>
+                  </div>
+
+                  {settings.messageFiltering?.enableSpamFilter !== false && (
+                    <div className="ml-6 space-y-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="spamThreshold">Max Messages</Label>
+                          <Input
+                            id="spamThreshold"
+                            type="number"
+                            min="2"
+                            max="20"
+                            value={settings.messageFiltering?.spamThreshold ?? 5}
+                            onChange={e => updateSettings({ 
+                              messageFiltering: { 
+                                ...settings.messageFiltering, 
+                                spamThreshold: parseInt(e.target.value) || 5 
+                              } 
+                            })}
+                          />
+                          <p className="text-xs text-muted-foreground">Maximum messages allowed</p>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="spamTimeWindow">Time Window (seconds)</Label>
+                          <Input
+                            id="spamTimeWindow"
+                            type="number"
+                            min="5"
+                            max="60"
+                            value={settings.messageFiltering?.spamTimeWindow ?? 10}
+                            onChange={e => updateSettings({ 
+                              messageFiltering: { 
+                                ...settings.messageFiltering, 
+                                spamTimeWindow: parseInt(e.target.value) || 10 
+                              } 
+                            })}
+                          />
+                          <p className="text-xs text-muted-foreground">Within this many seconds</p>
+                        </div>
+                      </div>
+                      <div className="text-sm bg-white dark:bg-gray-900 p-3 rounded border-l-4 border-blue-400">
+                        <strong>Example:</strong> 5 messages in 10 seconds = User is rate limited and their 6th+ messages are ignored
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-4 rounded-lg border-2 border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="ignoreIfUserSpeaking"
+                      checked={settings.messageFiltering?.ignoreIfUserSpeaking ?? true}
+                      onCheckedChange={checked => updateSettings({ 
+                        messageFiltering: { 
+                          ...settings.messageFiltering, 
+                          ignoreIfUserSpeaking: checked 
+                        } 
+                      })}
+                    />
+                    <div className="space-y-1">
+                      <Label htmlFor="ignoreIfUserSpeaking" className="text-base font-medium">
+                        🔊 Ignore New Messages from Speaking User
+                      </Label>
+                      <p className="text-sm text-muted-foreground">
+                        When a user's message is currently playing TTS, ignore any new messages from that same user until the current message finishes. This prevents interrupting or queueing multiple messages from one person.
+                      </p>
+                      <div className="text-sm bg-white dark:bg-gray-900 p-3 rounded border-l-4 border-green-400 mt-2">
+                        <strong>Example:</strong> User sends "Hello" → TTS starts playing → User sends "How are you?" → Second message is ignored until "Hello" finishes playing
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+
             </div>
 
             <Separator />

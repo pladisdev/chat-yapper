@@ -41,6 +41,10 @@ class MessageHistory:
             if not timestamps:
                 del self.user_timestamps[username]
     
+    def _normalize_message(self, text: str) -> str:
+        """
+        Normalize message for comparison.
+    
     def add_message(self, username: str, text: str) -> None:
         """
         Add a message timestamp for rate limiting tracking.

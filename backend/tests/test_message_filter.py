@@ -60,6 +60,7 @@ class TestMessageHistory:
 
 @pytest.mark.unit
 @pytest.mark.filtering
+@pytest.mark.skip(reason="Duplicate detection feature removed for simplification")
 class TestDuplicateDetection:
     """Tests for duplicate message detection"""
     
