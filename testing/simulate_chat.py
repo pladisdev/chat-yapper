@@ -89,30 +89,43 @@ HIGHLIGHT_MESSAGES = [
 ]
 
 class ChatSimulator:
-    def __init__(self):
+    def __init__(self, single_user: str = None):
         self.session = None
         self.chatters = []
         self.active_chatters = set()
         self.message_history = []
+        self.single_user = single_user  # If set, all messages come from this user
         
     async def initialize(self):
         """Initialize the simulator"""
         self.session = aiohttp.ClientSession()
         
-        # Create chatter profiles
-        for i in range(NUM_CHATTERS):
+        if self.single_user:
+            # Single user mode - create one chatter profile
             chatter = {
-                "name": random.choice(CHATTER_NAMES) + str(random.randint(1, 999)),
-                "activity_level": random.choice(["high", "medium", "low", "lurker"]),
-                "personality": random.choice(["chatty", "supportive", "funny", "technical", "casual"]),
+                "name": self.single_user,
+                "activity_level": "high",  # Single user should be active
+                "personality": "chatty",   # And chatty to generate variety
                 "last_message_time": 0,
                 "message_count": 0
             }
             self.chatters.append(chatter)
-        
-        print(f"🎭 Initialized {len(self.chatters)} virtual chatters")
-        for chatter in self.chatters:
-            print(f"   {chatter['name']}: {chatter['activity_level']} activity, {chatter['personality']} personality")
+            print(f"🎯 Single user mode: All messages will be from '{self.single_user}'")
+        else:
+            # Multi-user mode - create multiple chatter profiles
+            for i in range(NUM_CHATTERS):
+                chatter = {
+                    "name": random.choice(CHATTER_NAMES) + str(random.randint(1, 999)),
+                    "activity_level": random.choice(["high", "medium", "low", "lurker"]),
+                    "personality": random.choice(["chatty", "supportive", "funny", "technical", "casual"]),
+                    "last_message_time": 0,
+                    "message_count": 0
+                }
+                self.chatters.append(chatter)
+            
+            print(f"🎭 Initialized {len(self.chatters)} virtual chatters")
+            for chatter in self.chatters:
+                print(f"   {chatter['name']}: {chatter['activity_level']} activity, {chatter['personality']} personality")
     
     async def send_message(self, username: str, message: str, event_type: str = "chat"):
         """Send a message to the Chat Yapper API"""
@@ -218,7 +231,8 @@ class ChatSimulator:
         }
         
         message = random.choice(messages_map[event_type])
-        username = random.choice(self.chatters)["name"]
+        # Use single user if specified, otherwise pick random chatter
+        username = self.single_user if self.single_user else random.choice(self.chatters)["name"]
         
         print(f"\n✨ Special Event: {event_type.upper()}")
         await self.send_message(username, message, event_type)
@@ -305,7 +319,9 @@ class ChatSimulator:
     
     def print_statistics(self):
         """Print simulation statistics"""
+        mode_text = f"Single user '{self.single_user}'" if self.single_user else f"{len(self.chatters)} random chatters"
         print(f"\n📊 Simulation Statistics:")
+        print(f"   Mode: {mode_text}")
         print(f"   Total messages sent: {len(self.message_history)}")
         print(f"   Duration: {SIMULATION_DURATION} seconds")
         print(f"   Average messages per second: {len(self.message_history) / SIMULATION_DURATION:.2f}")
@@ -326,7 +342,10 @@ class ChatSimulator:
         print(f"\n👥 Chatter Activity:")
         for chatter in sorted(self.chatters, key=lambda c: c["message_count"], reverse=True):
             if chatter["message_count"] > 0:
-                print(f"   {chatter['name']}: {chatter['message_count']} messages ({chatter['activity_level']} - {chatter['personality']})")
+                if self.single_user:
+                    print(f"   {chatter['name']}: {chatter['message_count']} messages (single user mode)")
+                else:
+                    print(f"   {chatter['name']}: {chatter['message_count']} messages ({chatter['activity_level']} - {chatter['personality']})")
     
     async def cleanup(self):
         """Clean up resources"""
@@ -335,7 +354,19 @@ class ChatSimulator:
 
 async def main():
     """Main function to run the chat simulator"""
-    simulator = ChatSimulator()
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Twitch Chat Simulator for Chat Yapper")
+    parser.add_argument("--single-user", type=str, help="Send all messages from a single user instead of multiple chatters")
+    parser.add_argument("--duration", type=int, default=SIMULATION_DURATION, help=f"Simulation duration in seconds (default: {SIMULATION_DURATION})")
+    
+    args = parser.parse_args()
+    
+    # Update global duration if specified
+    global SIMULATION_DURATION
+    SIMULATION_DURATION = args.duration
+    
+    simulator = ChatSimulator(single_user=args.single_user)
     
     try:
         await simulator.initialize()
@@ -350,6 +381,10 @@ async def main():
 if __name__ == "__main__":
     print("🎮 Twitch Chat Simulator for Chat Yapper")
     print("Make sure your Chat Yapper backend is running on http://localhost:8000")
+    print("Usage:")
+    print("  python simulate_chat.py                    # Multiple random chatters")
+    print("  python simulate_chat.py --single-user TestUser  # All messages from 'TestUser'")
+    print("  python simulate_chat.py --duration 120     # Run for 2 minutes")
     print("Press Ctrl+C to stop the simulation early\n")
     
     try:

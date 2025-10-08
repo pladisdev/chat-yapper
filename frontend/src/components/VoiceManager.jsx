@@ -2,12 +2,14 @@ import React, { useEffect, useState } from 'react'
 
 export default function VoiceManager({ managedAvatars, apiUrl }) {
   const [voices, setVoices] = useState([])
-  const [availableVoices, setAvailableVoices] = useState({ monstertts: [], google: [], polly: [], edge: [], webspeech: [] })
+  const [availableVoices, setAvailableVoices] = useState({ monstertts: [], google: [], polly: [], edge: [] })
   const [showAddForm, setShowAddForm] = useState(false)
   const [selectedProvider, setSelectedProvider] = useState('edge')
   const [selectedVoice, setSelectedVoice] = useState('')
   const [loadingMonsterVoices, setLoadingMonsterVoices] = useState(false)
   const [monsterError, setMonsterError] = useState('')
+  const [googleError, setGoogleError] = useState('')
+  const [pollyError, setPollyError] = useState('')
 
   // Load voices on mount
   useEffect(() => {
@@ -54,55 +56,37 @@ export default function VoiceManager({ managedAvatars, apiUrl }) {
       // Google TTS voices
       let googleData = { voices: [] }
       const googleApiKey = settingsData?.tts?.google?.apiKey
+      setGoogleError('')  // Clear previous errors
+      
       if (googleApiKey) {
         try {
           const googleResponse = await fetch(`${apiUrl}/api/available-voices/google?api_key=${encodeURIComponent(googleApiKey)}`)
           googleData = await googleResponse.json()
+
+          console.log(googleData);
           
-          // If there's an error, fallback to common Google voices
+          
+          // If there's an error, don't show any voices - user needs to fix the API key
           if (googleData.error) {
-            googleData = {
-              voices: [
-                {"voice_id": "en-US-Neural2-A", "name": "Neural2-A - Female US"},
-                {"voice_id": "en-US-Neural2-C", "name": "Neural2-C - Female US"},
-                {"voice_id": "en-US-Neural2-D", "name": "Neural2-D - Male US"},
-                {"voice_id": "en-US-Neural2-F", "name": "Neural2-F - Female US"},
-                {"voice_id": "en-US-Standard-A", "name": "Standard-A - Female US"},
-                {"voice_id": "en-US-Standard-B", "name": "Standard-B - Male US"},
-                {"voice_id": "en-US-Standard-C", "name": "Standard-C - Female US"},
-                {"voice_id": "en-US-Standard-D", "name": "Standard-D - Male US"},
-                {"voice_id": "en-US-Wavenet-A", "name": "Wavenet-A - Female US"},
-                {"voice_id": "en-US-Wavenet-B", "name": "Wavenet-B - Male US"},
-                {"voice_id": "en-US-Wavenet-C", "name": "Wavenet-C - Female US"},
-                {"voice_id": "en-US-Wavenet-D", "name": "Wavenet-D - Male US"}
-              ]
-            }
+            console.error('Failed to fetch Google voices:', googleData.error)
+            setGoogleError(googleData.error)
+            googleData = { voices: [] }
           }
         } catch (error) {
-          console.error('Failed to load Google voices:', error)
-          // Fallback to common voices on network error too
-          googleData = {
-            voices: [
-              {"voice_id": "en-US-Neural2-F", "name": "Neural2-F - Female US"},
-              {"voice_id": "en-US-Standard-A", "name": "Standard-A - Female US"},
-              {"voice_id": "en-US-Wavenet-A", "name": "Wavenet-A - Female US"}
-            ]
-          }
+          console.error('Failed to fetch Google voices:', error)
+          setGoogleError(`Failed to connect: ${error.message}`)
+          googleData = { voices: [] }
         }
       } else {
-        // Show sample voices even without API key so user knows the option exists
-        googleData = {
-          voices: [
-            {"voice_id": "en-US-Neural2-F", "name": "Neural2-F - Female US (Configure API key to see all)"},
-            {"voice_id": "en-US-Standard-A", "name": "Standard-A - Female US (Configure API key to see all)"},
-            {"voice_id": "en-US-Wavenet-A", "name": "Wavenet-A - Female US (Configure API key to see all)"}
-          ]
-        }
+        setGoogleError('No API key configured')
       }
+      // If no API key or error, don't show any voices
       
       // Amazon Polly voices
       let pollyData = { voices: [] }
       const pollyConfig = settingsData?.tts?.polly
+      setPollyError('')  // Clear previous errors
+      
       if (pollyConfig?.accessKey && pollyConfig?.secretKey) {
         try {
           const pollyResponse = await fetch(`${apiUrl}/api/available-voices/polly`, {
@@ -115,9 +99,21 @@ export default function VoiceManager({ managedAvatars, apiUrl }) {
             })
           })
           pollyData = await pollyResponse.json()
+          
+          if (pollyData.error) {
+            console.error('Failed to fetch Polly voices:', pollyData.error)
+            setPollyError(pollyData.error)
+            pollyData = { voices: [] }
+          }
         } catch (error) {
           console.error('Failed to load Polly voices:', error)
+          setPollyError(`Failed to connect: ${error.message}`)
+          pollyData = { voices: [] }
         }
+      } else {
+        setPollyError('AWS credentials not configured')
+        // No voices until credentials are configured
+        pollyData = { voices: [] }
       }
       
       // Edge TTS voices (always available, no API key needed)
@@ -138,31 +134,24 @@ export default function VoiceManager({ managedAvatars, apiUrl }) {
           ]
         }
       }
+    
       
-      // Web Speech API voices (always available, browser-based)
-      let webSpeechData = { voices: [] }
-      try {
-        const webSpeechResponse = await fetch(`${apiUrl}/api/available-voices/webspeech`)
-        webSpeechData = await webSpeechResponse.json()
-      } catch (error) {
-        console.error('Failed to load Web Speech voices:', error)
-        // Fallback to common languages
-        webSpeechData = {
-          voices: [
-            {"voice_id": "en-US", "name": "Default US English"},
-            {"voice_id": "en-GB", "name": "Default UK English"},
-            {"voice_id": "en-CA", "name": "Default Canadian English"}
-          ]
-        }
-      }
-      
-      setAvailableVoices({
+      const newAvailableVoices = {
         monstertts: monsterData.voices || [],
         google: googleData.voices || [],
         polly: pollyData.voices || [],
         edge: edgeData.voices || [],
-        webspeech: webSpeechData.voices || []
+      }
+      
+      console.log('📊 Available voices loaded:', {
+        monstertts: newAvailableVoices.monstertts.length,
+        google: newAvailableVoices.google.length,
+        polly: newAvailableVoices.polly.length,
+        edge: newAvailableVoices.edge.length
       })
+      console.log('🎤 Polly voices:', newAvailableVoices.polly)
+      
+      setAvailableVoices(newAvailableVoices)
     } catch (error) {
       console.error('Failed to load available voices:', error)
     }
@@ -278,7 +267,7 @@ export default function VoiceManager({ managedAvatars, apiUrl }) {
             <div className="space-y-2">
               <label className="text-sm font-semibold text-purple-300">Provider</label>
               <select
-                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500 [&>option]:bg-gray-800 [&>option]:text-white"
                 value={selectedProvider}
                 onChange={e => {
                   setSelectedProvider(e.target.value)
@@ -286,10 +275,9 @@ export default function VoiceManager({ managedAvatars, apiUrl }) {
                 }}
               >
                 <option value="edge">Edge TTS (Free)</option>
-                <option value="webspeech">Web Speech API (Free)</option>
                 <option value="monstertts">MonsterTTS (Rated)</option>
                 <option value="google">Google Cloud TTS (Rated)</option>
-                <option value="polly" disabled>Amazon Polly (Temporarily Disabled)</option>
+                <option value="polly">Amazon Polly (Rated)</option>
               </select>
             </div>
             
@@ -307,9 +295,23 @@ export default function VoiceManager({ managedAvatars, apiUrl }) {
                     Please configure your MonsterTTS API key in the settings.
                   </div>
                 </div>
+              ) : selectedProvider === 'google' && googleError ? (
+                <div className="w-full bg-red-900/20 border border-red-500/30 rounded-xl px-4 py-3">
+                  <div className="text-red-300 text-sm">{googleError}</div>
+                  <div className="text-xs text-red-400 mt-1">
+                    Please configure your Google Cloud API key in the TTS settings.
+                  </div>
+                </div>
+              ) : selectedProvider === 'polly' && pollyError ? (
+                <div className="w-full bg-red-900/20 border border-red-500/30 rounded-xl px-4 py-3">
+                  <div className="text-red-300 text-sm">{pollyError}</div>
+                  <div className="text-xs text-red-400 mt-1">
+                    Please configure your AWS Access Key and Secret Key in the TTS settings.
+                  </div>
+                </div>
               ) : (
                 <select
-                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500 [&>option]:bg-gray-800 [&>option]:text-white"
                   value={selectedVoice}
                   onChange={e => setSelectedVoice(e.target.value)}
                 >

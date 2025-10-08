@@ -3,10 +3,12 @@
 Quick Chat Simulator - A simpler version for quick testing
 
 Usage:
-  python quick_sim.py                    # Default 30 second simulation
-  python quick_sim.py --duration 60      # 60 second simulation
-  python quick_sim.py --messages 50      # Send exactly 50 messages
+  python quick_sim.py                    # Default 30 second simulation with random users
+  python quick_sim.py --duration 60      # 60 second simulation with random users
+  python quick_sim.py --messages 50      # Send exactly 50 messages with random users
   python quick_sim.py --rapid            # Rapid fire mode (lots of messages quickly)
+  python quick_sim.py --single-user TestUser  # All messages from single user "TestUser"
+  python quick_sim.py --single-user TestUser --messages 20  # 20 messages from "TestUser"
 """
 
 import asyncio
@@ -59,9 +61,12 @@ async def send_message(session: aiohttp.ClientSession, username: str, message: s
         print(f"❌ Error: {e}")
         return False
 
-async def run_time_based_simulation(duration: int):
+async def run_time_based_simulation(duration: int, single_user: str = None):
     """Run simulation for a specific duration"""
-    print(f"🚀 Running {duration}-second simulation...")
+    if single_user:
+        print(f"🚀 Running {duration}-second simulation with single user '{single_user}'...")
+    else:
+        print(f"🚀 Running {duration}-second simulation with randomized users...")
     
     async with aiohttp.ClientSession() as session:
         start_time = time.time()
@@ -72,8 +77,8 @@ async def run_time_based_simulation(duration: int):
             delay = random.uniform(0.5, 3.0)  # 0.5 to 3 seconds between messages
             await asyncio.sleep(delay)
             
-            # Pick random user and message
-            username = random.choice(USERNAMES)
+            # Pick user and message (single user or random)
+            username = single_user if single_user else random.choice(USERNAMES)
             message = random.choice(QUICK_MESSAGES)
             
             # Occasionally send special events (10% chance)
@@ -96,20 +101,24 @@ async def run_time_based_simulation(duration: int):
             if success:
                 message_count += 1
         
-        print(f"✅ Sent {message_count} messages in {duration} seconds")
+        user_info = f" from user '{single_user}'" if single_user else " from random users"
+        print(f"✅ Sent {message_count} messages{user_info} in {duration} seconds")
         print(f"📊 Average: {message_count / duration:.2f} messages per second")
 
-async def run_message_count_simulation(target_messages: int):
+async def run_message_count_simulation(target_messages: int, single_user: str = None):
     """Run simulation until we send a specific number of messages"""
-    print(f"🚀 Sending exactly {target_messages} messages...")
+    if single_user:
+        print(f"🚀 Sending exactly {target_messages} messages from user '{single_user}'...")
+    else:
+        print(f"🚀 Sending exactly {target_messages} messages from randomized users...")
     
     async with aiohttp.ClientSession() as session:
         start_time = time.time()
         sent_count = 0
         
         while sent_count < target_messages:
-            # Pick random user and message
-            username = random.choice(USERNAMES)
+            # Pick user and message (single user or random)
+            username = single_user if single_user else random.choice(USERNAMES)
             message = random.choice(QUICK_MESSAGES)
             
             # Occasionally send special events (15% chance for more variety)
@@ -127,12 +136,16 @@ async def run_message_count_simulation(target_messages: int):
                 await asyncio.sleep(delay)
         
         elapsed = time.time() - start_time
-        print(f"✅ Sent {sent_count} messages in {elapsed:.1f} seconds")
+        user_info = f" from user '{single_user}'" if single_user else " from random users"
+        print(f"✅ Sent {sent_count} messages{user_info} in {elapsed:.1f} seconds")
         print(f"📊 Average: {sent_count / elapsed:.2f} messages per second")
 
-async def run_rapid_simulation():
+async def run_rapid_simulation(single_user: str = None):
     """Run rapid-fire simulation for testing high load"""
-    print("🚀 Running RAPID simulation (high message frequency)...")
+    if single_user:
+        print(f"🚀 Running RAPID simulation (high message frequency) with single user '{single_user}'...")
+    else:
+        print("🚀 Running RAPID simulation (high message frequency) with randomized users...")
     
     async with aiohttp.ClientSession() as session:
         start_time = time.time()
@@ -143,7 +156,7 @@ async def run_rapid_simulation():
             # Send multiple messages in quick succession
             burst_size = random.randint(2, 5)
             for _ in range(burst_size):
-                username = random.choice(USERNAMES)
+                username = single_user if single_user else random.choice(USERNAMES)
                 message = random.choice(QUICK_MESSAGES)
                 
                 success = await send_message(session, username, message, "chat")
@@ -156,8 +169,9 @@ async def run_rapid_simulation():
             # Longer pause between bursts
             await asyncio.sleep(random.uniform(1, 4))
         
+        user_info = f" from user '{single_user}'" if single_user else " from random users"
         print(f"✅ Rapid simulation complete!")
-        print(f"📊 Sent {message_count} messages in {duration} seconds")
+        print(f"📊 Sent {message_count} messages{user_info} in {duration} seconds")
         print(f"📊 Average: {message_count / duration:.2f} messages per second")
 
 async def main():
@@ -165,19 +179,26 @@ async def main():
     parser.add_argument("--duration", type=int, default=30, help="Simulation duration in seconds (default: 30)")
     parser.add_argument("--messages", type=int, help="Send exactly this many messages (overrides duration)")
     parser.add_argument("--rapid", action="store_true", help="Rapid fire mode for high load testing")
+    parser.add_argument("--single-user", type=str, help="Send all messages from a single user instead of randomizing names")
     
     args = parser.parse_args()
     
     print("🎮 Quick Chat Simulator for Chat Yapper")
-    print("Make sure your Chat Yapper backend is running on http://localhost:8000\n")
+    print("Make sure your Chat Yapper backend is running on http://localhost:8000")
+    
+    if args.single_user:
+        print(f"🎯 Single user mode: All messages will be from '{args.single_user}'")
+    else:
+        print("🎲 Random user mode: Each message will be from a different random user")
+    print()
     
     try:
         if args.rapid:
-            await run_rapid_simulation()
+            await run_rapid_simulation(args.single_user)
         elif args.messages:
-            await run_message_count_simulation(args.messages)
+            await run_message_count_simulation(args.messages, args.single_user)
         else:
-            await run_time_based_simulation(args.duration)
+            await run_time_based_simulation(args.duration, args.single_user)
     except KeyboardInterrupt:
         print("\n⏹️ Simulation stopped by user")
     except Exception as e:

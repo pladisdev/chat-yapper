@@ -5,6 +5,7 @@ import logging
 import os
 import random
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List
@@ -17,6 +18,12 @@ from sqlmodel import SQLModel, Session, select, create_engine
 
 from models import Setting, Voice, AvatarImage
 from tts import get_provider, get_hybrid_provider, TTSJob
+
+# TTS Cancellation System:
+# - Tracks active TTS jobs by username in active_tts_jobs dict
+# - Detects Twitch ban/timeout events via CLEARCHAT IRC messages
+# - Cancels ongoing TTS synthesis and removes from queue for banned/timed-out users
+# - Provides API endpoints for manual testing and management
 
 # Set up backend logging
 def setup_backend_logging():
@@ -65,6 +72,27 @@ def log_important(message):
 voice_usage_stats = defaultdict(int)
 voice_selection_count = 0
 
+# TTS job tracking for cancellation support - supports parallel audio with per-user queuing
+# Multiple users can have TTS playing simultaneously, only stopped by:
+# 1. Global TTS stop button (stops all)
+# 2. Individual user ban/timeout (stops only that user)
+# 3. New TTS from same user is ignored if their previous TTS is still playing
+# Track active TTS tasks for cancellation only
+# username -> {"task": asyncio.Task, "message": str}
+active_tts_jobs = {}
+
+# Global TTS control
+tts_enabled = True  # Global flag to control TTS processing
+
+def get_max_avatar_positions():
+    """Calculate the maximum number of avatar positions from settings"""
+    settings = get_settings()
+    avatar_rows = settings.get("avatarRows", 2)
+    avatar_row_config = settings.get("avatarRowConfig", [6, 6])
+    # Sum up avatars across all configured rows
+    max_positions = sum(avatar_row_config[:avatar_rows])
+    return max_positions
+
 # Create a persistent directory for user-uploaded avatars
 # This will be in the user's AppData/Local/ChatYapper directory
 import tempfile
@@ -86,6 +114,24 @@ USER_DATA_DIR = get_user_data_dir()
 DB_PATH = os.environ.get("DB_PATH", os.path.join(USER_DATA_DIR, "app.db"))
 logger.info(f"Database path: {DB_PATH}")
 logger.info(f"User data directory: {USER_DATA_DIR}")
+
+# Run database migrations BEFORE creating engine and tables
+# This ensures old databases are updated to the new schema
+try:
+    from db_migration import run_all_migrations, get_database_info
+    logger.info("Running database migration check...")
+    run_all_migrations(DB_PATH)
+    
+    # Log database info for debugging
+    db_info = get_database_info(DB_PATH)
+    if db_info.get("exists"):
+        logger.info(f"Database tables: {list(db_info.get('tables', {}).keys())}")
+    
+except Exception as e:
+    logger.error(f"Database migration failed: {e}")
+    log_important(f"Database migration error: {e}")
+    # Continue anyway - SQLModel.metadata.create_all will create missing tables
+
 engine = create_engine(f"sqlite:///{DB_PATH}", echo=False)
 SQLModel.metadata.create_all(engine)
 
@@ -231,6 +277,12 @@ def get_settings() -> Dict[str, Any]:
         if row:
             settings = json.loads(row.value_json)
             logger.info(f"Loaded settings from database: {DB_PATH}")
+            
+            # Initialize global TTS state from settings
+            global tts_enabled
+            tts_control = settings.get("ttsControl", {})
+            tts_enabled = tts_control.get("enabled", True)
+            
             return settings
         else:
             logger.error("No settings found in database!")
@@ -245,8 +297,25 @@ def save_settings(data: Dict[str, Any]):
             s.commit()
             logger.info(f"Settings saved to database: {DB_PATH}")
             
+            # Update global TTS state from settings
+            global tts_enabled
+            tts_control = data.get("ttsControl", {})
+            new_tts_enabled = tts_control.get("enabled", True)
+            
+            if new_tts_enabled != tts_enabled:
+                if new_tts_enabled:
+                    resume_all_tts()
+                else:
+                    stop_all_tts()
+            
             # Restart Twitch bot if settings changed
             asyncio.create_task(restart_twitch_if_needed(data))
+            
+            # Broadcast refresh message to update Yappers page with new settings
+            asyncio.create_task(hub.broadcast({
+                "type": "settings_updated",
+                "message": "Settings updated"
+            }))
         else:
             logger.error("Could not find settings row to update!")
 
@@ -267,11 +336,21 @@ async def restart_twitch_if_needed(settings: Dict[str, Any]):
         if run_twitch_bot and settings.get("twitch", {}).get("enabled"):
             logger.info("Restarting Twitch bot with new settings")
             twitch_config = settings["twitch"]
+            
+            # Event router to handle different event types
+            async def route_twitch_event(e):
+                event_type = e.get("type", "")
+                if event_type == "moderation":
+                    await handle_moderation_event(e)
+                else:
+                    # Default to chat event handler
+                    await handle_event(e)
+            
             TwitchTask = asyncio.create_task(run_twitch_bot(
                 token=twitch_config["token"],
                 nick=twitch_config["nick"],
                 channel=twitch_config["channel"],
-                on_event=lambda e: asyncio.create_task(handle_event(e))
+                on_event=lambda e: asyncio.create_task(route_twitch_event(e))
             ))
             logger.info("Twitch bot restarted")
         else:
@@ -450,6 +529,12 @@ async def api_upload_avatar(file: UploadFile, avatar_name: str = Form(...), avat
                 session.commit()
                 session.refresh(avatar)
         
+        # Broadcast refresh message to all connected clients
+        asyncio.create_task(hub.broadcast({
+            "type": "avatar_updated",
+            "message": f"Avatar '{avatar.name}' uploaded"
+        }))
+        
         return {
             "success": True, 
             "avatar": {
@@ -482,7 +567,9 @@ async def api_get_managed_avatars():
                         "file_size": avatar.file_size,
                         "upload_date": avatar.upload_date,
                         "avatar_type": avatar.avatar_type,
-                        "avatar_group_id": avatar.avatar_group_id
+                        "avatar_group_id": avatar.avatar_group_id,
+                        "voice_id": avatar.voice_id,
+                        "spawn_position": avatar.spawn_position
                     }
                     for avatar in avatars
                 ]
@@ -508,6 +595,12 @@ async def api_delete_avatar(avatar_id: int):
             # Delete from database
             session.delete(avatar)
             session.commit()
+            
+            # Broadcast refresh message to all connected clients
+            asyncio.create_task(hub.broadcast({
+                "type": "avatar_updated",
+                "message": "Avatar deleted"
+            }))
             
             return {"success": True}
     
@@ -545,7 +638,58 @@ async def api_delete_avatar_group(group_id: str):
                     session.delete(avatar)
             
             session.commit()
+            
+            # Broadcast refresh message to all connected clients
+            asyncio.create_task(hub.broadcast({
+                "type": "avatar_updated",
+                "message": "Avatar group deleted"
+            }))
+            
             return {"success": True, "deleted_count": len([a for a in avatars if a])}
+    
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+
+@app.put("/api/avatars/group/{group_id}/position")
+async def api_update_avatar_position(group_id: str, position_data: dict):
+    """Update spawn position assignment for an avatar group"""
+    try:
+        spawn_position = position_data.get("spawn_position")  # None means random, 1-6 means specific slot
+        
+        with Session(engine) as session:
+            # Find all avatars in the group
+            if group_id.startswith('single_'):
+                # Handle single avatars
+                avatar_id = int(group_id.replace('single_', ''))
+                avatars = [session.get(AvatarImage, avatar_id)]
+                if not avatars[0]:
+                    return {"error": "Avatar not found", "success": False}
+            else:
+                # Handle grouped avatars
+                avatars = session.exec(
+                    select(AvatarImage).where(AvatarImage.avatar_group_id == group_id)
+                ).all()
+                
+                if not avatars:
+                    return {"error": "Avatar group not found", "success": False}
+            
+            # Update spawn_position for all avatars in the group
+            for avatar in avatars:
+                if avatar:
+                    avatar.spawn_position = spawn_position
+                    session.add(avatar)
+            
+            session.commit()
+            
+            # Broadcast refresh message to all connected clients
+            asyncio.create_task(hub.broadcast({
+                "type": "avatar_updated",
+                "message": "Avatar spawn position updated"
+            }))
+            
+            return {"success": True, "updated_count": len([a for a in avatars if a])}
     
     except Exception as e:
         return {"error": str(e), "success": False}
@@ -735,30 +879,100 @@ async def api_get_polly_voices(credentials: dict):
         return {"voices": voices}
     except Exception as e:
         return {"error": f"Error fetching Polly voices: {str(e)}"}
-    
-@app.get("/api/available-voices/webspeech") 
-async def api_get_webspeech_voices():
-    """Get available voices for Web Speech API"""
-    # These are handled client-side, so we return language options
-    webspeech_voices = [
-        {"voice_id": "en-US", "name": "Default US English"},
-        {"voice_id": "en-GB", "name": "Default UK English"},
-        {"voice_id": "en-CA", "name": "Default Canadian English"},
-        {"voice_id": "en-AU", "name": "Default Australian English"},
-        {"voice_id": "es-ES", "name": "Spanish"},
-        {"voice_id": "fr-FR", "name": "French"},
-        {"voice_id": "de-DE", "name": "German"},
-        {"voice_id": "it-IT", "name": "Italian"},
-        {"voice_id": "pt-BR", "name": "Portuguese"},
-        {"voice_id": "ja-JP", "name": "Japanese"},
-        {"voice_id": "ko-KR", "name": "Korean"},
-        {"voice_id": "zh-CN", "name": "Chinese"}
-    ]
-    return {"voices": webspeech_voices}
 
 # ---------- Message Filtering ----------
 
-def should_process_message(text: str, settings: Dict[str, Any], username: str = None) -> tuple[bool, str]:
+def cancel_user_tts(username: str):
+    """
+    Cancel any active TTS for a specific user.
+    """
+    global active_tts_jobs
+    
+    username_lower = username.lower()
+    logger.info(f"Attempting to cancel TTS for user: {username}")
+    print(f"🛑 Attempting to cancel TTS for user: {username}")
+    
+    # Cancel active TTS job if exists
+    if username_lower in active_tts_jobs:
+        job_info = active_tts_jobs[username_lower]
+        if job_info["task"] and not job_info["task"].done():
+            job_info["task"].cancel()
+            logger.info(f"Cancelled active TTS for user: {username} (message: {job_info['message'][:50]}...)")
+            print(f"✅ Cancelled active TTS for user: {username}")
+        del active_tts_jobs[username_lower]
+    else:
+        print(f"ℹ️  No active TTS found for user: {username}")
+    
+    # Broadcast cancellation to clients with stop command
+    asyncio.create_task(hub.broadcast({
+        "type": "tts_cancelled",
+        "user": username,
+        "message": f"TTS cancelled for {username}",
+        "stop_audio": True  # Tell frontend to stop playing audio immediately
+    }))
+
+def stop_all_tts():
+    """
+    Stop all active TTS jobs
+    """
+    global active_tts_jobs, tts_enabled
+    
+    logger.info("Stopping all TTS - cancelling active jobs")
+    print(f"🛑 Stopping all TTS - {len(active_tts_jobs)} active jobs")
+    
+    # Cancel all active TTS jobs
+    cancelled_count = 0
+    for username, job_info in list(active_tts_jobs.items()):
+        if job_info["task"] and not job_info["task"].done():
+            job_info["task"].cancel()
+            cancelled_count += 1
+            logger.info(f"Cancelled TTS for user: {username}")
+    
+    # Clear all data structures
+    active_tts_jobs.clear()
+    
+    # Disable TTS processing
+    tts_enabled = False
+    
+    logger.info(f"All TTS stopped - cancelled {cancelled_count} active jobs")
+    print(f"✅ All TTS stopped - cancelled {cancelled_count} active jobs")
+    
+    # Broadcast global stop to clients with immediate stop command
+    asyncio.create_task(hub.broadcast({
+        "type": "tts_global_stopped",
+        "message": "All TTS stopped",
+        "cancelled_count": cancelled_count,
+        "stop_all_audio": True  # Tell frontend to stop all playing audio immediately
+    }))
+
+def resume_all_tts():
+    """
+    Resume TTS processing (doesn't restore cancelled jobs, just allows new ones)
+    """
+    global tts_enabled
+    
+    tts_enabled = True
+    logger.info("TTS processing resumed")
+    print("▶️ TTS processing resumed")
+    
+    # Broadcast resume to clients
+    asyncio.create_task(hub.broadcast({
+        "type": "tts_global_resumed", 
+        "message": "TTS processing resumed"
+    }))
+
+def toggle_tts():
+    """
+    Toggle TTS on/off
+    """
+    if tts_enabled:
+        stop_all_tts()
+        return False
+    else:
+        resume_all_tts()
+        return True
+
+def should_process_message(text: str, settings: Dict[str, Any], username: str = None, active_tts_jobs: Dict[str, Any] = None) -> tuple[bool, str]:
     """
     Check if a message should be processed based on filtering settings.
     Returns (should_process, filtered_text)
@@ -809,6 +1023,30 @@ def should_process_message(text: str, settings: Dict[str, Any], username: str = 
         if len(filtered_text) != original_length:
             logger.info(f"Removed URLs from message: '{text[:50]}...' -> '{filtered_text[:50]}...'")
     
+    # Apply profanity filter if enabled
+    profanity_config = filtering.get("profanityFilter", {})
+    if profanity_config.get("enabled", False):
+        custom_words = profanity_config.get("customWords", [])
+        replacement = profanity_config.get("replacement", "beep")
+        
+        if custom_words:
+            import re
+            original_text = filtered_text
+            
+            for word in custom_words:
+                if not word.strip():
+                    continue
+                    
+                # Escape special regex characters in the word
+                escaped_word = re.escape(word.strip())
+                
+                # Full replacement with word boundaries for case-insensitive matching
+                pattern = r'\b' + escaped_word + r'\b'
+                filtered_text = re.sub(pattern, replacement, filtered_text, flags=re.IGNORECASE)
+            
+            if filtered_text != original_text:
+                logger.info(f"Applied profanity filter: '{original_text[:50]}...' -> '{filtered_text[:50]}...'")
+    
     # Check minimum length (after URL removal)
     min_length = filtering.get("minLength", 1)
     if len(filtered_text) < min_length:
@@ -827,6 +1065,20 @@ def should_process_message(text: str, settings: Dict[str, Any], username: str = 
         
         logger.info(f"Truncating message from {len(filtered_text)} to {len(truncated_text)} characters")
         return True, truncated_text
+    
+    if filtering.get("ignoreIfUserSpeaking", False) and active_tts_jobs is not None:
+        username_lower = username.lower()
+        
+        # Check if user has any active TTS jobs
+        user_has_active_tts = username_lower in active_tts_jobs
+        
+        print(f"🔍 User {username}: active_tts={user_has_active_tts}")
+        
+        if user_has_active_tts:
+            print(f"🚫 Ignoring new message from {username} - user already has active TTS (per-user queuing enabled)")
+            logger.info(f"Ignored message from {username} due to active TTS: {filtered_text[:50]}...")
+            return False, filtered_text
+
     
     return True, filtered_text
 
@@ -913,25 +1165,45 @@ async def handle_test_voice_event(evt: Dict[str, Any]):
 
 async def handle_event(evt: Dict[str, Any]):
     print(f"🎵 Handling event: {evt}")
+    
+    # Check if TTS is globally enabled
+    if not tts_enabled:
+        print(f"🔇 TTS is disabled - skipping message from {evt.get('user', 'unknown')}")
+        return
+    
     settings = get_settings()
     
     # Apply message filtering
     original_text = evt.get('text', '').strip()
     username = evt.get('user', '')
-    should_process, filtered_text = should_process_message(original_text, settings, username)
+    should_process, filtered_text = should_process_message(original_text, settings, username, active_tts_jobs)
     
     if not should_process:
         print(f"Skipping message due to filtering: {original_text[:50]}... (user: {username})")
         return
     
-    # Update event with filtered text
-    if filtered_text != original_text:
-        evt['text'] = filtered_text
-        print(f"Message filtered: '{original_text[:50]}...' -> '{filtered_text[:50]}...'")
+    # Process immediately - no queuing
+    username = evt.get('user', 'unknown')
+    print(f"📬 Message received from {username}: processing immediately")
+    await process_tts_message(evt)
+    return
+
+async def process_tts_message(evt: Dict[str, Any]):
+    """Process TTS message - voice selection, synthesis, and broadcast"""
+    username = evt.get('user', 'unknown')
+    username_lower = username.lower()
     
+    # Track this job for cancellation
+    task = asyncio.current_task()
+    active_tts_jobs[username_lower] = {
+        "task": task,
+        "message": evt.get("text", "")
+    }
+    
+    settings = get_settings()
     audio_format = settings.get("audioFormat", "mp3")
     special = settings.get("specialVoices", {})
-
+    
     # Get enabled voices from database
     with Session(engine) as session:
         enabled_voices = session.exec(select(Voice).where(Voice.enabled == True)).all()
@@ -951,28 +1223,19 @@ async def handle_event(evt: Dict[str, Any]):
     if not selected_voice:
         # Random selection from enabled voices
         selected_voice = random.choice(enabled_voices)
-        print(f"Random voice selected: {selected_voice.name} ({selected_voice.provider})")
+        print(f"🎲 Random voice selected: {selected_voice.name} ({selected_voice.provider})")
     else:
-        print(f"Special event voice selected: {selected_voice.name} ({selected_voice.provider})")
+        print(f"🎯 Special event voice selected: {selected_voice.name} ({selected_voice.provider})")
     
     # Track voice usage for distribution analysis
     global voice_usage_stats, voice_selection_count
     voice_key = f"{selected_voice.name} ({selected_voice.provider})"
     voice_usage_stats[voice_key] += 1
     voice_selection_count += 1
-    
-    # Log distribution every 10 selections
-    if voice_selection_count % 10 == 0:
-        print(f"\nVoice Distribution Summary (after {voice_selection_count} selections):")
-        total_usage = sum(voice_usage_stats.values())
-        for voice_name, count in sorted(voice_usage_stats.items(), key=lambda x: x[1], reverse=True):
-            percentage = (count / total_usage) * 100
-            print(f"   {voice_name}: {count} times ({percentage:.1f}%)")
-        print("---")
-    
+
     print(f"Selected voice: {selected_voice.name} ({selected_voice.provider})")
 
-    # Get TTS configuration - Use hybrid provider that handles both MonsterTTS and Edge TTS
+    # Get TTS configuration
     tts_config = settings.get("tts", {})
     
     # Get TTS provider configurations
@@ -987,7 +1250,6 @@ async def handle_event(evt: Dict[str, Any]):
     polly_config = tts_config.get("polly", {})
     
     # Use hybrid provider that handles all providers with rate limiting and fallback
-    # Pass enabled voices so the hybrid provider can choose randomly when needed
     provider = await get_hybrid_provider(
         monster_api_key=monster_api_key if monster_api_key else None,
         monster_voice_id=selected_voice.voice_id if selected_voice.provider == "monstertts" else None,
@@ -1000,35 +1262,47 @@ async def handle_event(evt: Dict[str, Any]):
     # Create TTS job with the selected voice
     job = TTSJob(text=evt.get('text', '').strip(), voice=selected_voice.voice_id, audio_format=audio_format)
     print(f"TTS Job: text='{job.text}', voice='{selected_voice.name}' ({selected_voice.provider}:{selected_voice.voice_id}), format='{job.audio_format}'")
-
-    # Fire-and-forget to allow overlap
-    async def _run():
-        try:
-            print(f"Starting TTS synthesis...")
-            path = await provider.synth(job)
-            print(f"TTS generated: {path}")
+    
+    try:
+        print(f"Starting TTS synthesis for {evt.get('user')}...")
+        path = await provider.synth(job)
+        print(f"TTS generated: {path}")
+        
+        # Broadcast to clients to play
+        voice_info = {
+            "id": selected_voice.id,
+            "name": selected_voice.name,
+            "provider": selected_voice.provider,
+            "avatar": selected_voice.avatar_image
+        }
+        payload = {
+            "type": "play",
+            "user": evt.get("user"),
+            "message": evt.get("text"),
+            "eventType": event_type,
+            "voice": voice_info,
+            "audioUrl": f"/audio/{os.path.basename(path)}"
+        }
+        print(f"Broadcasting to {len(hub.clients)} clients: {payload}")
+        await hub.broadcast(payload)
+        
+        # Clean up - frontend handles playback independently
+        if username_lower in active_tts_jobs:
+            del active_tts_jobs[username_lower]
+        print(f"✅ TTS broadcast complete. Active users: {list(active_tts_jobs.keys())}")
             
-            # Broadcast to clients to play
-            # Use the selected voice from database
-            voice_info = {
-                "id": selected_voice.id,
-                "name": selected_voice.name,
-                "provider": selected_voice.provider,
-                "avatar": selected_voice.avatar_image
-            }
-            payload = {
-                "type": "play",
-                "user": evt.get("user"),
-                "message": evt.get("text"),
-                "eventType": event_type,
-                "voice": voice_info,
-                "audioUrl": f"/audio/{os.path.basename(path)}"
-            }
-            print(f"Broadcasting to {len(hub.clients)} clients: {payload}")
-            await hub.broadcast(payload)
-        except Exception as e:
-            print(f"TTS Error: {e}")
-    asyncio.create_task(_run())
+    except asyncio.CancelledError:
+        print(f"TTS synthesis cancelled for user: {evt.get('user')}")
+        if username_lower in active_tts_jobs:
+            del active_tts_jobs[username_lower]
+        print(f"🧹 Cleaned up cancelled job. Remaining jobs: {len(active_tts_jobs)}")
+        raise  # Re-raise to properly handle cancellation
+    except Exception as e:
+        print(f"TTS Error: {e}")
+        logger.error(f"TTS synthesis error for {username_lower}: {e}", exc_info=True)
+        if username_lower in active_tts_jobs:
+            del active_tts_jobs[username_lower]
+        print(f"🧹 Cleaned up failed job. Remaining jobs: {len(active_tts_jobs)}")
 
 # ---------- Simulate messages (for local testing) ----------
 @app.post("/api/simulate")
@@ -1038,6 +1312,7 @@ async def api_simulate(
     eventType: str = Form("chat"),
     testVoice: str = Form(None)
 ):
+    """Simulate a chat message"""
     print(f"Simulate request: user={user}, text={text}, eventType={eventType}, testVoice={testVoice}")
     
     # Apply message filtering for simulation as well
@@ -1047,7 +1322,7 @@ async def api_simulate(
     if not should_process:
         print(f"Simulation message filtered out: {text} (user: {user})")
         return {"ok": False, "message": "Message was filtered out", "reason": "Message filtering"}
-    
+          
     # Use filtered text
     final_text = filtered_text
     
@@ -1074,6 +1349,63 @@ async def api_simulate(
         result["filtered_text"] = final_text
     
     return result
+
+@app.post("/api/simulate/moderation")
+async def api_simulate_moderation(
+    target_user: str = Form(...),
+    eventType: str = Form("timeout"),  # "ban" or "timeout"
+    duration: int = Form(None)  # seconds for timeout, None for ban
+):
+    """Simulate a moderation event (ban/timeout) with immediate audio stop"""
+    print(f"Simulate moderation: target_user={target_user}, eventType={eventType}, duration={duration}")
+    
+    try:
+        await handle_moderation_event({
+            "type": "moderation",
+            "eventType": eventType,
+            "target_user": target_user,
+            "duration": duration
+        })
+        
+        return {
+            "ok": True, 
+            "message": f"Moderation event simulated: {eventType} for {target_user}" + (f" ({duration}s)" if duration else "") + " - TTS stopped immediately"
+        }
+    except Exception as e:
+        logger.error(f"Moderation simulation failed: {e}", exc_info=True)
+        return {"ok": False, "error": str(e)}
+
+async def handle_moderation_event(evt: Dict[str, Any]):
+    """Handle Twitch moderation events (bans, timeouts)"""
+    print(f"🔨 Handling moderation event: {evt}")
+    
+    event_type = evt.get("eventType", "")
+    target_user = evt.get("target_user", "")
+    duration = evt.get("duration")  # None for permanent ban, seconds for timeout
+    
+    if not target_user:
+        print("No target user specified in moderation event")
+        return
+    
+    if event_type in ["ban", "timeout"]:
+        logger.info(f"User {event_type}: {target_user}" + (f" for {duration}s" if duration else ""))
+        
+        # Cancel any active TTS for this user (this includes immediate audio stop)
+        cancel_user_tts(target_user)
+        
+        # Broadcast moderation event to clients with additional audio stop command
+        await hub.broadcast({
+            "type": "moderation",
+            "eventType": event_type,
+            "target_user": target_user,
+            "duration": duration,
+            "message": f"User {target_user} has been {'timed out' if event_type == 'timeout' else 'banned'}",
+            "stop_user_audio": target_user  # Tell frontend to immediately stop this user's audio
+        })
+        
+        print(f"✅ Processed {event_type} for user: {target_user} - TTS cancelled and audio stopped")
+    else:
+        print(f"Unknown moderation event type: {event_type}")
 
 # ---------- Voice Distribution Stats ----------
 @app.get("/api/voice-stats")
@@ -1149,13 +1481,34 @@ async def startup():
             twitch_config = settings["twitch"]
             logger.info(f"Twitch config: channel={twitch_config.get('channel')}, nick={twitch_config.get('nick')}, token={'***' if twitch_config.get('token') else 'None'}")
             
+            # Event router to handle different event types
+            async def route_twitch_event(e):
+                event_type = e.get("type", "")
+                if event_type == "moderation":
+                    await handle_moderation_event(e)
+                else:
+                    # Default to chat event handler
+                    await handle_event(e)
+            
             global TwitchTask
             t = asyncio.create_task(run_twitch_bot(
                 token=twitch_config["token"],
                 nick=twitch_config["nick"], 
                 channel=twitch_config["channel"],
-                on_event=lambda e: asyncio.create_task(handle_event(e))
+                on_event=lambda e: asyncio.create_task(route_twitch_event(e))
             ))
+            
+            # Add error handler for the Twitch task
+            def handle_twitch_task_exception(task):
+                try:
+                    task.result()
+                except asyncio.CancelledError:
+                    logger.info("Twitch bot task was cancelled")
+                except Exception as e:
+                    logger.error(f"Twitch bot task failed: {e}", exc_info=True)
+                    print(f"ERROR: Twitch bot task failed: {e}")
+            
+            t.add_done_callback(handle_twitch_task_exception)
             TwitchTask = t
             logger.info("Twitch bot task created")
         else:
@@ -1163,6 +1516,8 @@ async def startup():
                 logger.warning("Twitch bot not available (import failed)")
             else:
                 logger.info("Twitch integration disabled in settings")
+        
+
     except Exception as e:
         logger.error(f"Startup event failed: {e}", exc_info=True)
         print(f"❌ Startup failed: {e}")
@@ -1256,6 +1611,23 @@ if os.path.isdir(PUBLIC_DIR):
 else:
     print(f"Static files directory not found: {PUBLIC_DIR}")
 
+@app.get("/api/debug/per-user-queuing")
+async def api_debug_per_user_queuing():
+    """Debug endpoint to check per-user queuing setting"""
+    try:
+        settings = get_settings()
+        filtering = settings.get("messageFiltering", {})
+        ignore_if_user_speaking = filtering.get("ignoreIfUserSpeaking", True)
+        
+        return {
+            "ignoreIfUserSpeaking": ignore_if_user_speaking,
+            "messageFiltering": filtering,
+            "activeJobsByUser": list(active_tts_jobs.keys()),
+            "totalActiveJobs": len(active_tts_jobs)
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.post("/api/twitch/test")
 async def api_test_twitch():
     """Test Twitch connection manually"""
@@ -1298,6 +1670,127 @@ async def api_test_message_filter(test_data: dict):
         }
     except Exception as e:
         logger.error(f"Message filter test failed: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/avatars/re-randomize")
+async def api_re_randomize_avatars():
+    """Trigger avatar re-randomization on the Yappers page"""
+    try:
+        # Broadcast a message to all WebSocket clients to re-randomize avatars
+        asyncio.create_task(hub.broadcast({
+            "type": "re_randomize_avatars",
+            "message": "Avatar assignments re-randomized"
+        }))
+        
+        logger.info("Avatar re-randomization triggered")
+        return {"success": True, "message": "Avatar assignments will be re-randomized"}
+    except Exception as e:
+        logger.error(f"Avatar re-randomization failed: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/tts/cancel")
+async def api_cancel_user_tts(cancel_data: dict):
+    """Cancel TTS for a specific user (for testing or moderation)"""
+    try:
+        username = cancel_data.get("username", "")
+        if not username:
+            return {"success": False, "error": "Username is required"}
+        
+        cancel_user_tts(username)
+        logger.info(f"TTS cancelled for user via API: {username}")
+        return {"success": True, "message": f"TTS cancelled for user: {username}"}
+    except Exception as e:
+        logger.error(f"TTS cancellation failed: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+@app.get("/api/tts/active")
+async def api_get_active_tts():
+    """Get list of currently active TTS jobs"""
+    try:
+        active_jobs = {}
+        for username, job_info in active_tts_jobs.items():
+            active_jobs[username] = {
+                "job_id": job_info["job_id"],
+                "message": job_info["message"][:100] + "..." if len(job_info["message"]) > 100 else job_info["message"],
+                "is_running": not job_info["task"].done() if job_info["task"] else False
+            }
+        
+        return {
+            "success": True,
+            "active_jobs": active_jobs,
+            "total_active": len(active_jobs),
+            "tts_enabled": tts_enabled
+        }
+    except Exception as e:
+        logger.error(f"Failed to get active TTS jobs: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/tts/stop-all")
+async def api_stop_all_tts():
+    """Stop all TTS activity"""
+    try:
+        stop_all_tts()
+        return {"success": True, "message": "All TTS stopped", "tts_enabled": tts_enabled}
+    except Exception as e:
+        logger.error(f"Failed to stop all TTS: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/tts/resume-all")
+async def api_resume_all_tts():
+    """Resume TTS processing"""
+    try:
+        resume_all_tts()
+        return {"success": True, "message": "TTS processing resumed", "tts_enabled": tts_enabled}
+    except Exception as e:
+        logger.error(f"Failed to resume TTS: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/tts/toggle")
+async def api_toggle_tts():
+    """Toggle TTS on/off"""
+    try:
+        new_state = toggle_tts()
+        message = "TTS enabled" if new_state else "TTS disabled"
+        return {"success": True, "message": message, "tts_enabled": tts_enabled}
+    except Exception as e:
+        logger.error(f"Failed to toggle TTS: {e}", exc_info=True)
+
+@app.get("/api/debug/database")
+async def api_debug_database():
+    """Get database information for debugging"""
+    try:
+        from db_migration import get_database_info
+        db_info = get_database_info(DB_PATH)
+        
+        # Also get some basic stats
+        with Session(engine) as session:
+            voice_count = session.exec(select(Voice)).all()
+            avatar_count = session.exec(select(AvatarImage)).all()
+            
+            db_info["statistics"] = {
+                "voices": len(voice_count),
+                "avatars": len(avatar_count),
+                "database_path": DB_PATH,
+                "user_data_dir": USER_DATA_DIR
+            }
+        
+        return {"success": True, "database": db_info}
+    except Exception as e:
+        logger.error(f"Failed to get database info: {e}", exc_info=True)
+        return {"success": False, "error": str(e), "database_path": DB_PATH}
+        return {"success": False, "error": str(e)}
+
+@app.get("/api/tts/status")
+async def api_get_tts_status():
+    """Get current TTS status"""
+    try:
+        return {
+            "success": True,
+            "tts_enabled": tts_enabled,
+            "active_jobs_count": len(active_tts_jobs)
+        }
+    except Exception as e:
+        logger.error(f"Failed to get TTS status: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
 
 if __name__ == "__main__":

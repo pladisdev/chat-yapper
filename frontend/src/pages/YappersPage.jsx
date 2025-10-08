@@ -4,6 +4,12 @@ export default function YappersPage() {
   const [settings, setSettings] = useState(null)
   const [log, setLog] = useState([])
   const [dimensions, setDimensions] = useState({ width: 1200, height: 800 })
+  
+  // Track active audio objects for stopping
+  // Supports parallel audio: multiple users can have TTS playing simultaneously
+  // Per-user queuing: if a user sends TTS while their previous TTS is playing, new one is ignored
+  const activeAudioRef = useRef(new Map()) // username -> Audio object (one per user)
+  const allActiveAudioRef = useRef(new Set()) // All Audio objects for global stop
 
   // Determine the correct API URL
   const apiUrl = location.hostname === 'localhost' && (location.port === '5173' || location.port === '5174')
@@ -13,6 +19,19 @@ export default function YappersPage() {
   useEffect(() => {
     fetch(`${apiUrl}/api/settings`).then(r => r.json()).then(setSettings)
   }, [apiUrl])
+
+  // Update volume for all currently playing audio when volume setting changes
+  useEffect(() => {
+    if (settings?.volume !== undefined) {
+      const volume = settings.volume
+      allActiveAudioRef.current.forEach(audio => {
+        if (audio && !audio.ended && !audio.paused) {
+          audio.volume = volume
+        }
+      })
+      console.log(`🔊 Updated volume to ${Math.round(volume * 100)}% for ${allActiveAudioRef.current.size} active audio(s)`)
+    }
+  }, [settings?.volume])
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -45,16 +64,43 @@ export default function YappersPage() {
           const grouped = {}
           managedData.avatars.forEach(avatar => {
             const key = avatar.avatar_group_id || `single_${avatar.id}`
-            if (!grouped[key]) grouped[key] = { name: avatar.name, images: {} }
-            grouped[key].images[avatar.avatar_type] = avatar.file_path
+            if (!grouped[key]) {
+              grouped[key] = { 
+                name: avatar.name, 
+                images: {},
+                spawn_position: avatar.spawn_position,
+                voice_id: avatar.voice_id
+              }
+            } else {
+              // Update spawn_position and voice_id if not null (prefer non-null values)
+              if (avatar.spawn_position != null) {
+                grouped[key].spawn_position = avatar.spawn_position
+              }
+              if (avatar.voice_id != null) {
+                grouped[key].voice_id = avatar.voice_id
+              }
+            }
+            // Prepend API URL for development environment
+            const imagePath = avatar.file_path.startsWith('http') 
+              ? avatar.file_path 
+              : `${currentApiUrl}${avatar.file_path}`
+            grouped[key].images[avatar.avatar_type] = imagePath
           })
+          
+          console.log('🔍 Loaded managed avatars:', Object.values(grouped).map(g => ({
+            name: g.name,
+            voice_id: g.voice_id,
+            spawn_position: g.spawn_position
+          })))
           
           // Convert to avatar objects
           const avatarGroups = Object.values(grouped).map(group => ({
             name: group.name,
             defaultImage: group.images.default || group.images.speaking, // Fallback to speaking if no default
             speakingImage: group.images.speaking || group.images.default, // Fallback to default if no speaking
-            isSingleImage: !group.images.speaking || !group.images.default || group.images.speaking === group.images.default
+            isSingleImage: !group.images.speaking || !group.images.default || group.images.speaking === group.images.default,
+            spawn_position: group.spawn_position, // null = random, number = specific slot
+            voice_id: group.voice_id // null = random voice
           }))
           
           setAvailableAvatars(avatarGroups)
@@ -99,12 +145,179 @@ export default function YappersPage() {
     loadAvatarImages()
   }, [])
   
+  // State to store available voices for assignment
+  const [enabledVoices, setEnabledVoices] = useState([])
+  
+  // Load enabled voices
+  useEffect(() => {
+    const loadVoices = async () => {
+      try {
+        const response = await fetch(`${apiUrl}/api/voices`)
+        const data = await response.json()
+        const enabled = data.voices?.filter(v => v.enabled) || []
+        setEnabledVoices(enabled)
+        console.log('🎤 Loaded enabled voices:', enabled.map(v => `${v.name} (ID: ${v.id})`))
+      } catch (error) {
+        console.error('Failed to load voices:', error)
+        setEnabledVoices([])
+      }
+    }
+    loadVoices()
+  }, [apiUrl])
+
+  // Function to create randomized avatar assignment with voice assignments
+  const createRandomizedAvatarAssignment = useCallback((avatars, totalSlots) => {
+    if (avatars.length === 0) return []
+    
+    console.log('🎲 Creating randomized assignments for', totalSlots, 'slots with', avatars.length, 'avatars')
+    console.log('🎤 Available voices for assignment:', enabledVoices.map(v => `${v.name} (ID: ${v.id})`))
+    
+    const assignments = []
+    
+    // First, ensure each avatar appears at least once (if we have enough slots)
+    if (totalSlots >= avatars.length) {
+      // Add one of each avatar first
+      for (let i = 0; i < avatars.length; i++) {
+        assignments.push({...avatars[i]}) // Create a copy
+      }
+      
+      // Fill remaining slots with random avatars
+      const remainingSlots = totalSlots - avatars.length
+      for (let i = 0; i < remainingSlots; i++) {
+        const randomAvatar = avatars[Math.floor(Math.random() * avatars.length)]
+        assignments.push({...randomAvatar}) // Create a copy
+      }
+    } else {
+      // If we have fewer slots than avatars, just randomly select
+      for (let i = 0; i < totalSlots; i++) {
+        const randomAvatar = avatars[Math.floor(Math.random() * avatars.length)]
+        assignments.push({...randomAvatar}) // Create a copy
+      }
+    }
+    
+    // Shuffle the assignments for true randomization
+    for (let i = assignments.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[assignments[i], assignments[j]] = [assignments[j], assignments[i]]
+    }
+    
+    console.log('✅ Final assignments:', assignments.map((a, i) => `Slot ${i}: ${a.name}`))
+    
+    return assignments
+  }, [enabledVoices])
+
+  // State to store randomized avatar assignments
+  const [avatarAssignments, setAvatarAssignments] = useState([])
+
+  // Save assignments to localStorage whenever they change
+  const saveAvatarAssignments = useCallback((assignments, layoutSettings) => {
+    try {
+      const assignmentData = {
+        assignments: assignments.map(avatar => ({
+          name: avatar.name,
+          defaultImage: avatar.defaultImage,
+          speakingImage: avatar.speakingImage,
+          isSingleImage: avatar.isSingleImage,
+          voice_id: avatar.voice_id,
+          spawn_position: avatar.spawn_position
+        })),
+        timestamp: Date.now(),
+        avatarCount: availableAvatars.length,
+        avatarNames: availableAvatars.map(a => a.name).sort(), // For validation
+        // Include layout settings for validation
+        avatarRows: layoutSettings?.avatarRows || 2,
+        avatarRowConfig: layoutSettings?.avatarRowConfig || [6, 6],
+        // Include voice configuration for validation
+        enabledVoiceIds: enabledVoices.map(v => v.id).sort()
+      }
+      localStorage.setItem('chatyapper_avatar_assignments', JSON.stringify(assignmentData))
+      console.log('💾 Avatar assignments saved to localStorage:', assignments.map(a => `${a.name} (voice_id: ${a.voice_id})`))
+    } catch (error) {
+      console.error('❌ Failed to save avatar assignments:', error)
+    }
+  }, [availableAvatars, enabledVoices])
+
+  // Load assignments from localStorage
+  const loadAvatarAssignments = useCallback((layoutSettings) => {
+    try {
+      const saved = localStorage.getItem('chatyapper_avatar_assignments')
+      if (!saved) return null
+
+      const assignmentData = JSON.parse(saved)
+      
+      // Validate that the saved assignments match current avatars
+      const currentAvatarNames = availableAvatars.map(a => a.name).sort()
+      const savedAvatarNames = assignmentData.avatarNames || []
+      
+      // Check if avatar configuration has changed
+      if (assignmentData.avatarCount !== availableAvatars.length || 
+          JSON.stringify(currentAvatarNames) !== JSON.stringify(savedAvatarNames)) {
+        console.log('🔄 Avatar configuration changed, clearing saved assignments')
+        localStorage.removeItem('chatyapper_avatar_assignments')
+        return null
+      }
+
+      // Check if layout configuration has changed
+      const currentRows = layoutSettings?.avatarRows || 2
+      const currentRowConfig = layoutSettings?.avatarRowConfig || [6, 6]
+      
+      if (assignmentData.avatarRows !== currentRows || 
+          JSON.stringify(assignmentData.avatarRowConfig) !== JSON.stringify(currentRowConfig)) {
+        console.log('🔄 Layout configuration changed, clearing saved assignments')
+        localStorage.removeItem('chatyapper_avatar_assignments')
+        return null
+      }
+
+      // Check if voice configuration has changed
+      const currentVoiceIds = enabledVoices.map(v => v.id).sort()
+      const savedVoiceIds = assignmentData.enabledVoiceIds || []
+      
+      if (JSON.stringify(currentVoiceIds) !== JSON.stringify(savedVoiceIds)) {
+        console.log('🔄 Voice configuration changed, clearing saved assignments')
+        localStorage.removeItem('chatyapper_avatar_assignments')
+        return null
+      }
+
+      console.log('📂 Loaded avatar assignments from localStorage:', assignmentData.assignments.map(a => `${a.name} (voice_id: ${a.voice_id})`))
+      return assignmentData.assignments
+    } catch (error) {
+      console.error('❌ Failed to load avatar assignments:', error)
+      localStorage.removeItem('chatyapper_avatar_assignments')
+      return null
+    }
+  }, [availableAvatars, enabledVoices])
+
+  // Load assignments when avatars, voices, or settings change
+  useEffect(() => {
+    if (availableAvatars.length === 0 || !settings || enabledVoices.length === 0) return // Wait for all to load
+    
+    // Try to load from localStorage first
+    const savedAssignments = loadAvatarAssignments(settings)
+    if (savedAssignments) {
+      setAvatarAssignments(savedAssignments)
+    } else {
+      // Clear assignments to trigger regeneration
+      setAvatarAssignments([])
+    }
+  }, [availableAvatars, enabledVoices, settings?.avatarRows, settings?.avatarRowConfig, loadAvatarAssignments])
+
   // Generate avatar slots based on individual row configuration
   const avatarSlots = useMemo(() => {
-    if (availableAvatars.length === 0) return [] // Wait for avatars to load
+    if (availableAvatars.length === 0 || !settings || enabledVoices.length === 0) return [] // Wait for all to load
     
-    const avatarRows = settings?.avatarRows || 2
-    const avatarRowConfig = settings?.avatarRowConfig || [6, 6]
+    const avatarRows = settings.avatarRows || 2
+    const avatarRowConfig = settings.avatarRowConfig || [6, 6]
+    const totalSlots = avatarRowConfig.slice(0, avatarRows).reduce((sum, count) => sum + count, 0)
+    
+    // Create or use existing randomized assignments
+    let assignments = avatarAssignments
+    if (assignments.length === 0 || assignments.length !== totalSlots) {
+      assignments = createRandomizedAvatarAssignment(availableAvatars, totalSlots)
+      setAvatarAssignments(assignments)
+      // Save the new assignments to localStorage
+      saveAvatarAssignments(assignments, settings)
+    }
+    
     const slots = []
     let slotIndex = 0
     
@@ -112,8 +325,8 @@ export default function YappersPage() {
       const avatarsInThisRow = avatarRowConfig[rowIndex] || 6
       
       for (let colIndex = 0; colIndex < avatarsInThisRow; colIndex++) {
-        // Assign avatar data, cycling through available avatars
-        const avatarData = availableAvatars[slotIndex % availableAvatars.length]
+        // Use randomized assignment instead of cycling
+        const avatarData = assignments[slotIndex] || availableAvatars[0] // Fallback to first avatar
         slots.push({
           id: `slot_${slotIndex}`,
           avatarData: avatarData, // Store full avatar data instead of just image path
@@ -127,8 +340,25 @@ export default function YappersPage() {
     }
     
     return slots
-  }, [settings?.avatarRows, settings?.avatarRowConfig, availableAvatars])
+  }, [settings, availableAvatars, enabledVoices, avatarAssignments, createRandomizedAvatarAssignment, saveAvatarAssignments])
   
+  // Send avatar configuration to backend whenever slots change
+
+  
+  // Function to manually re-randomize avatar assignments
+  const reRandomizeAvatars = useCallback(() => {
+    if (availableAvatars.length === 0 || !settings) return
+    
+    const avatarRows = settings.avatarRows || 2
+    const avatarRowConfig = settings.avatarRowConfig || [6, 6]
+    const totalSlots = avatarRowConfig.slice(0, avatarRows).reduce((sum, count) => sum + count, 0)
+    
+    const newAssignments = createRandomizedAvatarAssignment(availableAvatars, totalSlots)
+    setAvatarAssignments(newAssignments)
+    saveAvatarAssignments(newAssignments, settings)
+    console.log('🎲 Avatars re-randomized!', newAssignments.map(a => a.name))
+  }, [availableAvatars, settings, createRandomizedAvatarAssignment, saveAvatarAssignments])
+
   // Track which slots are currently active
   const [activeSlots, setActiveSlots] = useState({})
   
@@ -139,6 +369,7 @@ export default function YappersPage() {
   // Use refs to avoid useCallback dependencies changing constantly
   const avatarSlotsRef = useRef([])
   const activeSlotsRef = useRef({})
+  const availableAvatarsRef = useRef([])
   
   // Keep refs updated
   useEffect(() => {
@@ -148,6 +379,10 @@ export default function YappersPage() {
   useEffect(() => {
     activeSlotsRef.current = activeSlots
   }, [activeSlots])
+  
+  useEffect(() => {
+    availableAvatarsRef.current = availableAvatars
+  }, [availableAvatars])
 
   // Process Web Speech queue
   const processSpeechQueue = useCallback(() => {
@@ -229,6 +464,167 @@ export default function YappersPage() {
   // Stable message handler that doesn't change on every render
   const handleMessage = useCallback((msg) => {
     console.log('🎵 Processing message:', msg)
+    
+    // Handle TTS cancellation for specific user
+    if (msg.type === 'tts_cancelled' && msg.stop_audio) {
+      console.log('🛑 Stopping TTS for user:', msg.user)
+      const userAudio = activeAudioRef.current.get(msg.user?.toLowerCase())
+      if (userAudio) {
+        userAudio.pause()
+        userAudio.currentTime = 0
+        activeAudioRef.current.delete(msg.user?.toLowerCase())
+        allActiveAudioRef.current.delete(userAudio)
+        console.log('✅ Stopped audio for user:', msg.user)
+      }
+      
+      // Web Speech API limitation: Can't stop individual users, must stop all
+      // Regular audio files support per-user stopping, but Web Speech API is global
+      if ('speechSynthesis' in window && speechSynthesis.speaking) {
+        speechSynthesis.cancel()
+        setSpeechQueue([])
+        console.log('🛑 Cancelled Web Speech synthesis (all users - API limitation)')
+      }
+      return
+    }
+    
+    // Handle moderation events (ban/timeout) with immediate audio stop
+    if (msg.type === 'moderation' && msg.stop_user_audio) {
+      console.log('🔨 Moderation event - stopping TTS for user:', msg.stop_user_audio)
+      const userAudio = activeAudioRef.current.get(msg.stop_user_audio?.toLowerCase())
+      if (userAudio) {
+        userAudio.pause()
+        userAudio.currentTime = 0
+        activeAudioRef.current.delete(msg.stop_user_audio?.toLowerCase())
+        allActiveAudioRef.current.delete(userAudio)
+        console.log('✅ Stopped audio for moderated user:', msg.stop_user_audio)
+      }
+      
+      // Web Speech API limitation: Can't stop individual users, must stop all
+      // Regular audio files support per-user stopping, but Web Speech API is global
+      if ('speechSynthesis' in window && speechSynthesis.speaking) {
+        speechSynthesis.cancel()
+        setSpeechQueue([])
+        console.log('🛑 Cancelled Web Speech synthesis due to moderation (all users - API limitation)')
+      }
+      
+      // Add moderation event to log
+      setLog(l => [{
+        t: new Date().toLocaleTimeString(),
+        user: msg.stop_user_audio,
+        text: `[${msg.eventType.toUpperCase()}] ${msg.message}`,
+        voice: null,
+        eventType: msg.eventType
+      }, ...l].slice(0, 50))
+      
+      // Continue processing other aspects of the moderation event
+      // (don't return here so other moderation logic can run if needed)
+    }
+    
+    // Handle global TTS stop
+    if (msg.type === 'tts_global_stopped' && msg.stop_all_audio) {
+      console.log('🛑 Stopping all TTS audio')
+      // Stop all audio objects
+      allActiveAudioRef.current.forEach(audio => {
+        try {
+          audio.pause()
+          audio.currentTime = 0
+        } catch (e) {
+          console.warn('Failed to stop audio:', e)
+        }
+      })
+      // Stop Web Speech API
+      if ('speechSynthesis' in window) {
+        speechSynthesis.cancel()
+        console.log('🛑 Cancelled Web Speech synthesis')
+      }
+      // Clear speech queue
+      setSpeechQueue([])
+      // Clear all tracking
+      activeAudioRef.current.clear()
+      allActiveAudioRef.current.clear()
+      // Clear active slots
+      setActiveSlots({})
+      console.log('✅ All TTS audio stopped')
+      return
+    }
+    
+    // Handle settings update (reload settings without full page refresh)
+    if (msg.type === 'settings_updated') {
+      console.log('⚙️ Settings updated, reloading settings and avatars...')
+      // Reload settings
+      fetch(`${apiUrl}/api/settings`).then(r => r.json()).then(data => {
+        const oldRows = settings?.avatarRows
+        const oldRowConfig = settings?.avatarRowConfig
+        const newRows = data?.avatarRows
+        const newRowConfig = data?.avatarRowConfig
+        
+        // Clear saved assignments if layout configuration changed
+        if (oldRows !== newRows || JSON.stringify(oldRowConfig) !== JSON.stringify(newRowConfig)) {
+          localStorage.removeItem('chatyapper_avatar_assignments')
+          console.log('🔄 Avatar layout changed, cleared saved assignments')
+        }
+        
+        setSettings(data)
+        console.log('✅ Settings reloaded')
+      })
+      return
+    }
+    
+    // Handle avatar update (reload avatars only)
+    if (msg.type === 'refresh' || msg.type === 'avatar_updated') {
+      console.log('🔄 Avatars updated, reloading avatars...')
+      // Reload avatars without full page refresh
+      fetch(`${apiUrl}/api/avatars/managed`).then(r => r.json()).then(data => {
+        if (data.avatars && data.avatars.length > 0) {
+          const grouped = {}
+          data.avatars.forEach(avatar => {
+            const key = avatar.avatar_group_id || `single_${avatar.id}`
+            if (!grouped[key]) {
+              grouped[key] = { 
+                name: avatar.name, 
+                images: {},
+                spawn_position: avatar.spawn_position,
+                voice_id: avatar.voice_id
+              }
+            } else {
+              if (avatar.spawn_position != null) {
+                grouped[key].spawn_position = avatar.spawn_position
+              }
+              if (avatar.voice_id != null) {
+                grouped[key].voice_id = avatar.voice_id
+              }
+            }
+            const imagePath = avatar.file_path.startsWith('http') 
+              ? avatar.file_path 
+              : `${apiUrl}${avatar.file_path}`
+            grouped[key].images[avatar.avatar_type] = imagePath
+          })
+          
+          const avatarGroups = Object.values(grouped).map(group => ({
+            name: group.name,
+            defaultImage: group.images.default || group.images.speaking,
+            speakingImage: group.images.speaking || group.images.default,
+            isSingleImage: !group.images.speaking || !group.images.default || group.images.speaking === group.images.default,
+            spawn_position: group.spawn_position,
+            voice_id: group.voice_id
+          }))
+          
+          setAvailableAvatars(avatarGroups)
+          // Clear saved assignments since avatar configuration changed
+          localStorage.removeItem('chatyapper_avatar_assignments')
+          console.log('✅ Avatars reloaded, cleared saved assignments')
+        }
+      })
+      return
+    }
+    
+    // Handle avatar re-randomization
+    if (msg.type === 're_randomize_avatars') {
+      console.log('🎲 Re-randomizing avatar assignments...')
+      reRandomizeAvatars()
+      return
+    }
+    
     if (msg.type === 'play') {
       console.log('▶️ Playing TTS:', msg.audioUrl)
       
@@ -246,34 +642,81 @@ export default function YappersPage() {
       let audio = null
       if (!isWebSpeech) {
         audio = new Audio(msg.audioUrl)
+        
+        // Set volume from settings (0.0 to 1.0)
+        audio.volume = settings.volume !== undefined ? settings.volume : 1.0
+        
+        // Track this audio object for potential cancellation
+        const username = msg.user?.toLowerCase()
+        if (username) {
+          // Clean up any finished audio for this user
+          const existingAudio = activeAudioRef.current.get(username)
+          if (existingAudio && (existingAudio.ended || existingAudio.paused)) {
+            console.log(`🧹 Cleaning up finished audio for user: ${username}`)
+            allActiveAudioRef.current.delete(existingAudio)
+          }
+          
+          // Track new audio for this user (backend already handled per-user queuing logic)
+          activeAudioRef.current.set(username, audio)
+          allActiveAudioRef.current.add(audio)
+          console.log(`🎵 Now tracking audio for user: ${username} (Total active: ${allActiveAudioRef.current.size})`)
+        }
       }
       
-      // Find next available slot or use random slot
+      // Find next available slot - prefer inactive slots but allow active ones
       let targetSlot = null
+      let selectedAvatar = null
       if (currentSlots.length > 0) {
         const availableSlots = currentSlots.filter(slot => !currentActiveSlots[slot.id])
-        console.log('🎯 Available slots for animation:', availableSlots.length)
+        console.log('🎯 Available (inactive) slots for animation:', availableSlots.length)
         
         if (availableSlots.length > 0) {
+          // Prefer inactive slots for cleaner visual experience
           targetSlot = availableSlots[Math.floor(Math.random() * availableSlots.length)]
+          console.log('🎯 Selected inactive slot')
         } else {
-          // All slots are active, pick a random one to override
+          // All slots are active - that's fine, just pick random slot
           targetSlot = currentSlots[Math.floor(Math.random() * currentSlots.length)]
+          console.log('🎯 All slots active - selected random slot')
         }
         
-        console.log('🎯 Selected slot for animation:', targetSlot?.id)
+        // Use the avatar assigned to the selected slot
+        if (targetSlot) {
+          selectedAvatar = targetSlot.avatarData
+          console.log(`🎯 Using slot ${targetSlot.id} with avatar "${selectedAvatar.name}"`)
+        }
       }
       
       if (targetSlot && !isWebSpeech) {
         console.log('🎬 Setting up avatar animation for slot:', targetSlot.id)
+        
+        // Note: targetSlot already has the correct avatarData assigned
+        // If we selected a specific avatar, it should match what's in the slot
+        if (selectedAvatar) {
+          console.log(`🎭 Using selected avatar "${selectedAvatar.name}" for slot ${targetSlot.id}`)
+        }
+        
         audio.addEventListener('play', () => {
           console.log('🟢 Audio started playing - activating avatar:', targetSlot.id)
           setActiveSlots(slots => ({...slots, [targetSlot.id]: true}))
         })
         
+        let cleanedUp = false // Flag to prevent duplicate cleanup
         const end = () => {
+          if (cleanedUp) return // Prevent duplicate calls
+          cleanedUp = true
+          
           console.log('🔴 Audio ended - deactivating avatar:', targetSlot.id)
           setActiveSlots(slots => ({...slots, [targetSlot.id]: false}))
+          
+          // Clean up audio tracking
+          const username = msg.user?.toLowerCase()
+          if (username && activeAudioRef.current.get(username) === audio) {
+            activeAudioRef.current.delete(username)
+          }
+          if (audio) {
+            allActiveAudioRef.current.delete(audio)
+          }
         }
         audio.addEventListener('ended', end)
         audio.addEventListener('pause', end)
@@ -285,7 +728,15 @@ export default function YappersPage() {
       
       if (isWebSpeech) {
         // Handle Web Speech API with queue
-        console.log('🗣️ Using Web Speech API - adding to queue...')
+        console.log('🗣️ Using Web Speech API - checking user availability...')
+        
+        // Backend already handled per-user queuing logic - just add to Web Speech queue
+        console.log('🗣️ Adding message to Web Speech queue (backend already validated per-user queuing)...')
+        
+        // Note: targetSlot already has the correct avatarData assigned
+        if (selectedAvatar && targetSlot) {
+          console.log(`🎭 Using selected avatar "${selectedAvatar.name}" for slot ${targetSlot.id}`)
+        }
         
         // Fetch the JSON instructions
         fetch(msg.audioUrl)
@@ -293,22 +744,29 @@ export default function YappersPage() {
           .then(data => {
             console.log('📋 Web Speech instructions:', data)
             
+            // Add user information to the data for queue management
+            const dataWithUser = { ...data, user: msg.user }
+            
             // Add to speech queue instead of playing immediately
-            setSpeechQueue(queue => [...queue, { data, targetSlot }])
-            console.log('✅ Web Speech added to queue')
+            setSpeechQueue(queue => [...queue, { data: dataWithUser, targetSlot }])
+            console.log(`✅ Web Speech added to queue for user: ${msg.user}`)
           })
           .catch(error => {
             console.error('❌ Failed to load Web Speech instructions:', error)
+            // CRITICAL: Clean up on fetch failure to prevent backend thinking slot is occupied
+            end()
           })
       } else {
         // Handle regular audio file
-        console.log('🔊 Attempting to play audio...')
+        console.log(`🔊 Attempting to play audio for ${msg.user}... (${allActiveAudioRef.current.size} total active)`)
         audio.play()
           .then(() => {
-            console.log('✅ Audio play() successful')
+            console.log(`✅ Audio play() successful for ${msg.user} (parallel audio supported)`)
           })
           .catch((error) => {
-            console.error('❌ Audio play() failed:', error)
+            console.error(`❌ Audio play() failed for ${msg.user}:`, error)
+            // CRITICAL: Clean up on play failure to prevent backend thinking slot is occupied
+            end()
           })
       }
       
@@ -320,21 +778,32 @@ export default function YappersPage() {
         eventType: msg.eventType
       }, ...l].slice(0, 50))
     }
-  }, []) // No dependencies - stable callback
+  }, [apiUrl, reRandomizeAvatars]) // Dependencies for WebSocket message handling
 
   useEffect(() => {
     // Import global WebSocket manager directly
     let removeListener = null
+    let mounted = true
     
-    import('../websocket-manager.js').then(({ default: wsManager }) => {
-      console.log('🔌 YappersPage: Adding WebSocket listener')
-      removeListener = wsManager.addListener(handleMessage)
-    })
+    // Add a small delay to prevent rapid connect/disconnect in development
+    const connectTimeout = setTimeout(() => {
+      if (!mounted) return
+      
+      import('../websocket-manager.js').then(({ default: wsManager }) => {
+        if (!mounted) return
+        console.log('🔌 YappersPage: Adding WebSocket listener')
+        removeListener = wsManager.addListener(handleMessage)
+      })
+    }, 100) // Small delay to debounce rapid re-mounts
     
     return () => {
+      mounted = false
+      clearTimeout(connectTimeout)
+      
       if (removeListener) {
         console.log('🔌 YappersPage: Removing WebSocket listener')
-        removeListener()
+        // Add a small delay before removing to prevent rapid disconnect/reconnect
+        setTimeout(() => removeListener(), 50)
       }
     }
   }, [handleMessage])
@@ -360,9 +829,11 @@ export default function YappersPage() {
           const thisRowWidth = (avatarsInThisRow - 1) * spacingX
           const centerOffset = (maxRowWidth - thisRowWidth) / 2 // Center shorter rows
           
-          // Add honeycomb offset for even rows (2nd, 4th, 6th, etc.)
-          const isEvenRow = (slot.row + 1) % 2 === 0 // +1 because rows are 0-indexed
-          const honeycombOffset = isEvenRow ? spacingX / 2 : 0 // Offset even rows by half horizontal spacing
+          // Add honeycomb offset - create true honeycomb/brick pattern
+          // For proper honeycomb: alternate between offset and no offset, with shorter rows getting preference for offset
+          const isMaxWidthRow = avatarsInThisRow === maxAvatarsInAnyRow
+          const shouldOffset = isMaxWidthRow ? (slot.row % 2 === 1) : (slot.row % 2 === 0) // Alternate pattern, but flip for shorter rows
+          const honeycombOffset = shouldOffset ? spacingX / 2 : 0 // Offset by half spacing for honeycomb pattern
           
           // Calculate position based on row and column with centering and honeycomb offset
           const x = baseX + slot.col * spacingX + centerOffset + honeycombOffset

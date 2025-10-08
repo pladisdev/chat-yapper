@@ -31,3 +31,5 @@ class AvatarImage(SQLModel, table=True):
     file_size: Optional[int] = Field(default=None)  # File size in bytes
     avatar_type: str = Field(default="default")  # "default" or "speaking"
     avatar_group_id: Optional[str] = Field(default=None)  # Group ID to link default and speaking images
+    voice_id: Optional[int] = Field(default=None)  # ID of the Voice this avatar is assigned to (None = random)
+    spawn_position: Optional[int] = Field(default=None)  # Specific slot number (1-6), None = random spawning

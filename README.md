@@ -8,6 +8,7 @@ Chat Yapper is a powerful text-to-speech application that reads Twitch chat mess
 - **Voice Avatars**: Assign different voices to different users or groups
 - **Multiple TTS Providers**: Support for ElevenLabs, OpenAI, Azure, AWS Polly, and Web Speech API
 - **Custom Avatar Images**: Upload and manage visual avatars for each voice
+- **Automated Testing**: Comprehensive unit tests with CI/CD via GitHub Actions
 
 
 ## Quick Start (End Users)
@@ -212,6 +213,46 @@ chat-yapper/
 
 ### WebSocket
 - `WS /ws` - Real-time communication for chat messages
+
+## 🧪 Testing
+
+Chat Yapper includes comprehensive automated testing for both backend and frontend.
+
+### Quick Test Commands
+
+```bash
+# Backend tests
+cd backend
+pytest -v
+
+# Frontend tests
+cd frontend
+npm test -- --run
+
+# With coverage
+pytest --cov=. --cov-report=html  # Backend
+npm run test:coverage              # Frontend
+```
+
+### Installation Script
+
+```bash
+# Windows PowerShell
+.\install-test-deps.ps1
+
+# Linux/Mac
+bash install-test-deps.sh
+```
+
+### CI/CD
+
+Automated tests run on every push and pull request via GitHub Actions:
+- ✅ Backend tests (Python 3.9, 3.10, 3.11)
+- ✅ Frontend tests (Node 18.x, 20.x)
+- ✅ Code linting and formatting checks
+- ✅ Coverage reporting
+
+**For detailed testing documentation, see [TESTING.md](TESTING.md)**
 
 ## 🐛 Troubleshooting
 

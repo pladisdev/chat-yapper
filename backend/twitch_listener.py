@@ -160,10 +160,61 @@ class TwitchBot(commands.Bot):
     async def event_usernotice(self, channel, tags):
         self._emit_usernotice(channel, tags)
 
+    # ---------- Moderation Events (Bans/Timeouts) ----------
+    # Handles CLEARCHAT IRC events which are sent when:
+    # - A user is banned (no ban-duration tag)
+    # - A user is timed out (has ban-duration tag with seconds)
+    # - Chat is cleared by a moderator (no target-user-id tag)
+    
+    def _emit_clearchat(self, channel, tags_in):
+        """Handle CLEARCHAT events (bans, timeouts, chat clears)"""
+        tags = _normalize_tags(tags_in)
+        # For CLEARCHAT, the target username is usually in "target-user-id" but we need the actual username
+        # Try multiple fields to get the username, prioritizing login name over display name
+        target_user = tags.get("login") or tags.get("display-name") or tags.get("target-user-id")
+        ban_duration = tags.get("ban-duration")  # Present for timeouts, absent for bans
+        
+        # Debug: log all available tags for troubleshooting
+        print(f"CLEARCHAT tags: {tags}")
+        if target_user:
+            print(f"Extracted target user: '{target_user}' from tags")
+        
+        if target_user:
+            # This is a user-specific action (ban or timeout)
+            event_type = "timeout" if ban_duration else "ban"
+            duration = int(ban_duration) if ban_duration else None
+            
+            print(f"Twitch moderation: {event_type} for user {target_user}" + (f" ({duration}s)" if duration else ""))
+            
+            self.on_event_cb({
+                "type": "moderation",
+                "eventType": event_type,
+                "target_user": target_user,
+                "duration": duration,
+                "tags": tags,
+            })
+        else:
+            # This is a general chat clear
+            print("Twitch chat cleared by moderator")
+            self.on_event_cb({
+                "type": "moderation",
+                "eventType": "clear_chat",
+                "tags": tags,
+            })
+
+    # TwitchIO 2.x
+    async def event_raw_clearchat(self, channel, tags):
+        self._emit_clearchat(channel, tags)
+
+    # TwitchIO 1.x fallback
+    async def event_clearchat(self, channel, tags):
+        self._emit_clearchat(channel, tags)
+
 
 async def run_twitch_bot(token: str, nick: str, channel: str, on_event: Callable[[Dict[str, Any]], None]):
     print(f"Starting Twitch bot for channel: {channel}")
     logger = None
+    bot = None
     try:
         import logging
         logger = logging.getLogger("ChatYapper.Twitch")
@@ -197,6 +248,25 @@ async def run_twitch_bot(token: str, nick: str, channel: str, on_event: Callable
             loop = asyncio.get_running_loop()
             await loop.run_in_executor(None, getattr(bot, "run"))
 
+    except asyncio.CancelledError:
+        # Task was cancelled (e.g., server shutdown), clean up gracefully
+        print("Twitch bot task cancelled")
+        if logger:
+            logger.info("Twitch bot task cancelled during startup")
+        # Try to close the bot connection if it exists
+        if bot:
+            try:
+                close_method = getattr(bot, "close", None)
+                if close_method:
+                    if asyncio.iscoroutinefunction(close_method):
+                        await close_method()
+                    else:
+                        close_method()
+            except Exception as close_err:
+                # Ignore cleanup errors during cancellation
+                if logger:
+                    logger.debug(f"Error during bot cleanup: {close_err}")
+        raise  # Re-raise CancelledError so the task properly terminates
     except Exception as e:
         print(f"Twitch bot failed to start: {e}")
         try:

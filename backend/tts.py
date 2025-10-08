@@ -229,6 +229,7 @@ class GoogleTTSProvider(TTSProvider):
                 response_data = await response.json()
                 
                 voices = []
+                skipped_voices = []
                 if 'voices' in response_data:
                     for voice in response_data['voices']:
                         # Get the voice name and language codes
@@ -236,6 +237,26 @@ class GoogleTTSProvider(TTSProvider):
                         language_codes = voice.get('languageCodes', [])
                         ssml_gender = voice.get('ssmlGender', 'UNSPECIFIED')
                         natural_sample_rate = voice.get('naturalSampleRateHertz', 24000)
+                        
+                        # Skip voices that don't follow standard naming convention
+                        # Standard Google voices follow patterns like: en-US-Standard-A, en-US-Wavenet-A, en-US-Neural2-A, etc.
+                        # Non-standard voices (Journey, Chirp, star/moon names) aren't supported by v1 API
+                        voice_lower = voice_name.lower()
+                        
+                        # Check if voice has standard prefix (language-region-type format)
+                        voice_parts = voice_name.split('-')
+                        has_standard_format = len(voice_parts) >= 3 and voice_parts[0] in ['en', 'es', 'fr', 'de', 'it', 'pt', 'ja', 'ko', 'zh', 'ar', 'hi', 'ru', 'nl', 'pl', 'sv', 'da', 'fi', 'no', 'tr', 'uk', 'cs', 'el', 'he', 'id', 'ms', 'th', 'vi', 'bn', 'ta', 'te', 'mr', 'gu', 'kn', 'ml', 'ur', 'af', 'bg', 'ca', 'hr', 'et', 'fil', 'hu', 'is', 'lv', 'lt', 'ro', 'sk', 'sl', 'sr', 'cmn', 'yue']
+                        
+                        # Skip non-standard voices (including star/moon names like Alnilam, Iapetus, etc.)
+                        if not has_standard_format or any(unsupported in voice_lower for unsupported in [
+                            'journey', 'chirp', 
+                            # Star names (Journey voices)
+                            'alnilam', 'vega', 'altair', 'bellatrix', 'rigel', 'sirius', 'procyon', 'capella', 'arcturus', 'aldebaran',
+                            # Moon/Saturn names (additional preview voices)
+                            'iapetus', 'titan', 'rhea', 'dione', 'tethys', 'enceladus', 'mimas', 'hyperion', 'phoebe'
+                        ]):
+                            skipped_voices.append(voice_name)
+                            continue
                         
                         # Create a friendly display name
                         gender_map = {
@@ -257,6 +278,8 @@ class GoogleTTSProvider(TTSProvider):
                                 "sample_rate": natural_sample_rate
                             })
                 
+                if skipped_voices:
+                    print(f"Skipped {len(skipped_voices)} unsupported Google TTS voices (Journey/Chirp): {', '.join(skipped_voices[:5])}{' and more...' if len(skipped_voices) > 5 else ''}")
                 print(f"Fetched {len(voices)} Google TTS voices")
                 return voices
 
@@ -419,9 +442,58 @@ class AmazonPollyProvider(TTSProvider):
         return polly_voices
 
     async def synth(self, job: TTSJob) -> str:
-        # For now, Amazon Polly implementation is disabled due to complexity of AWS authentication
-        # Users can still add Polly voices to the system, but they will fall back to other providers
-        raise RuntimeError("Amazon Polly provider temporarily disabled - please use other TTS providers")
+        """Synthesize speech using Amazon Polly"""
+        try:
+            import boto3
+            from botocore.exceptions import BotoCoreError, ClientError
+        except ImportError:
+            raise RuntimeError("boto3 not installed. Run: pip install boto3")
+        
+        if not self.aws_access_key or not self.aws_secret_key:
+            raise RuntimeError("Amazon Polly credentials not configured")
+        
+        outpath = os.path.join(AUDIO_DIR, f"{uuid.uuid4()}.{job.audio_format}")
+        
+        try:
+            # Create Polly client
+            polly_client = boto3.client(
+                'polly',
+                aws_access_key_id=self.aws_access_key,
+                aws_secret_access_key=self.aws_secret_key,
+                region_name=self.aws_region
+            )
+            
+            # Determine output format
+            output_format = 'mp3' if job.audio_format == 'mp3' else 'ogg_vorbis'
+            
+            print(f"Amazon Polly: Synthesizing '{job.text[:50]}...' with voice '{job.voice or self.voice_id}'")
+            
+            # Synthesize speech
+            response = polly_client.synthesize_speech(
+                Text=job.text,
+                OutputFormat=output_format,
+                VoiceId=job.voice or self.voice_id,
+                Engine='neural' if job.voice in ['Joanna', 'Matthew', 'Ruth', 'Stephen'] else 'standard'
+            )
+            
+            # Save audio stream to file
+            if 'AudioStream' in response:
+                with open(outpath, 'wb') as f:
+                    f.write(response['AudioStream'].read())
+                
+                print(f"Amazon Polly: Audio generated successfully: {outpath}")
+                
+                # Schedule cleanup after 30 seconds
+                asyncio.create_task(self._cleanup_file_after_delay(outpath, 30))
+                
+                return outpath
+            else:
+                raise RuntimeError("Amazon Polly response missing AudioStream")
+                
+        except (BotoCoreError, ClientError) as error:
+            raise RuntimeError(f"Amazon Polly error: {str(error)}")
+        except Exception as e:
+            raise RuntimeError(f"Amazon Polly synthesis failed: {str(e)}")
     
     async def _cleanup_file_after_delay(self, filepath: str, delay_seconds: int):
         """Clean up temporary audio file after delay"""

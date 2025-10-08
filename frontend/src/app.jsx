@@ -1,10 +1,15 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { WebSocketProvider } from './WebSocketContext'
 import YappersPage from './pages/YappersPage'
 import SettingsPage from './pages/SettingsPage'
 
 export default function App() {
+  useEffect(() => {
+    // Enable dark mode by default
+    document.documentElement.classList.add('dark')
+  }, [])
+
   return (
     <WebSocketProvider>
       <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>

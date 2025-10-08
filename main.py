@@ -121,7 +121,16 @@ def start_backend(port):
         # Use the pre-determined available port
         logger.info(f"Starting Chat Yapper backend server on port {port}...")
         log_important(f"Starting Chat Yapper backend server on port {port}...")
-        uvicorn.run(backend_app.app, host="0.0.0.0", port=port, log_level="warning")
+        try:
+            uvicorn.run(backend_app.app, host="0.0.0.0", port=port, log_level="warning")
+        except OSError as e:
+            if "10048" in str(e) or "already in use" in str(e).lower():
+                error_msg = f"\n{'='*60}\nERROR: Port {port} is already in use!\n\nThis usually means Chat Yapper is already running.\n\nPlease either:\n  1. Close the other Chat Yapper window, or\n  2. Check Task Manager for 'ChatYapper.exe' and end it\n{'='*60}\n"
+                logger.error(error_msg)
+                print(error_msg)
+                input("Press Enter to exit...")
+                sys.exit(1)
+            raise
         
     except ImportError as e:
         logger.error(f"Import error: {e}")
