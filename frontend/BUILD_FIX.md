@@ -10,15 +10,20 @@ Could not resolve "../../lib/utils" from "src/components/ui/card.jsx"
 The UI components were using relative imports (`../../lib/utils`) instead of the configured Vite path alias (`@`). While this works in development, Rollup (Vite's bundler) can have issues resolving relative imports during production builds, especially across different directory levels.
 
 ## Solution
-Updated all UI component imports to use the `@` path alias defined in `vite.config.js`:
+Updated all UI component imports to use the `@` path alias with explicit `.js` extension:
 
 ```javascript
 // Before
 import { cn } from "../../lib/utils"
 
 // After
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils.js"
 ```
+
+**Why the `.js` extension?**
+- Rollup (used by Vite in production builds) requires explicit file extensions when resolving imports
+- Development mode is more lenient, but production builds fail without the extension
+- This follows ES modules best practices
 
 ### Files Modified
 - `src/components/ui/card.jsx`
