@@ -36,6 +36,18 @@
   - Provider factory pattern
 - **Skipped**: Edge TTS integration (requires installation)
 
+#### Message Filter Tests (33/33 passing) ✅ **NEW!**
+- **File**: `backend/tests/test_message_filter.py`
+- **Coverage**: 98% (111/113 statements)
+- **Tests**:
+  - Duplicate message detection (exact, case, punctuation, whitespace)
+  - Single-user spam/rate limiting
+  - Similar message spam detection
+  - Multi-user coordinated spam detection
+  - Edge cases (empty, long, Unicode, special characters)
+  - Message history cleanup
+  - Global singleton instance
+
 #### API Tests (11/14 passing, 3 skipped) ✅
 - **File**: `backend/tests/test_api.py`
 - **Tests**:

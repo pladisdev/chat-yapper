@@ -18,6 +18,7 @@ from sqlmodel import SQLModel, Session, select, create_engine
 
 from models import Setting, Voice, AvatarImage
 from tts import get_provider, get_hybrid_provider, TTSJob
+from message_filter import get_message_history
 
 # TTS Cancellation System:
 # - Tracks active TTS jobs by username in active_tts_jobs dict
@@ -1079,6 +1080,76 @@ def should_process_message(text: str, settings: Dict[str, Any], username: str = 
             logger.info(f"Ignored message from {username} due to active TTS: {filtered_text[:50]}...")
             return False, filtered_text
 
+    # Check for duplicate messages
+    if username and filtering.get("enableDuplicateFilter", True):
+        message_history = get_message_history()
+        duplicate_window = filtering.get("duplicateTimeWindow", 60)
+        
+        is_duplicate, reason = message_history.is_duplicate(
+            username, 
+            filtered_text, 
+            time_window_seconds=duplicate_window
+        )
+        
+        if is_duplicate:
+            logger.info(f"Skipping duplicate message: {reason}")
+            return False, filtered_text
+    
+    # Check for spam (single user rate limiting)
+    if username and filtering.get("enableSpamFilter", True):
+        message_history = get_message_history()
+        spam_threshold = filtering.get("spamThreshold", 5)
+        spam_window = filtering.get("spamTimeWindow", 10)
+        
+        is_spam, reason = message_history.is_spam(
+            username, 
+            max_messages=spam_threshold, 
+            time_window_seconds=spam_window
+        )
+        
+        if is_spam:
+            logger.info(f"Skipping spam message: {reason}")
+            return False, filtered_text
+    
+    # Check for similar message spam (same user, slightly different messages)
+    if username and filtering.get("enableSimilarSpamFilter", True):
+        message_history = get_message_history()
+        similarity_threshold = filtering.get("similarityThreshold", 0.8)
+        similar_window = filtering.get("similarSpamTimeWindow", 60)
+        
+        is_similar_spam, reason = message_history.is_similar_spam(
+            username,
+            filtered_text,
+            similarity_threshold=similarity_threshold,
+            time_window_seconds=similar_window
+        )
+        
+        if is_similar_spam:
+            logger.info(f"Skipping similar spam: {reason}")
+            return False, filtered_text
+    
+    # Check for multi-user coordinated spam
+    if filtering.get("enableMultiUserSpamFilter", False):
+        message_history = get_message_history()
+        min_users = filtering.get("multiUserSpamMinUsers", 3)
+        similarity = filtering.get("multiUserSpamSimilarity", 0.85)
+        multi_window = filtering.get("multiUserSpamTimeWindow", 30)
+        
+        is_multi_spam, reason = message_history.is_multi_user_spam(
+            filtered_text,
+            min_users=min_users,
+            similarity_threshold=similarity,
+            time_window_seconds=multi_window
+        )
+        
+        if is_multi_spam:
+            logger.info(f"Skipping coordinated spam: {reason}")
+            return False, filtered_text
+    
+    # If message passes all filters, add it to history for future duplicate detection
+    if username:
+        message_history = get_message_history()
+        message_history.add_message(username, filtered_text)
     
     return True, filtered_text
 
