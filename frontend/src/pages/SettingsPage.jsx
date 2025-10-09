@@ -278,7 +278,7 @@ export default function SettingsPage() {
         </div>
 
         <Tabs defaultValue="general" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-6 lg:w-auto lg:inline-grid">
+          <TabsList className="grid w-full grid-cols-7 lg:w-auto lg:inline-grid">
             <TabsTrigger value="general" className="flex items-center gap-2">
               <Settings className="w-4 h-4" />
               <span className="hidden sm:inline">General</span>
@@ -302,6 +302,10 @@ export default function SettingsPage() {
             <TabsTrigger value="test" className="flex items-center gap-2">
               <TestTube2 className="w-4 h-4" />
               <span className="hidden sm:inline">Test</span>
+            </TabsTrigger>
+            <TabsTrigger value="about" className="flex items-center gap-2">
+              <BarChart3 className="w-4 h-4" />
+              <span className="hidden sm:inline">About</span>
             </TabsTrigger>
           </TabsList>
 
@@ -341,7 +345,7 @@ export default function SettingsPage() {
 
           <TabsContent value="twitch" className="space-y-6">
             <TwitchIntegration settings={settings} updateSettings={updateSettings} />
-            <SpecialEventVoices settings={settings} updateSettings={updateSettings} allVoices={allVoices} />
+            {/* <SpecialEventVoices settings={settings} updateSettings={updateSettings} allVoices={allVoices} /> */}
           </TabsContent>
 
           <TabsContent value="filtering" className="space-y-6">
@@ -350,6 +354,10 @@ export default function SettingsPage() {
 
           <TabsContent value="test" className="space-y-6">
             <Simulator onSend={simulate} />
+          </TabsContent>
+
+          <TabsContent value="about" className="space-y-6">
+            <AboutSection />
           </TabsContent>
         </Tabs>
       </div>
@@ -363,11 +371,19 @@ export default function SettingsPage() {
 function TwitchIntegration({ settings, updateSettings }) {
   const [twitchStatus, setTwitchStatus] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [channelInput, setChannelInput] = useState('');
 
   // Check Twitch connection status on component mount
   useEffect(() => {
     checkTwitchStatus();
   }, []);
+
+  // Sync channel input with settings
+  useEffect(() => {
+    if (settings.twitch?.channel !== undefined) {
+      setChannelInput(settings.twitch.channel || '');
+    }
+  }, [settings.twitch?.channel]);
 
   const checkTwitchStatus = async () => {
     try {
@@ -424,6 +440,15 @@ function TwitchIntegration({ settings, updateSettings }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const updateChannel = () => {
+    updateSettings({ 
+      twitch: { 
+        ...settings.twitch, 
+        channel: channelInput.trim() 
+      } 
+    });
   };
 
   return (
@@ -509,17 +534,23 @@ function TwitchIntegration({ settings, updateSettings }) {
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="channel">Channel to Monitor</Label>
-                  <Input
-                    id="channel"
-                    placeholder="Enter channel name (without #)"
-                    value={settings.twitch?.channel || ''}
-                    onChange={e => updateSettings({ 
-                      twitch: { 
-                        ...settings.twitch, 
-                        channel: e.target.value 
-                      } 
-                    })}
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      id="channel"
+                      placeholder="Enter channel name (without #)"
+                      value={channelInput}
+                      onChange={e => setChannelInput(e.target.value)}
+                      onKeyPress={e => e.key === 'Enter' && updateChannel()}
+                      className="flex-1"
+                    />
+                    <Button
+                      onClick={updateChannel}
+                      disabled={channelInput.trim() === (settings.twitch?.channel || '')}
+                      size="sm"
+                    >
+                      Update
+                    </Button>
+                  </div>
                   <p className="text-sm text-muted-foreground">
                     Usually your own channel: <code>{twitchStatus.username}</code>
                   </p>
@@ -1522,9 +1553,6 @@ function Simulator({ onSend }) {
   const [text, setText] = useState('Hello Chat Yappers!')
   const [eventType, setEventType] = useState('chat')
   const [userMode, setUserMode] = useState('single') // 'single' or 'random'
-  const [burstCount, setBurstCount] = useState(5)
-  const [burstDelay, setBurstDelay] = useState(1000)
-  const [isSendingBurst, setIsSendingBurst] = useState(false)
   
   const eventTypes = [
     { value: 'chat', label: '💬 Chat', desc: 'Regular chat message' },
@@ -1555,23 +1583,7 @@ function Simulator({ onSend }) {
     return testMessages[Math.floor(Math.random() * testMessages.length)]
   }
 
-  const sendBurstMessages = async () => {
-    setIsSendingBurst(true)
-    
-    for (let i = 0; i < burstCount; i++) {
-      const messageUser = userMode === 'single' ? user : getRandomUsername()
-      const messageText = userMode === 'single' ? text : getRandomMessage()
-      
-      await onSend(messageUser, messageText, eventType)
-      
-      // Add delay between messages (except for the last one)
-      if (i < burstCount - 1) {
-        await new Promise(resolve => setTimeout(resolve, burstDelay))
-      }
-    }
-    
-    setIsSendingBurst(false)
-  }
+
   
   return (
     <Card>
@@ -1682,82 +1694,6 @@ function Simulator({ onSend }) {
               Send Test Message
             </Button>
           </div>
-        </div>
-
-        <Separator />
-
-        {/* Burst Messages Section */}
-        <div className="space-y-4">
-          <Label className="text-base font-medium">Burst Message Testing</Label>
-          <p className="text-sm text-muted-foreground">
-            Send multiple messages rapidly to test {userMode === 'single' ? 'per-user queuing behavior' : 'parallel audio handling'}
-          </p>
-          
-          <div className="grid md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="burst-count">Number of Messages</Label>
-              <Input
-                id="burst-count"
-                type="number"
-                min="2"
-                max="20"
-                value={burstCount}
-                onChange={e => setBurstCount(parseInt(e.target.value) || 5)}
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="burst-delay">Delay Between Messages (ms)</Label>
-              <Input
-                id="burst-delay"
-                type="number"
-                min="100"
-                max="5000"
-                step="100"
-                value={burstDelay}
-                onChange={e => setBurstDelay(parseInt(e.target.value) || 1000)}
-              />
-            </div>
-          </div>
-          
-          <div className="flex justify-center pt-2">
-            <Button 
-              size="lg"
-              className="gap-2" 
-              onClick={sendBurstMessages}
-              disabled={isSendingBurst}
-            >
-              {isSendingBurst ? (
-                <>
-                  <span className="text-lg">⏳</span>
-                  Sending Burst...
-                </>
-              ) : (
-                <>
-                  <span className="text-lg">💥</span>
-                  Send {burstCount} Messages
-                </>
-              )}
-            </Button>
-          </div>
-          
-          {userMode === 'single' && (
-            <div className="bg-blue-50 dark:bg-blue-950 p-3 rounded-lg">
-              <p className="text-sm text-blue-700 dark:text-blue-300">
-                <strong>Single User Mode:</strong> Watch how the system handles rapid messages from "{user}" - 
-                new messages should be ignored while previous ones are still speaking.
-              </p>
-            </div>
-          )}
-          
-          {userMode === 'random' && (
-            <div className="bg-green-50 dark:bg-green-950 p-3 rounded-lg">
-              <p className="text-sm text-green-700 dark:text-green-300">
-                <strong>Random User Mode:</strong> Watch how the system handles multiple users speaking simultaneously - 
-                different users should be able to speak in parallel.
-              </p>
-            </div>
-          )}
         </div>
       </CardContent>
     </Card>
@@ -2027,5 +1963,82 @@ function ProfanityWordsManager({ words, onUpdate }) {
         </p>
       )}
     </div>
+  )
+}
+
+function AboutSection() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <BarChart3 className="w-5 h-5" />
+          About Chat Yapper
+        </CardTitle>
+        <CardDescription>Information and support for Chat Yapper TTS System</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="space-y-4">
+          <div className="p-4 rounded-lg border bg-muted/50">
+            <h3 className="font-medium text-lg mb-2">Chat Yapper</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              A way to have your chat talk through avatars! At the same time... not obnoxious at all...
+            </p>
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="font-medium">✨ Features:</span>
+              </div>
+              <ul className="list-disc list-inside ml-4 space-y-1 text-muted-foreground">
+                <li>Voice avatars supporting multi-image avatars</li>
+                <li>Multiple TTS providers (Edge, MonsterTTS, Google Cloud, Amazon Polly)</li>
+                <li>Message filtering and rate limiting</li>
+                <li>Twitch integration</li>
+              </ul>
+            </div>
+          </div>
+
+          <Separator />
+
+          <div className="space-y-4">
+            <h3 className="font-medium text-lg">Support & Contact</h3>
+            <div className="p-4 rounded-lg border bg-card">
+              <div className="flex items-center gap-3">
+                <div className="text-2xl"></div>
+                <div>
+                  <p className="font-medium">Need help or have questions?</p>
+                  <p className="text-sm text-muted-foreground">
+                    Contact the developer for support, bug reports, or feature requests
+                  </p>
+                  <a 
+                    href="mailto:pladisdev@gmail.com" 
+                    className="text-primary hover:underline font-mono text-sm"
+                  >
+                    pladisdev@gmail.com
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <Separator />
+
+          <div className="space-y-4">
+            <h3 className="font-medium text-lg">ℹ️ System Information</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-3 rounded-lg border bg-card">
+                <div className="text-sm font-medium mb-1">Version</div>
+                <div className="text-xs text-muted-foreground">Chat Yapper v1.0.0</div>
+              </div>
+              <div className="p-3 rounded-lg border bg-card">
+                <div className="text-sm font-medium mb-1">Status</div>
+                <div className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" />
+                  System Running
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
