@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card'
+import logger from '../utils/logger'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Switch } from '../components/ui/switch'
@@ -15,7 +16,7 @@ import {
   Mic, 
   Zap, 
   MessageSquare, 
-  TestTube2, 
+  TestTube2,
   BarChart3,
   CheckCircle2,
   XCircle
@@ -58,13 +59,13 @@ export default function SettingsPage() {
   useEffect(() => {
     const removeListener = addListener((data) => {
       if (data.type === 'tts_global_stopped') {
-        console.log('🔇 TTS globally stopped via WebSocket')
+        logger.info('🔇 TTS globally stopped via WebSocket')
         setSettings(prevSettings => ({
           ...prevSettings,
           ttsControl: { enabled: false }
         }))
       } else if (data.type === 'tts_global_resumed') {
-        console.log('🔊 TTS globally resumed via WebSocket')
+        logger.info('🔊 TTS globally resumed via WebSocket')
         setSettings(prevSettings => ({
           ...prevSettings,
           ttsControl: { enabled: true }
@@ -82,7 +83,7 @@ export default function SettingsPage() {
   }
 
   const simulate = async (user, text, eventType='chat') => {
-    console.log('🧪 Sending test message:', { user, text, eventType })
+    logger.info('🧪 Sending test message:', { user, text, eventType })
     const fd = new FormData()
     fd.set('user', user)
     fd.set('text', text)
@@ -91,7 +92,7 @@ export default function SettingsPage() {
     try {
       const response = await fetch(`${apiUrl}/api/simulate`, { method: 'POST', body: fd })
       const result = await response.json()
-      console.log('✅ Simulate response:', result)
+      logger.info('✅ Simulate response:', result)
     } catch (error) {
       console.error('❌ Simulate error:', error)
     }
@@ -216,6 +217,44 @@ export default function SettingsPage() {
     }
   }
 
+  const handleToggleAvatarDisabled = async (avatarId) => {
+    try {
+      const response = await fetch(`${apiUrl}/api/avatars/${avatarId}/toggle-disabled`, {
+        method: 'PUT'
+      })
+      
+      const result = await response.json()
+      if (result.success) {
+        const avatarsResponse = await fetch(`${apiUrl}/api/avatars/managed`)
+        const avatarsData = await avatarsResponse.json()
+        setManagedAvatars(avatarsData?.avatars || [])
+      } else {
+        alert(`Toggle failed: ${result.error}`)
+      }
+    } catch (error) {
+      alert(`Toggle error: ${error.message}`)
+    }
+  }
+
+  const handleToggleAvatarGroupDisabled = async (groupId, avatarName, isPair) => {
+    try {
+      const response = await fetch(`${apiUrl}/api/avatars/group/${encodeURIComponent(groupId)}/toggle-disabled`, {
+        method: 'PUT'
+      })
+      
+      const result = await response.json()
+      if (result.success) {
+        const avatarsResponse = await fetch(`${apiUrl}/api/avatars/managed`)
+        const avatarsData = await avatarsResponse.json()
+        setManagedAvatars(avatarsData?.avatars || [])
+      } else {
+        alert(`Toggle failed: ${result.error}`)
+      }
+    } catch (error) {
+      alert(`Toggle error: ${error.message}`)
+    }
+  }
+
   if (!settings) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -283,6 +322,8 @@ export default function SettingsPage() {
               handleAvatarUpload={handleAvatarUpload}
               handleDeleteAvatar={handleDeleteAvatar}
               handleDeleteAvatarGroup={handleDeleteAvatarGroup}
+              handleToggleAvatarDisabled={handleToggleAvatarDisabled}
+              handleToggleAvatarGroupDisabled={handleToggleAvatarGroupDisabled}
               selectedAvatarGroup={selectedAvatarGroup}
               setSelectedAvatarGroup={setSelectedAvatarGroup}
               lastUploadedName={lastUploadedName}
@@ -319,6 +360,179 @@ export default function SettingsPage() {
 // Sub-components would be imported from separate files in a real app
 // For now, including them inline for completeness
 
+function TwitchIntegration({ settings, updateSettings }) {
+  const [twitchStatus, setTwitchStatus] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  // Check Twitch connection status on component mount
+  useEffect(() => {
+    checkTwitchStatus();
+  }, []);
+
+  const checkTwitchStatus = async () => {
+    try {
+      const response = await fetch('/api/twitch/status');
+      const status = await response.json();
+      setTwitchStatus(status);
+    } catch (error) {
+      logger.error('Failed to check Twitch status:', error);
+      setTwitchStatus({ connected: false });
+    }
+  };
+
+  const connectToTwitch = () => {
+    // Open OAuth flow in same window
+    window.location.href = '/auth/twitch';
+  };
+
+  // Check for error parameter in URL
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const error = urlParams.get('error');
+    
+    if (error === 'twitch_not_configured') {
+      alert('⚠️ Twitch integration not configured!\n\nThe developer needs to set up Twitch OAuth credentials.\nSee TWITCH_SETUP.md for instructions.');
+      // Clear error from URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
+
+  const disconnectTwitch = async () => {
+    if (!confirm('Are you sure you want to disconnect from Twitch?')) return;
+    
+    setLoading(true);
+    try {
+      const response = await fetch('/api/twitch/disconnect', { method: 'DELETE' });
+      const result = await response.json();
+      
+      if (result.success) {
+        setTwitchStatus({ connected: false });
+        // Clear Twitch settings
+        updateSettings({ 
+          twitch: { 
+            ...settings.twitch, 
+            enabled: false 
+          } 
+        });
+        logger.info('Successfully disconnected from Twitch');
+      } else {
+        alert('Failed to disconnect: ' + result.error);
+      }
+    } catch (error) {
+      logger.error('Error disconnecting from Twitch:', error);
+      alert('Network error while disconnecting');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Zap className="w-5 h-5 text-purple-500" />
+          Twitch Integration
+        </CardTitle>
+        <CardDescription>
+          Connect to your Twitch account to enable chat TTS
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {!twitchStatus?.connected ? (
+          <div className="text-center space-y-4 py-8">
+            <div className="space-y-2">
+              <h3 className="text-lg font-medium">Connect to Twitch</h3>
+              <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                Authorize Chat Yapper to read your Twitch chat. This is secure and you can 
+                revoke access at any time in your Twitch settings.
+              </p>
+            </div>
+            
+            <Button 
+              onClick={connectToTwitch} 
+              size="lg"
+              className="bg-purple-600 hover:bg-purple-700"
+              disabled={loading}
+            >
+              <Zap className="w-4 h-4 mr-2" />
+              {loading ? 'Connecting...' : 'Connect to Twitch'}
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Connected Status */}
+            <div className="flex items-center justify-between p-4 rounded-lg border bg-emerald-800 text-white">
+              <div className="flex items-center gap-3">
+                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                <div>
+                  <p className="font-medium">Connected to Twitch</p>
+                  <p className="text-sm text-emerald-100">
+                    Logged in as: {twitchStatus.display_name} (@{twitchStatus.username})
+                  </p>
+                </div>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={disconnectTwitch}
+                disabled={loading}
+                className="border-red-500 text-red-400 hover:bg-red-600 hover:text-white"
+              >
+                {loading ? 'Disconnecting...' : 'Disconnect'}
+              </Button>
+            </div>
+
+            {/* Enable/Disable Toggle */}
+            <div className="flex items-center justify-between p-4 rounded-lg border bg-card">
+              <div className="space-y-1">
+                <Label htmlFor="twitch-enabled" className="text-base">Enable Chat TTS</Label>
+                <p className="text-sm text-muted-foreground">
+                  Start reading chat messages from your Twitch channel
+                </p>
+              </div>
+              <Switch
+                id="twitch-enabled"
+                checked={!!settings.twitch?.enabled}
+                onCheckedChange={checked => updateSettings({ 
+                  twitch: { 
+                    ...settings.twitch, 
+                    enabled: checked,
+                    // Set the connected username as the channel by default
+                    channel: checked && !settings.twitch?.channel ? twitchStatus.username : settings.twitch?.channel
+                  } 
+                })}
+              />
+            </div>
+
+            {/* Channel Selection */}
+            {settings.twitch?.enabled && (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="channel">Channel to Monitor</Label>
+                  <Input
+                    id="channel"
+                    placeholder="Enter channel name (without #)"
+                    value={settings.twitch?.channel || ''}
+                    onChange={e => updateSettings({ 
+                      twitch: { 
+                        ...settings.twitch, 
+                        channel: e.target.value 
+                      } 
+                    })}
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    Usually your own channel: <code>{twitchStatus.username}</code>
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 function GeneralSettings({ settings, updateSettings, apiUrl }) {
   const [tempVolume, setTempVolume] = useState(Math.round((settings.volume !== undefined ? settings.volume : 1.0) * 100))
 
@@ -346,7 +560,7 @@ function GeneralSettings({ settings, updateSettings, apiUrl }) {
                 if (result.success) {
                   // Update settings to reflect new state
                   updateSettings({ ttsControl: { enabled: result.tts_enabled } })
-                  console.log(`✅ TTS ${result.tts_enabled ? 'enabled' : 'disabled'}`)
+                  logger.info(`✅ TTS ${result.tts_enabled ? 'enabled' : 'disabled'}`)
                 } else {
                   console.error('❌ TTS toggle failed:', result.error)
                 }
@@ -482,7 +696,7 @@ function GeneralSettings({ settings, updateSettings, apiUrl }) {
                   const response = await fetch(`${apiUrl}/api/avatars/re-randomize`, { method: 'POST' })
                   const result = await response.json()
                   if (result.success) {
-                    console.log('✅ Avatar re-randomization triggered')
+                    logger.info('✅ Avatar re-randomization triggered')
                   } else {
                     console.error('❌ Avatar re-randomization failed:', result.error)
                   }
@@ -502,77 +716,7 @@ function GeneralSettings({ settings, updateSettings, apiUrl }) {
   )
 }
 
-function TwitchIntegration({ settings, updateSettings }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Zap className="w-5 h-5 text-purple-500" />
-          Twitch Integration
-        </CardTitle>
-        <CardDescription>Connect to your Twitch chat for live TTS</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="flex items-center justify-between p-4 rounded-lg border bg-card">
-          <div className="space-y-1">
-            <Label htmlFor="twitch-enabled" className="text-base">Enable Twitch Bot</Label>
-            <p className="text-sm text-muted-foreground">Connect to your Twitch chat</p>
-          </div>
-          <Switch
-            id="twitch-enabled"
-            checked={!!settings.twitch?.enabled}
-            onCheckedChange={checked => updateSettings({ twitch: { ...settings.twitch, enabled: checked } })}
-          />
-        </div>
-
-        {settings.twitch?.enabled && (
-          <div className="space-y-4">
-            <div className="grid md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="channel">Channel Name</Label>
-                <Input
-                  id="channel"
-                  placeholder="your_channel_name"
-                  value={settings.twitch?.channel || ''}
-                  onChange={e => updateSettings({ twitch: { ...settings.twitch, channel: e.target.value } })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="nick">Bot Nickname</Label>
-                <Input
-                  id="nick"
-                  placeholder="your_bot_username"
-                  value={settings.twitch?.nick || ''}
-                  onChange={e => updateSettings({ twitch: { ...settings.twitch, nick: e.target.value } })}
-                />
-              </div>
-            </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="token">OAuth Token</Label>
-              <Input
-                id="token"
-                type="password"
-                placeholder="oauth:your_token_here"
-                value={settings.twitch?.token || ''}
-                onChange={e => updateSettings({ twitch: { ...settings.twitch, token: e.target.value } })}
-              />
-              <p className="text-sm text-muted-foreground">
-                Get your OAuth token at{' '}
-                <a href="https://twitchtokengenerator.com/" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                  twitchtokengenerator.com
-                </a>
-                {' '}with "chat:read" scope
-              </p>
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-// Continuing in next part due to size...
+// The new OAuth-based TwitchIntegration component is defined above
 function AvatarManagement({
   managedAvatars,
   apiUrl,
@@ -585,6 +729,8 @@ function AvatarManagement({
   handleAvatarUpload,
   handleDeleteAvatar,
   handleDeleteAvatarGroup,
+  handleToggleAvatarDisabled,
+  handleToggleAvatarGroupDisabled,
   selectedAvatarGroup,
   setSelectedAvatarGroup,
   lastUploadedName,
@@ -753,45 +899,76 @@ function AvatarManagement({
                 
                 return Object.entries(grouped).map(([groupKey, avatars]) => {
                   return (
-                    <div key={groupKey} className="p-4 rounded-lg border bg-card">
+                    <div key={groupKey} className={`p-4 rounded-lg border ${avatars.some(avatar => avatar.disabled) ? 'bg-muted/30 opacity-60' : 'bg-card'}`}>
                       <div className="flex items-center justify-between mb-3">
-                        <h4 className="font-medium">{avatars[0].name}</h4>
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => handleDeleteAvatarGroup(groupKey, avatars[0].name, avatars.length > 1)}
-                        >
-                          Delete {avatars.length > 1 ? 'Pair' : 'Avatar'}
-                        </Button>
+                        <h4 className={`font-medium flex items-center gap-2 ${avatars.some(avatar => avatar.disabled) ? 'text-muted-foreground' : ''}`}>
+                          {avatars[0].name}
+                          {avatars.some(avatar => avatar.disabled) && (
+                            <span className="text-xs bg-muted px-2 py-1 rounded-full text-muted-foreground">
+                              DISABLED
+                            </span>
+                          )}
+                        </h4>
+                        <div className="flex gap-2">
+                          <Button
+                            variant={avatars.some(avatar => avatar.disabled) ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => handleToggleAvatarGroupDisabled(groupKey, avatars[0].name, avatars.length > 1)}
+                          >
+                            {avatars.some(avatar => avatar.disabled) ? 'Enable' : 'Disable'}
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => handleDeleteAvatarGroup(groupKey, avatars[0].name, avatars.length > 1)}
+                          >
+                            Delete {avatars.length > 1 ? 'Pair' : 'Avatar'}
+                          </Button>
+                        </div>
                       </div>
                       
                       <div className="flex gap-3 mb-3">
                         {avatars
                           .sort((a, b) => a.avatar_type === 'default' ? -1 : 1)
                           .map(avatar => (
-                            <div key={avatar.id} className="text-center p-3 rounded-lg border bg-muted/50 relative group">
+                            <div key={avatar.id} className={`text-center p-3 rounded-lg border ${avatar.disabled ? 'bg-muted/30 opacity-50' : 'bg-muted/50'} relative group`}>
                               {avatars.length > 1 && (
-                                <button
-                                  onClick={() => handleDeleteAvatar(avatar.id)}
-                                  className="absolute -top-1 -right-1 w-5 h-5 bg-destructive hover:bg-destructive/90 text-destructive-foreground rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                                  title={`Delete ${avatar.avatar_type} image`}
-                                >
-                                  ×
-                                </button>
+                                <>
+                                  <button
+                                    onClick={() => handleToggleAvatarDisabled(avatar.id)}
+                                    className={`absolute -top-1 -left-1 w-5 h-5 ${avatar.disabled ? 'bg-green-600 hover:bg-green-700' : 'bg-amber-600 hover:bg-amber-700'} text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center`}
+                                    title={`${avatar.disabled ? 'Enable' : 'Disable'} ${avatar.avatar_type} image`}
+                                  >
+                                    {avatar.disabled ? '✓' : '⏸'}
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteAvatar(avatar.id)}
+                                    className="absolute -top-1 -right-1 w-5 h-5 bg-destructive hover:bg-destructive/90 text-destructive-foreground rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                                    title={`Delete ${avatar.avatar_type} image`}
+                                  >
+                                    ×
+                                  </button>
+                                </>
                               )}
                               
-                              <div className="w-16 h-16 rounded-lg overflow-hidden mb-2 mx-auto">
+                              <div className="w-16 h-16 rounded-lg overflow-hidden mb-2 mx-auto relative">
                                 <img 
                                   src={`${apiUrl}${avatar.file_path}`}
                                   alt={`${avatar.name} - ${avatar.avatar_type}`}
-                                  className="w-full h-full object-cover"
+                                  className={`w-full h-full object-cover ${avatar.disabled ? 'grayscale' : ''}`}
                                   onError={(e) => {
                                     e.target.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" fill="%23374151"/><text x="50" y="50" text-anchor="middle" dy=".3em" fill="%23d1d5db" font-size="12">Error</text></svg>'
                                   }}
                                 />
+                                {avatar.disabled && (
+                                  <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
+                                    <span className="text-white text-xs font-bold">DISABLED</span>
+                                  </div>
+                                )}
                               </div>
-                              <div className="text-xs font-medium">
+                              <div className={`text-xs font-medium ${avatar.disabled ? 'text-muted-foreground' : ''}`}>
                                 {avatar.avatar_type === 'default' ? '😴 Default' : '🗣️ Speaking'}
+                                {avatar.disabled && ' (Disabled)'}
                               </div>
                               <div className="text-xs text-muted-foreground mt-1">
                                 {(avatar.file_size / 1024).toFixed(1)}KB
@@ -1145,6 +1322,107 @@ function MessageFiltering({ settings, updateSettings, apiUrl }) {
 
             <Separator />
 
+            <div className="space-y-6">
+              <h4 className="font-medium flex items-center gap-2 text-lg">
+                <span>⏱️</span>
+                Rate Limiting & Message Control
+              </h4>
+              
+              <div className="space-y-4">
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-2 mb-3">
+                    <Checkbox
+                      id="enableSpamFilter"
+                      checked={settings.messageFiltering?.enableSpamFilter ?? true}
+                      onCheckedChange={checked => updateSettings({ 
+                        messageFiltering: { 
+                          ...settings.messageFiltering, 
+                          enableSpamFilter: checked 
+                        } 
+                      })}
+                    />
+                    <div className="space-y-1 flex-1">
+                      <Label htmlFor="enableSpamFilter" className="text-base font-medium">
+                        🚫 Rate Limit Users
+                      </Label>
+                      <p className="text-sm text-muted-foreground">
+                        Prevent users from sending too many messages in a short time period. New messages from rate-limited users are completely ignored.
+                      </p>
+                    </div>
+                  </div>
+
+                  {settings.messageFiltering?.enableSpamFilter !== false && (
+                    <div className="ml-6 space-y-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="spamThreshold">Max Messages</Label>
+                          <Input
+                            id="spamThreshold"
+                            type="number"
+                            min="2"
+                            max="20"
+                            value={settings.messageFiltering?.spamThreshold ?? 5}
+                            onChange={e => updateSettings({ 
+                              messageFiltering: { 
+                                ...settings.messageFiltering, 
+                                spamThreshold: parseInt(e.target.value) || 5 
+                              } 
+                            })}
+                          />
+                          <p className="text-xs text-muted-foreground">Maximum messages allowed</p>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="spamTimeWindow">Time Window (seconds)</Label>
+                          <Input
+                            id="spamTimeWindow"
+                            type="number"
+                            min="5"
+                            max="60"
+                            value={settings.messageFiltering?.spamTimeWindow ?? 10}
+                            onChange={e => updateSettings({ 
+                              messageFiltering: { 
+                                ...settings.messageFiltering, 
+                                spamTimeWindow: parseInt(e.target.value) || 10 
+                              } 
+                            })}
+                          />
+                          <p className="text-xs text-muted-foreground">Within this many seconds</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="ignoreIfUserSpeaking"
+                      checked={settings.messageFiltering?.ignoreIfUserSpeaking ?? true}
+                      onCheckedChange={checked => updateSettings({ 
+                        messageFiltering: { 
+                          ...settings.messageFiltering, 
+                          ignoreIfUserSpeaking: checked 
+                        } 
+                      })}
+                    />
+                    <div className="space-y-1">
+                      <Label htmlFor="ignoreIfUserSpeaking" className="text-base font-medium">
+                        🔊 Ignore New Messages from Speaking User
+                      </Label>
+                      <p className="text-sm text-muted-foreground">
+                        When a user's message is currently playing TTS, ignore any new messages from that same user until the current message finishes. This prevents interrupting or queueing multiple messages from one person.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+
+            </div>
+
+            <Separator />
+
             <div className="space-y-4">
               <h4 className="font-medium flex items-center gap-2">
                 <span>🤬</span>
@@ -1208,113 +1486,6 @@ function MessageFiltering({ settings, updateSettings, apiUrl }) {
                   </div>
                 </div>
               )}
-            </div>
-
-            <Separator />
-
-            <div className="space-y-6">
-              <h4 className="font-medium flex items-center gap-2 text-lg">
-                <span>⏱️</span>
-                Rate Limiting & Message Control
-              </h4>
-              
-              <div className="space-y-4">
-                <div className="p-4 rounded-lg border-2 border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30">
-                  <div className="flex items-center space-x-2 mb-3">
-                    <Checkbox
-                      id="enableSpamFilter"
-                      checked={settings.messageFiltering?.enableSpamFilter ?? true}
-                      onCheckedChange={checked => updateSettings({ 
-                        messageFiltering: { 
-                          ...settings.messageFiltering, 
-                          enableSpamFilter: checked 
-                        } 
-                      })}
-                    />
-                    <div className="space-y-1 flex-1">
-                      <Label htmlFor="enableSpamFilter" className="text-base font-medium">
-                        🚫 Rate Limit Users
-                      </Label>
-                      <p className="text-sm text-muted-foreground">
-                        Prevent users from sending too many messages in a short time period. New messages from rate-limited users are completely ignored.
-                      </p>
-                    </div>
-                  </div>
-
-                  {settings.messageFiltering?.enableSpamFilter !== false && (
-                    <div className="ml-6 space-y-3">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="spamThreshold">Max Messages</Label>
-                          <Input
-                            id="spamThreshold"
-                            type="number"
-                            min="2"
-                            max="20"
-                            value={settings.messageFiltering?.spamThreshold ?? 5}
-                            onChange={e => updateSettings({ 
-                              messageFiltering: { 
-                                ...settings.messageFiltering, 
-                                spamThreshold: parseInt(e.target.value) || 5 
-                              } 
-                            })}
-                          />
-                          <p className="text-xs text-muted-foreground">Maximum messages allowed</p>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="spamTimeWindow">Time Window (seconds)</Label>
-                          <Input
-                            id="spamTimeWindow"
-                            type="number"
-                            min="5"
-                            max="60"
-                            value={settings.messageFiltering?.spamTimeWindow ?? 10}
-                            onChange={e => updateSettings({ 
-                              messageFiltering: { 
-                                ...settings.messageFiltering, 
-                                spamTimeWindow: parseInt(e.target.value) || 10 
-                              } 
-                            })}
-                          />
-                          <p className="text-xs text-muted-foreground">Within this many seconds</p>
-                        </div>
-                      </div>
-                      <div className="text-sm bg-white dark:bg-gray-900 p-3 rounded border-l-4 border-blue-400">
-                        <strong>Example:</strong> 5 messages in 10 seconds = User is rate limited and their 6th+ messages are ignored
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="p-4 rounded-lg border-2 border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30">
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="ignoreIfUserSpeaking"
-                      checked={settings.messageFiltering?.ignoreIfUserSpeaking ?? true}
-                      onCheckedChange={checked => updateSettings({ 
-                        messageFiltering: { 
-                          ...settings.messageFiltering, 
-                          ignoreIfUserSpeaking: checked 
-                        } 
-                      })}
-                    />
-                    <div className="space-y-1">
-                      <Label htmlFor="ignoreIfUserSpeaking" className="text-base font-medium">
-                        🔊 Ignore New Messages from Speaking User
-                      </Label>
-                      <p className="text-sm text-muted-foreground">
-                        When a user's message is currently playing TTS, ignore any new messages from that same user until the current message finishes. This prevents interrupting or queueing multiple messages from one person.
-                      </p>
-                      <div className="text-sm bg-white dark:bg-gray-900 p-3 rounded border-l-4 border-green-400 mt-2">
-                        <strong>Example:</strong> User sends "Hello" → TTS starts playing → User sends "How are you?" → Second message is ignored until "Hello" finishes playing
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-
             </div>
 
             <Separator />

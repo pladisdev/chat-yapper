@@ -92,6 +92,7 @@ def migrate_avatarimage_table(conn: sqlite3.Connection) -> None:
         ("avatar_group_id", "TEXT", None),
         ("voice_id", "INTEGER", None),
         ("spawn_position", "INTEGER", None),
+        ("disabled", "INTEGER", 0),  # Boolean field (SQLite uses INTEGER for bool, default False)
     ]
     
     changes_made = False

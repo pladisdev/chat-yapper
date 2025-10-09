@@ -4,21 +4,37 @@ import json
 import logging
 import os
 import random
+import sys
 import time
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List
 from collections import defaultdict
+import aiohttp
+import secrets
+import urllib.parse
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, Form
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()  # Load .env file from current directory or parent directories
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, Form, HTTPException
+from fastapi.responses import RedirectResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import SQLModel, Session, select, create_engine
 
-from models import Setting, Voice, AvatarImage
+from models import Setting, Voice, AvatarImage, TwitchAuth
 from tts import get_provider, get_hybrid_provider, TTSJob
 from message_filter import get_message_history
+
+def is_executable():
+    """
+    Detect if we're running as a PyInstaller executable.
+    Returns True if running from .exe, False if running from source.
+    """
+    return getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
 
 # TTS Cancellation System:
 # - Tracks active TTS jobs by username in active_tts_jobs dict
@@ -49,9 +65,17 @@ def setup_backend_logging():
         file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         file_handler.setFormatter(file_formatter)
         
-        # Console handler - only errors and warnings
+        # Console handler - adjust level based on environment
         console_handler = logging.StreamHandler()
-        console_handler.setLevel(logging.WARNING)
+        if is_executable():
+            # Production (.exe) - only show errors
+            console_handler.setLevel(logging.ERROR)
+            backend_logger.info("Production mode detected (.exe) - console logging set to ERROR level only")
+        else:
+            # Development - show warnings and errors
+            console_handler.setLevel(logging.WARNING)
+            backend_logger.info("Development mode detected - console logging set to WARNING level")
+        
         console_formatter = logging.Formatter('%(levelname)s: %(message)s')
         console_handler.setFormatter(console_formatter)
         
@@ -68,6 +92,25 @@ logger = setup_backend_logging()
 def log_important(message):
     """Log important messages that should appear in both console and file"""
     logger.warning(f"IMPORTANT: {message}")  # WARNING level ensures console output
+
+# Twitch OAuth Configuration
+# For Twitch Developer Console, set redirect URL to: http://localhost:{PORT}/auth/twitch/callback
+TWITCH_CLIENT_ID = os.environ.get("TWITCH_CLIENT_ID", "")
+TWITCH_CLIENT_SECRET = os.environ.get("TWITCH_CLIENT_SECRET", "")
+TWITCH_REDIRECT_URI = f"http://localhost:{os.environ.get('PORT', 8000)}/auth/twitch/callback"
+TWITCH_SCOPE = "chat:read"  # Permissions needed
+
+# OAuth state tracking to prevent CSRF attacks
+oauth_states = {}  # state -> user session info
+
+# Configuration validation and logging
+if TWITCH_CLIENT_ID:
+    logger.info(f"✅ Twitch OAuth configured - Client ID: {TWITCH_CLIENT_ID[:8]}... (masked)")
+else:
+    logger.warning("⚠️  Twitch Client ID not configured!")
+    logger.warning("   💡 Create a .env file with TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET")
+    logger.warning("   💡 See .env.example for template")
+    logger.warning("   💡 Or set environment variables directly")
 
 # Voice usage tracking for distribution analysis
 voice_usage_stats = defaultdict(int)
@@ -178,12 +221,12 @@ import time
 async def log_requests(request: Request, call_next):
     start_time = time.time()
     # Only log important requests, not headers
-    print(f"HTTP Request: {request.method} {request.url}")
+    logger.info(f"HTTP Request: {request.method} {request.url}")
     
     response = await call_next(request)
     
     process_time = time.time() - start_time
-    print(f"Response: {response.status_code} (took {process_time:.2f}s)")
+    logger.info(f"Response: {response.status_code} (took {process_time:.2f}s)")
     
     return response
 
@@ -194,8 +237,8 @@ app.mount("/audio", StaticFiles(directory=AUDIO_DIR), name="audio")
 
 # Store PUBLIC_DIR for mounting later (after routes are defined)
 PUBLIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "public"))
-print(f"Static files directory: {PUBLIC_DIR}")
-print(f"Directory exists: {os.path.isdir(PUBLIC_DIR)}")
+logger.info(f"Static files directory: {PUBLIC_DIR}")
+logger.info(f"Directory exists: {os.path.isdir(PUBLIC_DIR)}")
 
 PERSISTENT_AVATARS_DIR = os.path.join(USER_DATA_DIR, "voice_avatars")
 os.makedirs(PERSISTENT_AVATARS_DIR, exist_ok=True)
@@ -203,16 +246,16 @@ logger.info(f"Persistent avatars directory: {PERSISTENT_AVATARS_DIR}")
 
 # Debug: List files in the public directory
 if os.path.isdir(PUBLIC_DIR):
-    print("📂 Files in static directory:")
+    logger.info("📂 Files in static directory:")
     for root, dirs, files in os.walk(PUBLIC_DIR):
         level = root.replace(PUBLIC_DIR, '').count(os.sep)
         indent = ' ' * 2 * level
-        print(f"{indent}{os.path.basename(root)}/")
+        logger.info(f"{indent}{os.path.basename(root)}/")
         subindent = ' ' * 2 * (level + 1)
         for file in files:
-            print(f"{subindent}{file}")
+            logger.info(f"{subindent}{file}")
 else:
-    print("Static files directory not found")
+    logger.info("Static files directory not found")
 
 # ---------- WebSocket Hub ----------
 class Hub:
@@ -240,11 +283,11 @@ hub = Hub()
 async def ws_endpoint(ws: WebSocket):
     client_info = f"{ws.client.host}:{ws.client.port}" if ws.client else "unknown"
     logger.info(f"WebSocket connection attempt from {client_info}")
-    print(f"WebSocket connection attempt from {ws.client}")
+    logger.info(f"WebSocket connection attempt from {ws.client}")
     try:
         await hub.connect(ws)
         logger.info(f"WebSocket connected successfully. Total clients: {len(hub.clients)}")
-        print(f"WebSocket connected successfully. Total clients: {len(hub.clients)}")
+        logger.info(f"WebSocket connected successfully. Total clients: {len(hub.clients)}")
         
         # Send a welcome message to confirm connection
         welcome_msg = {
@@ -254,20 +297,20 @@ async def ws_endpoint(ws: WebSocket):
         }
         await ws.send_text(json.dumps(welcome_msg))
         logger.info(f"Sent welcome message to WebSocket client {client_info}")
-        print(f"Sent welcome message to WebSocket client")
+        logger.info(f"Sent welcome message to WebSocket client")
         
         while True:
             # In this app, server pushes; but you can accept pings or config messages:
             message = await ws.receive_text()
             logger.debug(f"WebSocket received message from {client_info}: {message}")
-            print(f"WebSocket received: {message}")
+            logger.info(f"WebSocket received: {message}")
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected from {client_info}. Remaining clients: {len(hub.clients)-1}")
-        print(f"WebSocket disconnected. Remaining clients: {len(hub.clients)-1}")
+        logger.info(f"WebSocket disconnected. Remaining clients: {len(hub.clients)-1}")
         hub.unregister(ws)
     except Exception as e:
         logger.error(f"WebSocket error from {client_info}: {e}")
-        print(f"WebSocket error: {e}")
+        logger.info(f"WebSocket error: {e}")
         hub.unregister(ws)
 
 # ---------- Settings CRUD ----------
@@ -336,7 +379,16 @@ async def restart_twitch_if_needed(settings: Dict[str, Any]):
         # Start new task if enabled
         if run_twitch_bot and settings.get("twitch", {}).get("enabled"):
             logger.info("Restarting Twitch bot with new settings")
-            twitch_config = settings["twitch"]
+            
+            # Get OAuth token from database
+            token_info = await get_twitch_token_for_bot()
+            if not token_info:
+                logger.warning("No Twitch OAuth token found. Cannot restart bot.")
+                TwitchTask = None
+                return
+                
+            twitch_config = settings.get("twitch", {})
+            channel = twitch_config.get("channel") or token_info["username"]
             
             # Event router to handle different event types
             async def route_twitch_event(e):
@@ -348,9 +400,9 @@ async def restart_twitch_if_needed(settings: Dict[str, Any]):
                     await handle_event(e)
             
             TwitchTask = asyncio.create_task(run_twitch_bot(
-                token=twitch_config["token"],
-                nick=twitch_config["nick"],
-                channel=twitch_config["channel"],
+                token=token_info["token"],
+                nick=token_info["username"],
+                channel=channel,
                 on_event=lambda e: asyncio.create_task(route_twitch_event(e))
             ))
             logger.info("Twitch bot restarted")
@@ -359,6 +411,230 @@ async def restart_twitch_if_needed(settings: Dict[str, Any]):
             logger.info("Twitch bot disabled")
     except Exception as e:
         logger.error(f"Failed to restart Twitch bot: {e}", exc_info=True)
+
+# Twitch OAuth Endpoints
+
+@app.get("/auth/twitch")
+async def twitch_auth_start():
+    """Start Twitch OAuth flow"""
+    # Check if Twitch credentials are configured
+    if not TWITCH_CLIENT_ID or not TWITCH_CLIENT_SECRET:
+        logger.warning("Twitch OAuth attempted but credentials not configured")
+        return RedirectResponse(url="/settings?error=twitch_not_configured")
+    
+    # Generate a random state to prevent CSRF attacks
+    state = secrets.token_urlsafe(32)
+    oauth_states[state] = {"timestamp": time.time()}
+    
+    # Build Twitch OAuth URL
+    params = {
+        "client_id": TWITCH_CLIENT_ID,
+        "redirect_uri": TWITCH_REDIRECT_URI,
+        "response_type": "code",
+        "scope": TWITCH_SCOPE,
+        "state": state
+    }
+    
+    auth_url = "https://id.twitch.tv/oauth2/authorize?" + urllib.parse.urlencode(params)
+    logger.info(f"Starting Twitch OAuth flow with state: {state}")
+    
+    return RedirectResponse(url=auth_url)
+
+@app.get("/auth/twitch/callback")
+async def twitch_auth_callback(code: str = None, state: str = None, error: str = None):
+    """Handle Twitch OAuth callback"""
+    try:
+        # Check for OAuth errors
+        if error:
+            logger.error(f"Twitch OAuth error: {error}")
+            return RedirectResponse(url="/?error=oauth_denied")
+        
+        if not code or not state:
+            logger.error("Missing code or state in OAuth callback")
+            return RedirectResponse(url="/?error=invalid_callback")
+        
+        # Verify state to prevent CSRF
+        if state not in oauth_states:
+            logger.error(f"Invalid OAuth state: {state}")
+            return RedirectResponse(url="/?error=invalid_state")
+        
+        # Clean up used state
+        del oauth_states[state]
+        
+        # Exchange code for access token
+        token_data = await exchange_code_for_token(code)
+        if not token_data:
+            return RedirectResponse(url="/?error=token_exchange_failed")
+        
+        # Get user information
+        user_info = await get_twitch_user_info(token_data["access_token"])
+        if not user_info:
+            return RedirectResponse(url="/?error=user_info_failed")
+        
+        # Store auth in database
+        await store_twitch_auth(user_info, token_data)
+        
+        logger.info(f"Successfully connected Twitch account: {user_info['login']}")
+        return RedirectResponse(url="/settings?twitch=connected")
+        
+    except Exception as e:
+        logger.error(f"Error in Twitch OAuth callback: {e}", exc_info=True)
+        return RedirectResponse(url="/?error=callback_error")
+
+@app.get("/api/twitch/status")
+async def twitch_auth_status():
+    """Get current Twitch connection status"""
+    try:
+        with Session(engine) as session:
+            auth = session.exec(select(TwitchAuth)).first()
+            if auth:
+                return {
+                    "connected": True,
+                    "username": auth.username,
+                    "display_name": auth.display_name,
+                    "user_id": auth.twitch_user_id
+                }
+            return {"connected": False}
+    except Exception as e:
+        logger.error(f"Error checking Twitch status: {e}")
+        return {"connected": False, "error": str(e)}
+
+@app.delete("/api/twitch/disconnect")
+async def twitch_disconnect():
+    """Disconnect Twitch account"""
+    try:
+        with Session(engine) as session:
+            auth = session.exec(select(TwitchAuth)).first()
+            if auth:
+                session.delete(auth)
+                session.commit()
+                logger.info("Twitch account disconnected")
+                return {"success": True}
+            return {"success": False, "error": "No connection found"}
+    except Exception as e:
+        logger.error(f"Error disconnecting Twitch: {e}")
+        return {"success": False, "error": str(e)}
+
+# Helper functions for OAuth
+
+async def exchange_code_for_token(code: str) -> Dict[str, Any]:
+    """Exchange OAuth code for access token"""
+    try:
+        data = {
+            "client_id": TWITCH_CLIENT_ID,
+            "client_secret": TWITCH_CLIENT_SECRET,
+            "code": code,
+            "grant_type": "authorization_code",
+            "redirect_uri": TWITCH_REDIRECT_URI
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post("https://id.twitch.tv/oauth2/token", data=data) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    logger.info("Successfully exchanged code for token")
+                    return result
+                else:
+                    logger.error(f"Token exchange failed: {response.status}")
+                    return None
+    except Exception as e:
+        logger.error(f"Error exchanging code for token: {e}")
+        return None
+
+async def get_twitch_user_info(access_token: str) -> Dict[str, Any]:
+    """Get user info from Twitch API"""
+    try:
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Client-Id": TWITCH_CLIENT_ID
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get("https://api.twitch.tv/helix/users", headers=headers) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    users = result.get("data", [])
+                    if users:
+                        return users[0]
+                    logger.error("No user data returned from Twitch API")
+                    return None
+                else:
+                    logger.error(f"User info request failed: {response.status}")
+                    return None
+    except Exception as e:
+        logger.error(f"Error getting user info: {e}")
+        return None
+
+async def store_twitch_auth(user_info: Dict[str, Any], token_data: Dict[str, Any]):
+    """Store Twitch auth in database"""
+    try:
+        with Session(engine) as session:
+            # Check if auth already exists for this user
+            existing_auth = session.exec(
+                select(TwitchAuth).where(TwitchAuth.twitch_user_id == user_info["id"])
+            ).first()
+            
+            if existing_auth:
+                # Update existing auth
+                existing_auth.access_token = token_data["access_token"]
+                existing_auth.refresh_token = token_data.get("refresh_token", "")
+                existing_auth.username = user_info["login"]
+                existing_auth.display_name = user_info["display_name"]
+                existing_auth.updated_at = datetime.now().isoformat()
+                if "expires_in" in token_data:
+                    expires_at = datetime.now().timestamp() + token_data["expires_in"]
+                    existing_auth.expires_at = datetime.fromtimestamp(expires_at).isoformat()
+            else:
+                # Create new auth
+                expires_at = None
+                if "expires_in" in token_data:
+                    expires_at = datetime.fromtimestamp(
+                        datetime.now().timestamp() + token_data["expires_in"]
+                    ).isoformat()
+                
+                new_auth = TwitchAuth(
+                    twitch_user_id=user_info["id"],
+                    username=user_info["login"],
+                    display_name=user_info["display_name"],
+                    access_token=token_data["access_token"],
+                    refresh_token=token_data.get("refresh_token", ""),
+                    expires_at=expires_at,
+                    created_at=datetime.now().isoformat(),
+                    updated_at=datetime.now().isoformat()
+                )
+                session.add(new_auth)
+            
+            session.commit()
+            logger.info(f"Stored Twitch auth for user: {user_info['login']}")
+            
+    except Exception as e:
+        logger.error(f"Error storing Twitch auth: {e}")
+        raise
+
+async def get_twitch_token_for_bot():
+    """Get current Twitch token for bot connection"""
+    try:
+        with Session(engine) as session:
+            auth = session.exec(select(TwitchAuth)).first()
+            if auth:
+                # Check if token needs refresh (if expires_at is set and in the past)
+                if auth.expires_at:
+                    expires_at = datetime.fromisoformat(auth.expires_at)
+                    if expires_at <= datetime.now():
+                        logger.info("Twitch token expired, attempting refresh...")
+                        # TODO: Implement token refresh
+                        
+                return {
+                    "token": auth.access_token,
+                    "username": auth.username,
+                    "user_id": auth.twitch_user_id
+                }
+    except Exception as e:
+        logger.error(f"Error getting Twitch token: {e}")
+    
+    return None
+
+
 
 @app.get("/api/settings")
 async def api_get_settings():
@@ -377,19 +653,19 @@ async def api_set_settings(payload: Dict[str, Any]):
 @app.get("/api/status")
 async def api_get_status():
     """Simple status check endpoint"""
-    print("API: GET /api/status called")
+    logger.info("API: GET /api/status called")
     status = {
         "status": "running",
         "websocket_clients": len(hub.clients),
         "message": "Chat Yapper backend is running!"
     }
-    print(f"API: Returning status: {status}")
+    logger.info(f"API: Returning status: {status}")
     return status
 
 @app.get("/api/test")
 async def api_test():
     """Simple test endpoint for debugging"""
-    print("API: GET /api/test called - React app is working!")
+    logger.info("API: GET /api/test called - React app is working!")
     return {"success": True, "message": "API connection successful"}
 
 @app.get("/api/avatars")
@@ -406,7 +682,7 @@ async def api_get_avatars():
                 if any(filename.lower().endswith(ext) for ext in valid_extensions):
                     avatar_files.append(f"/voice_avatars/{filename}")
         except Exception as e:
-            print(f"Error reading built-in avatars: {e}")
+            logger.info(f"Error reading built-in avatars: {e}")
     
     # Get user-uploaded avatars from the persistent directory
     if os.path.exists(PERSISTENT_AVATARS_DIR):
@@ -415,7 +691,7 @@ async def api_get_avatars():
                 if any(filename.lower().endswith(ext) for ext in valid_extensions):
                     avatar_files.append(f"/user_avatars/{filename}")
         except Exception as e:
-            print(f"Error reading user avatars: {e}")
+            logger.info(f"Error reading user avatars: {e}")
     
     # Sort for consistent ordering
     avatar_files.sort()
@@ -446,7 +722,7 @@ async def api_upload_avatar(file: UploadFile, avatar_name: str = Form(...), avat
         
         # Use the persistent avatars directory for uploads
         avatars_dir = PERSISTENT_AVATARS_DIR
-        print(f"Saving avatar to persistent directory: {avatars_dir}")
+        logger.info(f"Saving avatar to persistent directory: {avatars_dir}")
         
         # Generate unique filename or reuse existing if replacing
         import uuid
@@ -497,7 +773,7 @@ async def api_upload_avatar(file: UploadFile, avatar_name: str = Form(...), avat
             # Pillow not available, skip resizing
             pass
         except Exception as e:
-            print(f"Warning: Failed to resize image: {e}")
+            logger.info(f"Warning: Failed to resize image: {e}")
             # Continue with original image
         
         # Save processed file
@@ -570,7 +846,8 @@ async def api_get_managed_avatars():
                         "avatar_type": avatar.avatar_type,
                         "avatar_group_id": avatar.avatar_group_id,
                         "voice_id": avatar.voice_id,
-                        "spawn_position": avatar.spawn_position
+                        "spawn_position": avatar.spawn_position,
+                        "disabled": avatar.disabled
                     }
                     for avatar in avatars
                 ]
@@ -591,7 +868,7 @@ async def api_delete_avatar(avatar_id: int):
             full_path = os.path.join(PERSISTENT_AVATARS_DIR, avatar.filename)
             if os.path.exists(full_path):
                 os.remove(full_path)
-                print(f"🗑️  Deleted avatar file: {full_path}")
+                logger.info(f"🗑️  Deleted avatar file: {full_path}")
             
             # Delete from database
             session.delete(avatar)
@@ -635,7 +912,7 @@ async def api_delete_avatar_group(group_id: str):
                     full_path = os.path.join(PERSISTENT_AVATARS_DIR, avatar.filename)
                     if os.path.exists(full_path):
                         os.remove(full_path)
-                        print(f"🗑️  Deleted avatar file: {full_path}")
+                        logger.info(f"🗑️  Deleted avatar file: {full_path}")
                     session.delete(avatar)
             
             session.commit()
@@ -691,6 +968,89 @@ async def api_update_avatar_position(group_id: str, position_data: dict):
             }))
             
             return {"success": True, "updated_count": len([a for a in avatars if a])}
+    
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+@app.put("/api/avatars/{avatar_id}/toggle-disabled")
+async def api_toggle_avatar_disabled(avatar_id: int):
+    """Toggle the disabled status of an avatar"""
+    try:
+        with Session(engine) as session:
+            avatar = session.get(AvatarImage, avatar_id)
+            if not avatar:
+                return {"error": "Avatar not found", "success": False}
+            
+            # Toggle the disabled status
+            avatar.disabled = not avatar.disabled
+            session.add(avatar)
+            session.commit()
+            
+            # Broadcast refresh message to all connected clients
+            asyncio.create_task(hub.broadcast({
+                "type": "avatar_updated",
+                "message": f"Avatar {'disabled' if avatar.disabled else 'enabled'}"
+            }))
+            
+            return {
+                "success": True,
+                "avatar_id": avatar_id,
+                "disabled": avatar.disabled,
+                "message": f"Avatar {'disabled' if avatar.disabled else 'enabled'}"
+            }
+    
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+@app.put("/api/avatars/group/{group_id}/toggle-disabled")
+async def api_toggle_avatar_group_disabled(group_id: str):
+    """Toggle the disabled status of an entire avatar group"""
+    try:
+        with Session(engine) as session:
+            # Find all avatars in the group
+            if group_id.startswith('single_'):
+                # Handle single avatars (group_id is like "single_123")
+                avatar_id = int(group_id.replace('single_', ''))
+                avatars = [session.get(AvatarImage, avatar_id)]
+                if not avatars[0]:
+                    return {"error": "Avatar not found", "success": False}
+            else:
+                # Handle grouped avatars (pairs)
+                avatars = session.exec(
+                    select(AvatarImage).where(AvatarImage.avatar_group_id == group_id)
+                ).all()
+                
+                if not avatars:
+                    return {"error": "Avatar group not found", "success": False}
+            
+            # Check current disabled status - if any avatar is enabled, we disable all
+            # If all are disabled, we enable all
+            any_enabled = any(not avatar.disabled for avatar in avatars if avatar)
+            new_disabled_status = any_enabled  # If any enabled, disable all; if all disabled, enable all
+            
+            # Update disabled status for all avatars in the group
+            updated_count = 0
+            for avatar in avatars:
+                if avatar:
+                    avatar.disabled = new_disabled_status
+                    session.add(avatar)
+                    updated_count += 1
+            
+            session.commit()
+            
+            # Broadcast refresh message to all connected clients
+            asyncio.create_task(hub.broadcast({
+                "type": "avatar_updated",
+                "message": f"Avatar group {'disabled' if new_disabled_status else 'enabled'}"
+            }))
+            
+            return {
+                "success": True,
+                "group_id": group_id,
+                "disabled": new_disabled_status,
+                "updated_count": updated_count,
+                "message": f"Avatar group {'disabled' if new_disabled_status else 'enabled'}"
+            }
     
     except Exception as e:
         return {"error": str(e), "success": False}
@@ -818,7 +1178,7 @@ async def api_get_available_voices(provider: str, api_key: str = None):
                 async with session.post("https://api.console.tts.monster/voices", headers=headers) as response:
                     if response.status == 200:
                         voices_data = await response.json()
-                        print(f"MonsterTTS API Response: {voices_data}")
+                        logger.info(f"MonsterTTS API Response: {voices_data}")
                         
                         # Transform the API response to our format
                         monster_voices = []
@@ -833,7 +1193,7 @@ async def api_get_available_voices(provider: str, api_key: str = None):
                                         "name": voice.get("name", voice.get("display_name", f"Voice {voice.get('id', 'Unknown')[:8]}"))
                                     })
                                 else:
-                                    print(f"Unexpected voice format: {voice} (type: {type(voice)})")
+                                    logger.info(f"Unexpected voice format: {voice} (type: {type(voice)})")
                         elif isinstance(voices_data, dict):
                             # Response might be wrapped in an object
                             voices_list = voices_data.get("voices", voices_data.get("data", [voices_data]))
@@ -844,7 +1204,7 @@ async def api_get_available_voices(provider: str, api_key: str = None):
                                         "name": voice.get("name", voice.get("display_name", f"Voice {voice.get('id', 'Unknown')[:8]}"))
                                     })
                         
-                        print(f"Parsed {len(monster_voices)} MonsterTTS voices")
+                        logger.info(f"Parsed {len(monster_voices)} MonsterTTS voices")
                         return {"voices": monster_voices}
                     else:
                         error_text = await response.text()
@@ -891,7 +1251,7 @@ def cancel_user_tts(username: str):
     
     username_lower = username.lower()
     logger.info(f"Attempting to cancel TTS for user: {username}")
-    print(f"🛑 Attempting to cancel TTS for user: {username}")
+    logger.info(f"🛑 Attempting to cancel TTS for user: {username}")
     
     # Cancel active TTS job if exists
     if username_lower in active_tts_jobs:
@@ -899,10 +1259,10 @@ def cancel_user_tts(username: str):
         if job_info["task"] and not job_info["task"].done():
             job_info["task"].cancel()
             logger.info(f"Cancelled active TTS for user: {username} (message: {job_info['message'][:50]}...)")
-            print(f"✅ Cancelled active TTS for user: {username}")
+            logger.info(f"✅ Cancelled active TTS for user: {username}")
         del active_tts_jobs[username_lower]
     else:
-        print(f"ℹ️  No active TTS found for user: {username}")
+        logger.info(f"ℹ️  No active TTS found for user: {username}")
     
     # Broadcast cancellation to clients with stop command
     asyncio.create_task(hub.broadcast({
@@ -919,7 +1279,7 @@ def stop_all_tts():
     global active_tts_jobs, tts_enabled
     
     logger.info("Stopping all TTS - cancelling active jobs")
-    print(f"🛑 Stopping all TTS - {len(active_tts_jobs)} active jobs")
+    logger.info(f"🛑 Stopping all TTS - {len(active_tts_jobs)} active jobs")
     
     # Cancel all active TTS jobs
     cancelled_count = 0
@@ -936,7 +1296,7 @@ def stop_all_tts():
     tts_enabled = False
     
     logger.info(f"All TTS stopped - cancelled {cancelled_count} active jobs")
-    print(f"✅ All TTS stopped - cancelled {cancelled_count} active jobs")
+    logger.info(f"✅ All TTS stopped - cancelled {cancelled_count} active jobs")
     
     # Broadcast global stop to clients with immediate stop command
     asyncio.create_task(hub.broadcast({
@@ -954,7 +1314,7 @@ def resume_all_tts():
     
     tts_enabled = True
     logger.info("TTS processing resumed")
-    print("▶️ TTS processing resumed")
+    logger.info("▶️ TTS processing resumed")
     
     # Broadcast resume to clients
     asyncio.create_task(hub.broadcast({
@@ -1073,10 +1433,10 @@ def should_process_message(text: str, settings: Dict[str, Any], username: str = 
         # Check if user has any active TTS jobs
         user_has_active_tts = username_lower in active_tts_jobs
         
-        print(f"🔍 User {username}: active_tts={user_has_active_tts}")
+        logger.info(f"🔍 User {username}: active_tts={user_has_active_tts}")
         
         if user_has_active_tts:
-            print(f"🚫 Ignoring new message from {username} - user already has active TTS (per-user queuing enabled)")
+            logger.info(f"🚫 Ignoring new message from {username} - user already has active TTS (per-user queuing enabled)")
             logger.info(f"Ignored message from {username} due to active TTS: {filtered_text[:50]}...")
             return False, filtered_text
 
@@ -1107,13 +1467,13 @@ def should_process_message(text: str, settings: Dict[str, Any], username: str = 
 
 async def handle_test_voice_event(evt: Dict[str, Any]):
     """Handle test voice events - similar to handle_event but uses the provided test voice"""
-    print(f"🎵 Handling test voice event: {evt}")
+    logger.info(f"🎵 Handling test voice event: {evt}")
     settings = get_settings()
     audio_format = settings.get("audioFormat", "mp3")
     
     test_voice_data = evt.get("testVoice")
     if not test_voice_data:
-        print("No test voice data provided")
+        logger.info("No test voice data provided")
         return
     
     # Create a temporary voice object for testing
@@ -1127,7 +1487,7 @@ async def handle_test_voice_event(evt: Dict[str, Any]):
             self.enabled = True
     
     selected_voice = TestVoice(test_voice_data)
-    print(f"Test voice: {selected_voice.name} ({selected_voice.provider})")
+    logger.info(f"Test voice: {selected_voice.name} ({selected_voice.provider})")
 
     # Get TTS configuration - Use hybrid provider that handles all providers
     tts_config = settings.get("tts", {})
@@ -1153,14 +1513,14 @@ async def handle_test_voice_event(evt: Dict[str, Any]):
     
     # Create TTS job with the test voice
     job = TTSJob(text=evt.get('text', '').strip(), voice=selected_voice.voice_id, audio_format=audio_format)
-    print(f"Test TTS Job: text='{job.text}', voice='{selected_voice.name}' ({selected_voice.provider}:{selected_voice.voice_id}), format='{job.audio_format}'")
+    logger.info(f"Test TTS Job: text='{job.text}', voice='{selected_voice.name}' ({selected_voice.provider}:{selected_voice.voice_id}), format='{job.audio_format}'")
 
     # Fire-and-forget to allow overlap
     async def _run():
         try:
-            print(f"Starting test TTS synthesis...")
+            logger.info(f"Starting test TTS synthesis...")
             path = await provider.synth(job)
-            print(f"Test TTS generated: {path}")
+            logger.info(f"Test TTS generated: {path}")
             
             # Broadcast to clients to play
             voice_info = {
@@ -1177,19 +1537,19 @@ async def handle_test_voice_event(evt: Dict[str, Any]):
                 "voice": voice_info,
                 "audioUrl": f"/audio/{os.path.basename(path)}"
             }
-            print(f"Broadcasting test voice to {len(hub.clients)} clients: {payload}")
+            logger.info(f"Broadcasting test voice to {len(hub.clients)} clients: {payload}")
             await hub.broadcast(payload)
         except Exception as e:
-            print(f"Test TTS synthesis error: {e}")
+            logger.info(f"Test TTS synthesis error: {e}")
 
     asyncio.create_task(_run())
 
 async def handle_event(evt: Dict[str, Any]):
-    print(f"🎵 Handling event: {evt}")
+    logger.info(f"🎵 Handling event: {evt}")
     
     # Check if TTS is globally enabled
     if not tts_enabled:
-        print(f"🔇 TTS is disabled - skipping message from {evt.get('user', 'unknown')}")
+        logger.info(f"🔇 TTS is disabled - skipping message from {evt.get('user', 'unknown')}")
         return
     
     settings = get_settings()
@@ -1200,13 +1560,19 @@ async def handle_event(evt: Dict[str, Any]):
     should_process, filtered_text = should_process_message(original_text, settings, username, active_tts_jobs)
     
     if not should_process:
-        print(f"Skipping message due to filtering: {original_text[:50]}... (user: {username})")
+        logger.info(f"Skipping message due to filtering: {original_text[:50]}... (user: {username})")
         return
+    
+    # Update event with filtered text before processing
+    evt_filtered = evt.copy()
+    evt_filtered['text'] = filtered_text
     
     # Process immediately - no queuing
     username = evt.get('user', 'unknown')
-    print(f"📬 Message received from {username}: processing immediately")
-    await process_tts_message(evt)
+    logger.info(f"📬 Message received from {username}: processing immediately")
+    if filtered_text != original_text:
+        logger.info(f"🔧 Text after filtering: '{filtered_text}'")
+    await process_tts_message(evt_filtered)
     return
 
 async def process_tts_message(evt: Dict[str, Any]):
@@ -1230,7 +1596,7 @@ async def process_tts_message(evt: Dict[str, Any]):
         enabled_voices = session.exec(select(Voice).where(Voice.enabled == True)).all()
     
     if not enabled_voices:
-        print("No enabled voices found in database. Please add voices through the settings page.")
+        logger.info("No enabled voices found in database. Please add voices through the settings page.")
         return
 
     event_type = evt.get("eventType", "chat")
@@ -1244,9 +1610,9 @@ async def process_tts_message(evt: Dict[str, Any]):
     if not selected_voice:
         # Random selection from enabled voices
         selected_voice = random.choice(enabled_voices)
-        print(f"🎲 Random voice selected: {selected_voice.name} ({selected_voice.provider})")
+        logger.info(f"🎲 Random voice selected: {selected_voice.name} ({selected_voice.provider})")
     else:
-        print(f"🎯 Special event voice selected: {selected_voice.name} ({selected_voice.provider})")
+        logger.info(f"🎯 Special event voice selected: {selected_voice.name} ({selected_voice.provider})")
     
     # Track voice usage for distribution analysis
     global voice_usage_stats, voice_selection_count
@@ -1254,7 +1620,7 @@ async def process_tts_message(evt: Dict[str, Any]):
     voice_usage_stats[voice_key] += 1
     voice_selection_count += 1
 
-    print(f"Selected voice: {selected_voice.name} ({selected_voice.provider})")
+    logger.info(f"Selected voice: {selected_voice.name} ({selected_voice.provider})")
 
     # Get TTS configuration
     tts_config = settings.get("tts", {})
@@ -1282,12 +1648,12 @@ async def process_tts_message(evt: Dict[str, Any]):
     
     # Create TTS job with the selected voice
     job = TTSJob(text=evt.get('text', '').strip(), voice=selected_voice.voice_id, audio_format=audio_format)
-    print(f"TTS Job: text='{job.text}', voice='{selected_voice.name}' ({selected_voice.provider}:{selected_voice.voice_id}), format='{job.audio_format}'")
+    logger.info(f"TTS Job: text='{job.text}', voice='{selected_voice.name}' ({selected_voice.provider}:{selected_voice.voice_id}), format='{job.audio_format}'")
     
     try:
-        print(f"Starting TTS synthesis for {evt.get('user')}...")
+        logger.info(f"Starting TTS synthesis for {evt.get('user')}...")
         path = await provider.synth(job)
-        print(f"TTS generated: {path}")
+        logger.info(f"TTS generated: {path}")
         
         # Broadcast to clients to play
         voice_info = {
@@ -1304,26 +1670,26 @@ async def process_tts_message(evt: Dict[str, Any]):
             "voice": voice_info,
             "audioUrl": f"/audio/{os.path.basename(path)}"
         }
-        print(f"Broadcasting to {len(hub.clients)} clients: {payload}")
+        logger.info(f"Broadcasting to {len(hub.clients)} clients: {payload}")
         await hub.broadcast(payload)
         
         # Clean up - frontend handles playback independently
         if username_lower in active_tts_jobs:
             del active_tts_jobs[username_lower]
-        print(f"✅ TTS broadcast complete. Active users: {list(active_tts_jobs.keys())}")
+        logger.info(f"✅ TTS broadcast complete. Active users: {list(active_tts_jobs.keys())}")
             
     except asyncio.CancelledError:
-        print(f"TTS synthesis cancelled for user: {evt.get('user')}")
+        logger.info(f"TTS synthesis cancelled for user: {evt.get('user')}")
         if username_lower in active_tts_jobs:
             del active_tts_jobs[username_lower]
-        print(f"🧹 Cleaned up cancelled job. Remaining jobs: {len(active_tts_jobs)}")
+        logger.info(f"🧹 Cleaned up cancelled job. Remaining jobs: {len(active_tts_jobs)}")
         raise  # Re-raise to properly handle cancellation
     except Exception as e:
-        print(f"TTS Error: {e}")
+        logger.info(f"TTS Error: {e}")
         logger.error(f"TTS synthesis error for {username_lower}: {e}", exc_info=True)
         if username_lower in active_tts_jobs:
             del active_tts_jobs[username_lower]
-        print(f"🧹 Cleaned up failed job. Remaining jobs: {len(active_tts_jobs)}")
+        logger.info(f"🧹 Cleaned up failed job. Remaining jobs: {len(active_tts_jobs)}")
 
 # ---------- Simulate messages (for local testing) ----------
 @app.post("/api/simulate")
@@ -1334,14 +1700,14 @@ async def api_simulate(
     testVoice: str = Form(None)
 ):
     """Simulate a chat message"""
-    print(f"Simulate request: user={user}, text={text}, eventType={eventType}, testVoice={testVoice}")
+    logger.info(f"Simulate request: user={user}, text={text}, eventType={eventType}, testVoice={testVoice}")
     
     # Apply message filtering for simulation as well
     settings = get_settings()
     should_process, filtered_text = should_process_message(text, settings, user)
     
     if not should_process:
-        print(f"Simulation message filtered out: {text} (user: {user})")
+        logger.info(f"Simulation message filtered out: {text} (user: {user})")
         return {"ok": False, "message": "Message was filtered out", "reason": "Message filtering"}
           
     # Use filtered text
@@ -1358,7 +1724,7 @@ async def api_simulate(
                 "testVoice": test_voice_data
             })
         except json.JSONDecodeError:
-            print("Invalid testVoice JSON data")
+            logger.info("Invalid testVoice JSON data")
             return {"ok": False, "error": "Invalid testVoice data"}
     else:
         await handle_event({"user": user, "text": final_text, "eventType": eventType})
@@ -1378,7 +1744,7 @@ async def api_simulate_moderation(
     duration: int = Form(None)  # seconds for timeout, None for ban
 ):
     """Simulate a moderation event (ban/timeout) with immediate audio stop"""
-    print(f"Simulate moderation: target_user={target_user}, eventType={eventType}, duration={duration}")
+    logger.info(f"Simulate moderation: target_user={target_user}, eventType={eventType}, duration={duration}")
     
     try:
         await handle_moderation_event({
@@ -1398,14 +1764,14 @@ async def api_simulate_moderation(
 
 async def handle_moderation_event(evt: Dict[str, Any]):
     """Handle Twitch moderation events (bans, timeouts)"""
-    print(f"🔨 Handling moderation event: {evt}")
+    logger.info(f"🔨 Handling moderation event: {evt}")
     
     event_type = evt.get("eventType", "")
     target_user = evt.get("target_user", "")
     duration = evt.get("duration")  # None for permanent ban, seconds for timeout
     
     if not target_user:
-        print("No target user specified in moderation event")
+        logger.info("No target user specified in moderation event")
         return
     
     if event_type in ["ban", "timeout"]:
@@ -1424,9 +1790,9 @@ async def handle_moderation_event(evt: Dict[str, Any]):
             "stop_user_audio": target_user  # Tell frontend to immediately stop this user's audio
         })
         
-        print(f"✅ Processed {event_type} for user: {target_user} - TTS cancelled and audio stopped")
+        logger.info(f"✅ Processed {event_type} for user: {target_user} - TTS cancelled and audio stopped")
     else:
-        print(f"Unknown moderation event type: {event_type}")
+        logger.info(f"Unknown moderation event type: {event_type}")
 
 # ---------- Voice Distribution Stats ----------
 @app.get("/api/voice-stats")
@@ -1477,7 +1843,7 @@ async def api_reset_voice_stats():
     # Reset fallback stats
     reset_fallback_stats()
     
-    print("Voice distribution statistics have been reset")
+    logger.info("Voice distribution statistics have been reset")
     return {"ok": True, "message": "Voice statistics reset successfully"}
 
 # ---------- Twitch integration (optional) ----------
@@ -1487,7 +1853,7 @@ try:
     logger.info("Twitch listener imported successfully")
 except Exception as e:
     logger.error(f"Failed to import twitch_listener: {e}")
-    print(f"❌ Failed to import Twitch listener: {e}")
+    logger.info(f"❌ Failed to import Twitch listener: {e}")
     run_twitch_bot = None
 
 @app.on_event("startup")
@@ -1499,8 +1865,17 @@ async def startup():
         
         if run_twitch_bot and settings.get("twitch", {}).get("enabled"):
             logger.info("Starting Twitch bot...")
-            twitch_config = settings["twitch"]
-            logger.info(f"Twitch config: channel={twitch_config.get('channel')}, nick={twitch_config.get('nick')}, token={'***' if twitch_config.get('token') else 'None'}")
+            
+            # Get OAuth token from database
+            token_info = await get_twitch_token_for_bot()
+            if not token_info:
+                logger.warning("No Twitch OAuth token found. Please connect your Twitch account.")
+                return
+                
+            twitch_config = settings.get("twitch", {})
+            channel = twitch_config.get("channel") or token_info["username"]
+            
+            logger.info(f"Twitch config: channel={channel}, nick={token_info['username']}, token={'***' if token_info['token'] else 'None'}")
             
             # Event router to handle different event types
             async def route_twitch_event(e):
@@ -1513,9 +1888,9 @@ async def startup():
             
             global TwitchTask
             t = asyncio.create_task(run_twitch_bot(
-                token=twitch_config["token"],
-                nick=twitch_config["nick"], 
-                channel=twitch_config["channel"],
+                token=token_info["token"],
+                nick=token_info["username"], 
+                channel=channel,
                 on_event=lambda e: asyncio.create_task(route_twitch_event(e))
             ))
             
@@ -1527,7 +1902,7 @@ async def startup():
                     logger.info("Twitch bot task was cancelled")
                 except Exception as e:
                     logger.error(f"Twitch bot task failed: {e}", exc_info=True)
-                    print(f"ERROR: Twitch bot task failed: {e}")
+                    logger.info(f"ERROR: Twitch bot task failed: {e}")
             
             t.add_done_callback(handle_twitch_task_exception)
             TwitchTask = t
@@ -1541,12 +1916,24 @@ async def startup():
 
     except Exception as e:
         logger.error(f"Startup event failed: {e}", exc_info=True)
-        print(f"❌ Startup failed: {e}")
+        logger.info(f"❌ Startup failed: {e}")
+
+# Add favicon endpoint to handle browser favicon requests
+@app.get("/favicon.ico")
+async def favicon():
+    """Serve the favicon.ico file"""
+    favicon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "icon.ico")
+    if os.path.exists(favicon_path):
+        return FileResponse(favicon_path, media_type="image/x-icon")
+    else:
+        # Return a 204 No Content if favicon doesn't exist
+        from fastapi.responses import Response
+        return Response(status_code=204)
 
 # Mount static files AFTER all API routes and WebSocket endpoints are defined
 # This ensures that /api/* and /ws routes take precedence over static file serving
 if os.path.isdir(PUBLIC_DIR):
-    print(f"Mounting static files from: {PUBLIC_DIR}")
+    logger.info(f"Mounting static files from: {PUBLIC_DIR}")
     
     from fastapi import Request
     from fastapi.responses import FileResponse
@@ -1554,17 +1941,17 @@ if os.path.isdir(PUBLIC_DIR):
     # Handle assets manually with proper MIME types
     assets_dir = os.path.join(PUBLIC_DIR, "assets")
     if os.path.isdir(assets_dir):
-        print(f"Assets directory found: {assets_dir}")
-        print(f"Assets directory contents: {os.listdir(assets_dir)}")
+        logger.info(f"Assets directory found: {assets_dir}")
+        logger.info(f"Assets directory contents: {os.listdir(assets_dir)}")
         
         @app.get("/assets/{filename}")
         async def serve_assets(filename: str):
             """Serve assets with correct MIME types"""
             file_path = os.path.join(assets_dir, filename)
-            print(f"Assets request: {filename} -> {file_path}")
+            logger.info(f"Assets request: {filename} -> {file_path}")
             
             if not os.path.isfile(file_path):
-                print(f"Asset file not found: {file_path}")
+                logger.info(f"Asset file not found: {file_path}")
                 from fastapi import HTTPException
                 raise HTTPException(status_code=404, detail="Asset not found")
             
@@ -1572,32 +1959,32 @@ if os.path.isdir(PUBLIC_DIR):
             media_type = None
             if filename.endswith('.js'):
                 media_type = 'application/javascript'
-                print(f"Setting JavaScript MIME type for: {filename}")
+                logger.info(f"Setting JavaScript MIME type for: {filename}")
             elif filename.endswith('.css'):
                 media_type = 'text/css'
-                print(f"Setting CSS MIME type for: {filename}")
+                logger.info(f"Setting CSS MIME type for: {filename}")
             elif filename.endswith('.map'):
                 media_type = 'application/json'
             
-            print(f"Serving asset: {filename} with MIME type: {media_type}")
+            logger.info(f"Serving asset: {filename} with MIME type: {media_type}")
             return FileResponse(file_path, media_type=media_type)
     else:
-        print(f"Assets directory not found: {assets_dir}")
+        logger.info(f"Assets directory not found: {assets_dir}")
     
     # Mount built-in voice avatars
     voice_avatars_dir = os.path.join(PUBLIC_DIR, "voice_avatars")
     if os.path.isdir(voice_avatars_dir):
-        print(f"Mounting /voice_avatars from: {voice_avatars_dir}")
+        logger.info(f"Mounting /voice_avatars from: {voice_avatars_dir}")
         app.mount("/voice_avatars", StaticFiles(directory=voice_avatars_dir), name="voice_avatars")
     else:
-        print(f"Built-in voice avatars directory not found: {voice_avatars_dir}")
+        logger.info(f"Built-in voice avatars directory not found: {voice_avatars_dir}")
     
     # Mount user-uploaded avatars from persistent directory
     if os.path.isdir(PERSISTENT_AVATARS_DIR):
-        print(f"Mounting /user_avatars from: {PERSISTENT_AVATARS_DIR}")
+        logger.info(f"Mounting /user_avatars from: {PERSISTENT_AVATARS_DIR}")
         app.mount("/user_avatars", StaticFiles(directory=PERSISTENT_AVATARS_DIR), name="user_avatars")
     else:
-        print(f"User avatars directory not found: {PERSISTENT_AVATARS_DIR}")
+        logger.info(f"User avatars directory not found: {PERSISTENT_AVATARS_DIR}")
     
     # Handle specific routes for SPA
     @app.get("/settings")
@@ -1630,7 +2017,7 @@ if os.path.isdir(PUBLIC_DIR):
         index_path = os.path.join(PUBLIC_DIR, "index.html")
         return FileResponse(index_path, media_type='text/html')
 else:
-    print(f"Static files directory not found: {PUBLIC_DIR}")
+    logger.info(f"Static files directory not found: {PUBLIC_DIR}")
 
 @app.get("/api/debug/per-user-queuing")
 async def api_debug_per_user_queuing():
@@ -1651,7 +2038,7 @@ async def api_debug_per_user_queuing():
 
 @app.post("/api/twitch/test")
 async def api_test_twitch():
-    """Test Twitch connection manually"""
+    """Test Twitch connection manually using OAuth"""
     try:
         settings = get_settings()
         twitch_config = settings.get("twitch", {})
@@ -1659,13 +2046,19 @@ async def api_test_twitch():
         if not twitch_config.get("enabled"):
             return {"success": False, "error": "Twitch not enabled in settings"}
         
-        if not all([twitch_config.get("token"), twitch_config.get("nick"), twitch_config.get("channel")]):
-            return {"success": False, "error": "Missing Twitch configuration (token, nick, or channel)"}
+        # Check OAuth token
+        token_info = await get_twitch_token_for_bot()
+        if not token_info:
+            return {"success": False, "error": "No Twitch account connected. Please connect your account first."}
         
-        # Force restart Twitch connection
+        channel = twitch_config.get("channel") or token_info["username"]
+        if not channel:
+            return {"success": False, "error": "No channel specified in settings"}
+        
+        # Force restart Twitch connection with OAuth
         await restart_twitch_if_needed(settings)
         
-        return {"success": True, "message": "Twitch connection test initiated"}
+        return {"success": True, "message": f"Twitch connection test initiated for {token_info['username']} -> #{channel}"}
     except Exception as e:
         logger.error(f"Twitch test failed: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
@@ -1816,4 +2209,7 @@ async def api_get_tts_status():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+    host = os.environ.get('HOST', '0.0.0.0')
+    port = int(os.environ.get('PORT', 8000))
+    debug_mode = os.environ.get('DEBUG', '').lower() in ('true', '1', 'yes', 'on')
+    uvicorn.run("app:app", host=host, port=port, reload=debug_mode)

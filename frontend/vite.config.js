@@ -2,6 +2,10 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
+// Load environment variables
+const backendPort = process.env.PORT || 8000
+const frontendPort = process.env.FRONTEND_PORT || 5173
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -10,14 +14,14 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    port: parseInt(frontendPort),
     proxy: {
-      '/api': 'http://localhost:8000',
+      '/api': `http://localhost:${backendPort}`,
       '/ws': {
-        target: 'ws://localhost:8000',
+        target: `ws://localhost:${backendPort}`,
         ws: true,
       },
-      '/audio': 'http://localhost:8000',
+      '/audio': `http://localhost:${backendPort}`,
     },
   },
 })

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import uuid
 import time
@@ -8,6 +9,9 @@ import aiohttp
 import json
 import random
 from collections import defaultdict
+
+# Get logger for this module
+logger = logging.getLogger('ChatYapper.TTS')
 
 # Fallback voice usage tracking for distribution analysis
 fallback_voice_stats = defaultdict(int)
@@ -65,9 +69,9 @@ class MonsterTTSProvider(TTSProvider):
         try:
             if os.path.exists(filepath):
                 os.remove(filepath)
-                print(f"Cleaned up temporary file: {filepath}")
+                logger.info(f"Cleaned up temporary file: {filepath}")
         except Exception as e:
-            print(f"Failed to cleanup file {filepath}: {e}")
+            logger.info(f"Failed to cleanup file {filepath}: {e}")
     
     async def synth(self, job: TTSJob) -> str:
         if not AIOHTTP_AVAILABLE:
@@ -79,11 +83,11 @@ class MonsterTTSProvider(TTSProvider):
         # Check rate limit (but be more permissive for debugging)
         if not self.can_process_now():
             time_since_last = time.time() - self.last_request_time
-            print(f"MonsterTTS rate limit check: {time_since_last:.2f}s since last request (need {self.rate_limit_seconds}s)")
+            logger.info(f"MonsterTTS rate limit check: {time_since_last:.2f}s since last request (need {self.rate_limit_seconds}s)")
             raise RuntimeError(f"MonsterTTS rate limit exceeded (wait {self.rate_limit_seconds - time_since_last:.1f}s)")
         
         outpath = os.path.join(AUDIO_DIR, f"{uuid.uuid4()}.{job.audio_format}")
-        print(f"MonsterTTS Output Path: {outpath}")
+        logger.info(f"MonsterTTS Output Path: {outpath}")
         
         headers = {
             "Authorization": self.api_key,  # Direct token format: ttsm_12345-abcdef
@@ -95,16 +99,16 @@ class MonsterTTSProvider(TTSProvider):
             "message": job.text
         }
         
-        print(f"MonsterTTS Request Payload: {payload}")
-        print(f"MonsterTTS API URL: {self.base_url}")
+        logger.info(f"MonsterTTS Request Payload: {payload}")
+        logger.info(f"MonsterTTS API URL: {self.base_url}")
         
         # Update last request time before making the request
         self.last_request_time = time.time()
         
         async with aiohttp.ClientSession() as session:
             async with session.post(self.base_url, headers=headers, json=payload) as response:
-                print(f"MonsterTTS Response Status: {response.status}")
-                print(f"MonsterTTS Response Headers: {dict(response.headers)}")
+                logger.info(f"MonsterTTS Response Status: {response.status}")
+                logger.info(f"MonsterTTS Response Headers: {dict(response.headers)}")
                 
                 if response.status != 200:
                     error_text = await response.text()
@@ -112,10 +116,10 @@ class MonsterTTSProvider(TTSProvider):
                 
                 # Check if the response is actually audio data
                 content_type = response.headers.get('content-type', '')
-                print(f"MonsterTTS Content-Type: {content_type}")
+                logger.info(f"MonsterTTS Content-Type: {content_type}")
                 
                 audio_data = await response.read()
-                print(f"MonsterTTS Audio Data Length: {len(audio_data)} bytes")
+                logger.info(f"MonsterTTS Audio Data Length: {len(audio_data)} bytes")
                 
                 # Check if we got JSON response with URL (MonsterTTS format)
                 if audio_data.startswith(b'{') or audio_data.startswith(b'['):
@@ -123,17 +127,17 @@ class MonsterTTSProvider(TTSProvider):
                     import json
                     try:
                         response_json = json.loads(audio_data.decode('utf-8'))
-                        print(f"MonsterTTS JSON Response: {response_json}")
+                        logger.info(f"MonsterTTS JSON Response: {response_json}")
                         
                         if 'url' in response_json:
                             audio_url = response_json['url']
-                            print(f"Downloading audio from: {audio_url}")
+                            logger.info(f"Downloading audio from: {audio_url}")
                             
                             # Download the actual audio file
                             async with session.get(audio_url) as audio_response:
                                 if audio_response.status == 200:
                                     actual_audio_data = await audio_response.read()
-                                    print(f"Downloaded audio: {len(actual_audio_data)} bytes")
+                                    logger.info(f"Downloaded audio: {len(actual_audio_data)} bytes")
                                     
                                     # Update audio_data for the rest of the processing
                                     audio_data = actual_audio_data
@@ -159,9 +163,9 @@ class MonsterTTSProvider(TTSProvider):
                 if job.audio_format.lower() == 'mp3':
                     # MP3 files should start with ID3 tag or MP3 frame sync
                     if not (audio_data.startswith(b'ID3') or audio_data[0:2] == b'\xff\xfb' or audio_data[0:2] == b'\xff\xf3'):
-                        print(f"Warning: Audio data doesn't look like valid MP3")
+                        logger.info(f"Warning: Audio data doesn't look like valid MP3")
                 
-                print(f"MonsterTTS audio ready: {outpath} ({len(audio_data)} bytes)")
+                logger.info(f"MonsterTTS audio ready: {outpath} ({len(audio_data)} bytes)")
                 
                 # Schedule file cleanup after a short delay (enough time for frontend to fetch)
                 import asyncio
@@ -180,7 +184,7 @@ class EdgeTTSProvider(TTSProvider):
         # Schedule cleanup after 30 seconds
         asyncio.create_task(self._cleanup_file_after_delay(outpath, 30))
         
-        print(f'Edge TTS audio ready: {outpath}')
+        logger.info(f'Edge TTS audio ready: {outpath}')
         return outpath
     
     async def _cleanup_file_after_delay(self, filepath: str, delay_seconds: int):
@@ -190,9 +194,9 @@ class EdgeTTSProvider(TTSProvider):
         try:
             if os.path.exists(filepath):
                 os.remove(filepath)
-                print(f"Cleaned up temporary file: {filepath}")
+                logger.info(f"Cleaned up temporary file: {filepath}")
         except Exception as e:
-            print(f"Failed to cleanup file {filepath}: {e}")
+            logger.info(f"Failed to cleanup file {filepath}: {e}")
 
 class GoogleTTSProvider(TTSProvider):
     """Google Cloud Text-to-Speech provider"""
@@ -216,11 +220,11 @@ class GoogleTTSProvider(TTSProvider):
             "Content-Type": "application/json"
         }
         
-        print(f"Fetching Google TTS voices...")
+        logger.info(f"Fetching Google TTS voices...")
         
         async with aiohttp.ClientSession() as session:
             async with session.get(list_voices_url, headers=headers) as response:
-                print(f"Google TTS List Voices Response Status: {response.status}")
+                logger.info(f"Google TTS List Voices Response Status: {response.status}")
                 
                 if response.status != 200:
                     error_text = await response.text()
@@ -279,8 +283,8 @@ class GoogleTTSProvider(TTSProvider):
                             })
                 
                 if skipped_voices:
-                    print(f"Skipped {len(skipped_voices)} unsupported Google TTS voices (Journey/Chirp): {', '.join(skipped_voices[:5])}{' and more...' if len(skipped_voices) > 5 else ''}")
-                print(f"Fetched {len(voices)} Google TTS voices")
+                    logger.info(f"Skipped {len(skipped_voices)} unsupported Google TTS voices (Journey/Chirp): {', '.join(skipped_voices[:5])}{' and more...' if len(skipped_voices) > 5 else ''}")
+                logger.info(f"Fetched {len(voices)} Google TTS voices")
                 return voices
 
     async def synth(self, job: TTSJob) -> str:
@@ -312,11 +316,11 @@ class GoogleTTSProvider(TTSProvider):
             }
         }
         
-        print(f"Google TTS Request: {payload}")
+        logger.info(f"Google TTS Request: {payload}")
         
         async with aiohttp.ClientSession() as session:
             async with session.post(self.base_url, headers=headers, json=payload) as response:
-                print(f"Google TTS Response Status: {response.status}")
+                logger.info(f"Google TTS Response Status: {response.status}")
                 
                 if response.status != 200:
                     error_text = await response.text()
@@ -327,7 +331,7 @@ class GoogleTTSProvider(TTSProvider):
                 if 'audioContent' in response_data:
                     import base64
                     audio_data = base64.b64decode(response_data['audioContent'])
-                    print(f"Google TTS audio decoded: {len(audio_data)} bytes")
+                    logger.info(f"Google TTS audio decoded: {len(audio_data)} bytes")
                     
                     with open(outpath, 'wb') as f:
                         f.write(audio_data)
@@ -335,7 +339,7 @@ class GoogleTTSProvider(TTSProvider):
                     # Schedule cleanup after 30 seconds
                     asyncio.create_task(self._cleanup_file_after_delay(outpath, 30))
                     
-                    print(f"Google TTS audio ready: {outpath}")
+                    logger.info(f"Google TTS audio ready: {outpath}")
                     return outpath
                 else:
                     raise RuntimeError(f"Google TTS response missing audioContent: {response_data}")
@@ -347,9 +351,9 @@ class GoogleTTSProvider(TTSProvider):
         try:
             if os.path.exists(filepath):
                 os.remove(filepath)
-                print(f"Cleaned up temporary file: {filepath}")
+                logger.info(f"Cleaned up temporary file: {filepath}")
         except Exception as e:
-            print(f"Failed to cleanup file {filepath}: {e}")
+            logger.info(f"Failed to cleanup file {filepath}: {e}")
 
 class AmazonPollyProvider(TTSProvider):
     """Amazon Polly Text-to-Speech provider"""
@@ -438,7 +442,7 @@ class AmazonPollyProvider(TTSProvider):
             {"voice_id": "Zhiyu", "name": "Zhiyu - Female CN", "language": "zh-CN", "gender": "Female"},
         ]
         
-        print(f"Returning {len(polly_voices)} Amazon Polly voices")
+        logger.info(f"Returning {len(polly_voices)} Amazon Polly voices")
         return polly_voices
 
     async def synth(self, job: TTSJob) -> str:
@@ -466,7 +470,7 @@ class AmazonPollyProvider(TTSProvider):
             # Determine output format
             output_format = 'mp3' if job.audio_format == 'mp3' else 'ogg_vorbis'
             
-            print(f"Amazon Polly: Synthesizing '{job.text[:50]}...' with voice '{job.voice or self.voice_id}'")
+            logger.info(f"Amazon Polly: Synthesizing '{job.text[:50]}...' with voice '{job.voice or self.voice_id}'")
             
             # Synthesize speech
             response = polly_client.synthesize_speech(
@@ -481,7 +485,7 @@ class AmazonPollyProvider(TTSProvider):
                 with open(outpath, 'wb') as f:
                     f.write(response['AudioStream'].read())
                 
-                print(f"Amazon Polly: Audio generated successfully: {outpath}")
+                logger.info(f"Amazon Polly: Audio generated successfully: {outpath}")
                 
                 # Schedule cleanup after 30 seconds
                 asyncio.create_task(self._cleanup_file_after_delay(outpath, 30))
@@ -502,9 +506,9 @@ class AmazonPollyProvider(TTSProvider):
         try:
             if os.path.exists(filepath):
                 os.remove(filepath)
-                print(f"Cleaned up temporary file: {filepath}")
+                logger.info(f"Cleaned up temporary file: {filepath}")
         except Exception as e:
-            print(f"Failed to cleanup file {filepath}: {e}")
+            logger.info(f"Failed to cleanup file {filepath}: {e}")
 
 class WebSpeechTTSProvider(TTSProvider):
     """Web Speech API provider (client-side, returns placeholder)"""
@@ -532,7 +536,7 @@ class WebSpeechTTSProvider(TTSProvider):
         # Schedule cleanup after 30 seconds
         asyncio.create_task(self._cleanup_file_after_delay(outpath, 30))
         
-        print(f"Web Speech API instruction ready: {outpath}")
+        logger.info(f"Web Speech API instruction ready: {outpath}")
         return outpath
     
     async def _cleanup_file_after_delay(self, filepath: str, delay_seconds: int):
@@ -542,9 +546,9 @@ class WebSpeechTTSProvider(TTSProvider):
         try:
             if os.path.exists(filepath):
                 os.remove(filepath)
-                print(f"Cleaned up temporary file: {filepath}")
+                logger.info(f"Cleaned up temporary file: {filepath}")
         except Exception as e:
-            print(f"Failed to cleanup file {filepath}: {e}")
+            logger.info(f"Failed to cleanup file {filepath}: {e}")
 
 class FakeToneProvider(TTSProvider):
     """Offline fallback that generates a short tone + text length dependent duration.
@@ -613,14 +617,14 @@ class HybridTTSProvider(TTSProvider):
         if (self.monster_provider and self.monster_voice_id and 
             job.voice == self.monster_voice_id and self.monster_provider.can_process_now()):
             try:
-                print("Using MonsterTTS")
+                logger.info("Using MonsterTTS")
                 return await self.monster_provider.synth(job)
             except Exception as e:
-                print(f"MonsterTTS failed: {e}, falling back")
+                logger.info(f"MonsterTTS failed: {e}, falling back")
         
         # If we have an Edge TTS voice, use Edge TTS directly
         if self.edge_provider and self.edge_voice_id and job.voice == self.edge_voice_id:
-            print("Using Edge TTS")
+            logger.info("Using Edge TTS")
             return await self.edge_provider.synth(job)
         
         # If the voice doesn't match our configured voices, try to find it in fallback voices
@@ -629,7 +633,7 @@ class HybridTTSProvider(TTSProvider):
             matching_voice = next((v for v in self.fallback_voices if v.voice_id == job.voice), None)
             
             if matching_voice:
-                print(f"Using configured voice: {matching_voice.name} ({matching_voice.provider})")
+                logger.info(f"Using configured voice: {matching_voice.name} ({matching_voice.provider})")
                 
                 if matching_voice.provider == "edge" and self.edge_provider:
                     return await self.edge_provider.synth(job)
@@ -639,19 +643,19 @@ class HybridTTSProvider(TTSProvider):
                         try:
                             return await self.monster_provider.synth(job)
                         except Exception as e:
-                            print(f"MonsterTTS voice failed: {e}, trying random fallback")
+                            logger.info(f"MonsterTTS voice failed: {e}, trying random fallback")
                     else:
-                        print("MonsterTTS rate limited, trying random fallback")
+                        logger.info("MonsterTTS rate limited, trying random fallback")
                 elif matching_voice.provider == "google" and self.google_provider:
                     try:
                         return await self.google_provider.synth(job)
                     except Exception as e:
-                        print(f"Google TTS voice failed: {e}, trying random fallback")
+                        logger.info(f"Google TTS voice failed: {e}, trying random fallback")
                 elif matching_voice.provider == "polly" and self.polly_provider:
                     try:
                         return await self.polly_provider.synth(job)
                     except Exception as e:
-                        print(f"Amazon Polly voice failed: {e}, trying random fallback")
+                        logger.info(f"Amazon Polly voice failed: {e}, trying random fallback")
                 elif matching_voice.provider == "webspeech" and self.webspeech_provider:
                     return await self.webspeech_provider.synth(job)
             
@@ -664,16 +668,16 @@ class HybridTTSProvider(TTSProvider):
             fallback_voice_stats[fallback_key] += 1
             fallback_selection_count += 1
             
-            print(f"Using random fallback voice: {fallback_voice.name} ({fallback_voice.provider})")
+            logger.info(f"Using random fallback voice: {fallback_voice.name} ({fallback_voice.provider})")
             
             # Log fallback distribution every 5 selections
             if fallback_selection_count % 5 == 0:
-                print(f"\nFallback Voice Distribution Summary (after {fallback_selection_count} fallbacks):")
+                logger.info(f"\nFallback Voice Distribution Summary (after {fallback_selection_count} fallbacks):")
                 total_fallbacks = sum(fallback_voice_stats.values())
                 for voice_name, count in sorted(fallback_voice_stats.items(), key=lambda x: x[1], reverse=True):
                     percentage = (count / total_fallbacks) * 100
-                    print(f"   {voice_name}: {count} times ({percentage:.1f}%)")
-                print("---")
+                    logger.info(f"   {voice_name}: {count} times ({percentage:.1f}%)")
+                logger.info("---")
             
             fallback_job = TTSJob(
                 text=job.text,
@@ -688,23 +692,23 @@ class HybridTTSProvider(TTSProvider):
                 try:
                     return await self.monster_provider.synth(fallback_job)
                 except Exception as e:
-                    print(f"MonsterTTS random fallback failed: {e}")
+                    logger.info(f"MonsterTTS random fallback failed: {e}")
             elif fallback_voice.provider == "google" and self.google_provider:
                 try:
                     return await self.google_provider.synth(fallback_job)
                 except Exception as e:
-                    print(f"Google TTS random fallback failed: {e}")
+                    logger.info(f"Google TTS random fallback failed: {e}")
             elif fallback_voice.provider == "polly" and self.polly_provider:
                 try:
                     return await self.polly_provider.synth(fallback_job)
                 except Exception as e:
-                    print(f"Amazon Polly random fallback failed: {e}")
+                    logger.info(f"Amazon Polly random fallback failed: {e}")
             elif fallback_voice.provider == "webspeech" and self.webspeech_provider:
                 return await self.webspeech_provider.synth(fallback_job)
         
         # Final fallback to Edge TTS with default voice
         if self.edge_provider:
-            print("Using Edge TTS with default voice")
+            logger.info("Using Edge TTS with default voice")
             default_job = TTSJob(
                 text=job.text,
                 voice="en-US-AvaNeural",
@@ -713,7 +717,7 @@ class HybridTTSProvider(TTSProvider):
             return await self.edge_provider.synth(default_job)
         
         # Ultimate fallback
-        print("No TTS providers available, using FakeTone")
+        logger.info("No TTS providers available, using FakeTone")
         fake_provider = FakeToneProvider()
         return await fake_provider.synth(job)
 

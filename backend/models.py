@@ -33,3 +33,16 @@ class AvatarImage(SQLModel, table=True):
     avatar_group_id: Optional[str] = Field(default=None)  # Group ID to link default and speaking images
     voice_id: Optional[int] = Field(default=None)  # ID of the Voice this avatar is assigned to (None = random)
     spawn_position: Optional[int] = Field(default=None)  # Specific slot number (1-6), None = random spawning
+    disabled: bool = Field(default=False)  # Whether this avatar is disabled and should not be used
+
+
+class TwitchAuth(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    twitch_user_id: str  # Twitch user ID
+    username: str  # Twitch username
+    display_name: str  # Twitch display name
+    access_token: str  # OAuth access token
+    refresh_token: str  # OAuth refresh token for renewals
+    expires_at: Optional[str] = Field(default=None)  # When the access token expires
+    created_at: Optional[str] = Field(default=None)  # When this auth was created
+    updated_at: Optional[str] = Field(default=None)  # Last time tokens were refreshed

@@ -15,6 +15,24 @@ from datetime import datetime
 
 import socket
 
+# Load environment variables from .env file if available
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # Load .env file
+except ImportError:
+    # dotenv not available, continue without it
+    pass
+except Exception:
+    # Error loading .env, continue without it
+    pass
+
+def is_executable():
+    """
+    Detect if we're running as a PyInstaller executable.
+    Returns True if running from .exe, False if running from source.
+    """
+    return getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
+
 # Set up logging
 def setup_logging():
     """Set up logging to both file and console"""
@@ -32,9 +50,19 @@ def setup_logging():
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     
-    # Console handler - only errors and warnings
+    # Console handler - adjust level based on environment
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.WARNING)
+    debug_mode = os.getenv('DEBUG', '').lower() in ('true', '1', 'yes', 'on')
+    
+    if debug_mode:
+        # Debug mode enabled via environment variable
+        console_handler.setLevel(logging.DEBUG)
+    elif is_executable():
+        # Production (.exe) - only show errors
+        console_handler.setLevel(logging.ERROR)
+    else:
+        # Development - show warnings and errors  
+        console_handler.setLevel(logging.WARNING)
     console_handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
     
     # Configure root logger
@@ -58,8 +86,8 @@ def log_important(message):
 # Add backend to Python path
 backend_dir = Path(__file__).parent / "backend"
 if not backend_dir.exists():
-    print(f"Backend directory not found: {backend_dir}")
-    print("Make sure you're running this from the Chat Yapper root directory")
+    logger.error(f"Backend directory not found: {backend_dir}")
+    logger.error("Make sure you're running this from the Chat Yapper root directory")
     input("Press Enter to exit...")
     sys.exit(1)
 
@@ -119,33 +147,34 @@ def start_backend(port):
                 raise ImportError(error_msg)
         
         # Use the pre-determined available port
-        logger.info(f"Starting Chat Yapper backend server on port {port}...")
-        log_important(f"Starting Chat Yapper backend server on port {port}...")
+        host = os.getenv('HOST', '0.0.0.0')
+        logger.info(f"Starting Chat Yapper backend server on {host}:{port}...")
+        log_important(f"Starting Chat Yapper backend server on {host}:{port}...")
         try:
-            uvicorn.run(backend_app.app, host="0.0.0.0", port=port, log_level="warning")
+            uvicorn.run(backend_app.app, host=host, port=port, log_level="warning")
         except OSError as e:
             if "10048" in str(e) or "already in use" in str(e).lower():
                 error_msg = f"\n{'='*60}\nERROR: Port {port} is already in use!\n\nThis usually means Chat Yapper is already running.\n\nPlease either:\n  1. Close the other Chat Yapper window, or\n  2. Check Task Manager for 'ChatYapper.exe' and end it\n{'='*60}\n"
                 logger.error(error_msg)
-                print(error_msg)
+                logger.error(error_msg)
                 input("Press Enter to exit...")
                 sys.exit(1)
             raise
         
     except ImportError as e:
         logger.error(f"Import error: {e}")
-        print(f"Import error: {e}")
-        print("Make sure all dependencies are installed:")
-        print(" pip install -r requirements.txt")
+        logger.error(f"Import error: {e}")
+        logger.error("Make sure all dependencies are installed:")
+        logger.error(" pip install -r requirements.txt")
         input("Press Enter to exit...")
         sys.exit(1)
     except Exception as e:
         logger.error(f"Failed to start backend: {e}")
         logger.error(f"Current directory: {os.getcwd()}")
         logger.error(f"Backend directory: {backend_dir}")
-        print(f"Failed to start backend: {e}")
-        print(f"Current directory: {os.getcwd()}")
-        print(f"Backend directory: {backend_dir}")
+        logger.error(f"Failed to start backend: {e}")
+        logger.error(f"Current directory: {os.getcwd()}")
+        logger.error(f"Backend directory: {backend_dir}")
         input("Press Enter to exit...")
         sys.exit(1)
 
@@ -153,16 +182,19 @@ def open_browser(port):
     """Open the web browser to the application"""
     logger.info("Waiting 3 seconds for server to start...")
     time.sleep(3)  # Wait for server to start
-    url = f"http://localhost:{port}/settings"
+    host = os.getenv('HOST', '0.0.0.0')
+    # Use localhost for browser opening even if server binds to 0.0.0.0
+    browser_host = 'localhost' if host == '0.0.0.0' else host
+    url = f"http://{browser_host}:{port}/settings"
     logger.info(f"Opening Chat Yapper in browser: {url}")
-    print(f"Opening Chat Yapper in your browser: {url}")
+    logger.info(f"Opening Chat Yapper in your browser: {url}")
     try:
         webbrowser.open(url)
         logger.info("Browser opened successfully")
     except Exception as e:
         logger.error(f"Could not auto-open browser: {e}")
-        print(f"Could not auto-open browser: {e}")
-        print(f"Please manually open: {url}")
+        logger.warning(f"Could not auto-open browser: {e}")
+        logger.warning(f"Please manually open: {url}")
 
 def main():
     logger.info("Starting Chat Yapper application...")
@@ -173,12 +205,13 @@ def main():
     print()
     
     # Find an available port before starting threads
+    default_port = int(os.getenv('PORT', 8000))
     try:
-        server_port = find_available_port(8000)
+        server_port = find_available_port(default_port)
         log_important(f"Found available port: {server_port}")
     except RuntimeError as e:
         logger.error(f"Could not find available port: {e}")
-        print(f"Could not find available port: {e}")
+        logger.error(f"Could not find available port: {e}")
         input("Press Enter to exit...")
         sys.exit(1)
     

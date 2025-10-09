@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import logger from '../utils/logger'
 
 export default function YappersPage() {
   const [settings, setSettings] = useState(null)
@@ -29,7 +30,7 @@ export default function YappersPage() {
           audio.volume = volume
         }
       })
-      console.log(`🔊 Updated volume to ${Math.round(volume * 100)}% for ${allActiveAudioRef.current.size} active audio(s)`)
+      logger.info(`🔊 Updated volume to ${Math.round(volume * 100)}% for ${allActiveAudioRef.current.size} active audio(s)`)
     }
   }, [settings?.volume])
 
@@ -60,9 +61,11 @@ export default function YappersPage() {
         const managedData = await managedResponse.json()
         
         if (managedData.avatars && managedData.avatars.length > 0) {
-          // Group managed avatars by name/group
+          // Group managed avatars by name/group (exclude disabled avatars)
           const grouped = {}
-          managedData.avatars.forEach(avatar => {
+          managedData.avatars
+            .filter(avatar => !avatar.disabled) // Exclude disabled avatars from selection pool
+            .forEach(avatar => {
             const key = avatar.avatar_group_id || `single_${avatar.id}`
             if (!grouped[key]) {
               grouped[key] = { 
@@ -87,7 +90,7 @@ export default function YappersPage() {
             grouped[key].images[avatar.avatar_type] = imagePath
           })
           
-          console.log('🔍 Loaded managed avatars:', Object.values(grouped).map(g => ({
+          logger.info('🔍 Loaded managed avatars:', Object.values(grouped).map(g => ({
             name: g.name,
             voice_id: g.voice_id,
             spawn_position: g.spawn_position
@@ -156,7 +159,7 @@ export default function YappersPage() {
         const data = await response.json()
         const enabled = data.voices?.filter(v => v.enabled) || []
         setEnabledVoices(enabled)
-        console.log('🎤 Loaded enabled voices:', enabled.map(v => `${v.name} (ID: ${v.id})`))
+        logger.info('🎤 Loaded enabled voices:', enabled.map(v => `${v.name} (ID: ${v.id})`))
       } catch (error) {
         console.error('Failed to load voices:', error)
         setEnabledVoices([])
@@ -169,8 +172,8 @@ export default function YappersPage() {
   const createRandomizedAvatarAssignment = useCallback((avatars, totalSlots) => {
     if (avatars.length === 0) return []
     
-    console.log('🎲 Creating randomized assignments for', totalSlots, 'slots with', avatars.length, 'avatars')
-    console.log('🎤 Available voices for assignment:', enabledVoices.map(v => `${v.name} (ID: ${v.id})`))
+    logger.info('🎲 Creating randomized assignments for', totalSlots, 'slots with', avatars.length, 'avatars')
+    logger.info('🎤 Available voices for assignment:', enabledVoices.map(v => `${v.name} (ID: ${v.id})`))
     
     const assignments = []
     
@@ -201,7 +204,7 @@ export default function YappersPage() {
       ;[assignments[i], assignments[j]] = [assignments[j], assignments[i]]
     }
     
-    console.log('✅ Final assignments:', assignments.map((a, i) => `Slot ${i}: ${a.name}`))
+    logger.info('✅ Final assignments:', assignments.map((a, i) => `Slot ${i}: ${a.name}`))
     
     return assignments
   }, [enabledVoices])
@@ -231,7 +234,7 @@ export default function YappersPage() {
         enabledVoiceIds: enabledVoices.map(v => v.id).sort()
       }
       localStorage.setItem('chatyapper_avatar_assignments', JSON.stringify(assignmentData))
-      console.log('💾 Avatar assignments saved to localStorage:', assignments.map(a => `${a.name} (voice_id: ${a.voice_id})`))
+      logger.info('💾 Avatar assignments saved to localStorage:', assignments.map(a => `${a.name} (voice_id: ${a.voice_id})`))
     } catch (error) {
       console.error('❌ Failed to save avatar assignments:', error)
     }
@@ -252,7 +255,7 @@ export default function YappersPage() {
       // Check if avatar configuration has changed
       if (assignmentData.avatarCount !== availableAvatars.length || 
           JSON.stringify(currentAvatarNames) !== JSON.stringify(savedAvatarNames)) {
-        console.log('🔄 Avatar configuration changed, clearing saved assignments')
+        logger.info('🔄 Avatar configuration changed, clearing saved assignments')
         localStorage.removeItem('chatyapper_avatar_assignments')
         return null
       }
@@ -263,7 +266,7 @@ export default function YappersPage() {
       
       if (assignmentData.avatarRows !== currentRows || 
           JSON.stringify(assignmentData.avatarRowConfig) !== JSON.stringify(currentRowConfig)) {
-        console.log('🔄 Layout configuration changed, clearing saved assignments')
+        logger.info('🔄 Layout configuration changed, clearing saved assignments')
         localStorage.removeItem('chatyapper_avatar_assignments')
         return null
       }
@@ -273,12 +276,12 @@ export default function YappersPage() {
       const savedVoiceIds = assignmentData.enabledVoiceIds || []
       
       if (JSON.stringify(currentVoiceIds) !== JSON.stringify(savedVoiceIds)) {
-        console.log('🔄 Voice configuration changed, clearing saved assignments')
+        logger.info('🔄 Voice configuration changed, clearing saved assignments')
         localStorage.removeItem('chatyapper_avatar_assignments')
         return null
       }
 
-      console.log('📂 Loaded avatar assignments from localStorage:', assignmentData.assignments.map(a => `${a.name} (voice_id: ${a.voice_id})`))
+      logger.info('📂 Loaded avatar assignments from localStorage:', assignmentData.assignments.map(a => `${a.name} (voice_id: ${a.voice_id})`))
       return assignmentData.assignments
     } catch (error) {
       console.error('❌ Failed to load avatar assignments:', error)
@@ -356,7 +359,7 @@ export default function YappersPage() {
     const newAssignments = createRandomizedAvatarAssignment(availableAvatars, totalSlots)
     setAvatarAssignments(newAssignments)
     saveAvatarAssignments(newAssignments, settings)
-    console.log('🎲 Avatars re-randomized!', newAssignments.map(a => a.name))
+    logger.info('🎲 Avatars re-randomized!', newAssignments.map(a => a.name))
   }, [availableAvatars, settings, createRandomizedAvatarAssignment, saveAvatarAssignments])
 
   // Track which slots are currently active
@@ -391,7 +394,7 @@ export default function YappersPage() {
     const nextSpeech = speechQueue[0]
     setIsSpeaking(true)
     
-    console.log('🗣️ Processing Web Speech from queue:', nextSpeech.data.text)
+    logger.info('🗣️ Processing Web Speech from queue:', nextSpeech.data.text)
     
     if ('speechSynthesis' in window) {
       const utterance = new SpeechSynthesisUtterance(nextSpeech.data.text)
@@ -405,20 +408,20 @@ export default function YappersPage() {
       
       if (matchingVoice) {
         utterance.voice = matchingVoice
-        console.log('🔊 Using Web Speech voice:', matchingVoice.name)
+        logger.info('🔊 Using Web Speech voice:', matchingVoice.name)
       } else {
-        console.log('⚠️ No matching voice found, using default for:', nextSpeech.data.voice)
+        logger.info('⚠️ No matching voice found, using default for:', nextSpeech.data.voice)
       }
       
       // Set up event handlers for avatar animation
       if (nextSpeech.targetSlot) {
         utterance.addEventListener('start', () => {
-          console.log('🟢 Web Speech started - activating avatar:', nextSpeech.targetSlot.id)
+          logger.info('🟢 Web Speech started - activating avatar:', nextSpeech.targetSlot.id)
           setActiveSlots(slots => ({...slots, [nextSpeech.targetSlot.id]: true}))
         })
         
         const end = () => {
-          console.log('🔴 Web Speech ended - deactivating avatar:', nextSpeech.targetSlot.id)
+          logger.info('🔴 Web Speech ended - deactivating avatar:', nextSpeech.targetSlot.id)
           setActiveSlots(slots => ({...slots, [nextSpeech.targetSlot.id]: false}))
           
           // Remove completed speech from queue and process next
@@ -433,7 +436,7 @@ export default function YappersPage() {
         })
       } else {
         const end = () => {
-          console.log('🔴 Web Speech ended (no avatar)')
+          logger.info('🔴 Web Speech ended (no avatar)')
           setSpeechQueue(queue => queue.slice(1))
           setIsSpeaking(false)
         }
@@ -447,7 +450,7 @@ export default function YappersPage() {
       
       // Speak the text
       speechSynthesis.speak(utterance)
-      console.log('✅ Web Speech utterance started from queue')
+      logger.info('✅ Web Speech utterance started from queue')
     } else {
       console.error('❌ Web Speech API not supported in this browser')
       // Remove from queue and continue
@@ -463,18 +466,18 @@ export default function YappersPage() {
 
   // Stable message handler that doesn't change on every render
   const handleMessage = useCallback((msg) => {
-    console.log('🎵 Processing message:', msg)
+    logger.info('🎵 Processing message:', msg)
     
     // Handle TTS cancellation for specific user
     if (msg.type === 'tts_cancelled' && msg.stop_audio) {
-      console.log('🛑 Stopping TTS for user:', msg.user)
+      logger.info('🛑 Stopping TTS for user:', msg.user)
       const userAudio = activeAudioRef.current.get(msg.user?.toLowerCase())
       if (userAudio) {
         userAudio.pause()
         userAudio.currentTime = 0
         activeAudioRef.current.delete(msg.user?.toLowerCase())
         allActiveAudioRef.current.delete(userAudio)
-        console.log('✅ Stopped audio for user:', msg.user)
+        logger.info('✅ Stopped audio for user:', msg.user)
       }
       
       // Web Speech API limitation: Can't stop individual users, must stop all
@@ -482,21 +485,21 @@ export default function YappersPage() {
       if ('speechSynthesis' in window && speechSynthesis.speaking) {
         speechSynthesis.cancel()
         setSpeechQueue([])
-        console.log('🛑 Cancelled Web Speech synthesis (all users - API limitation)')
+        logger.info('🛑 Cancelled Web Speech synthesis (all users - API limitation)')
       }
       return
     }
     
     // Handle moderation events (ban/timeout) with immediate audio stop
     if (msg.type === 'moderation' && msg.stop_user_audio) {
-      console.log('🔨 Moderation event - stopping TTS for user:', msg.stop_user_audio)
+      logger.info('🔨 Moderation event - stopping TTS for user:', msg.stop_user_audio)
       const userAudio = activeAudioRef.current.get(msg.stop_user_audio?.toLowerCase())
       if (userAudio) {
         userAudio.pause()
         userAudio.currentTime = 0
         activeAudioRef.current.delete(msg.stop_user_audio?.toLowerCase())
         allActiveAudioRef.current.delete(userAudio)
-        console.log('✅ Stopped audio for moderated user:', msg.stop_user_audio)
+        logger.info('✅ Stopped audio for moderated user:', msg.stop_user_audio)
       }
       
       // Web Speech API limitation: Can't stop individual users, must stop all
@@ -504,7 +507,7 @@ export default function YappersPage() {
       if ('speechSynthesis' in window && speechSynthesis.speaking) {
         speechSynthesis.cancel()
         setSpeechQueue([])
-        console.log('🛑 Cancelled Web Speech synthesis due to moderation (all users - API limitation)')
+        logger.info('🛑 Cancelled Web Speech synthesis due to moderation (all users - API limitation)')
       }
       
       // Add moderation event to log
@@ -522,20 +525,20 @@ export default function YappersPage() {
     
     // Handle global TTS stop
     if (msg.type === 'tts_global_stopped' && msg.stop_all_audio) {
-      console.log('🛑 Stopping all TTS audio')
+      logger.info('🛑 Stopping all TTS audio')
       // Stop all audio objects
       allActiveAudioRef.current.forEach(audio => {
         try {
           audio.pause()
           audio.currentTime = 0
         } catch (e) {
-          console.warn('Failed to stop audio:', e)
+          logger.warn('Failed to stop audio:', e)
         }
       })
       // Stop Web Speech API
       if ('speechSynthesis' in window) {
         speechSynthesis.cancel()
-        console.log('🛑 Cancelled Web Speech synthesis')
+        logger.info('🛑 Cancelled Web Speech synthesis')
       }
       // Clear speech queue
       setSpeechQueue([])
@@ -544,13 +547,13 @@ export default function YappersPage() {
       allActiveAudioRef.current.clear()
       // Clear active slots
       setActiveSlots({})
-      console.log('✅ All TTS audio stopped')
+      logger.info('✅ All TTS audio stopped')
       return
     }
     
     // Handle settings update (reload settings without full page refresh)
     if (msg.type === 'settings_updated') {
-      console.log('⚙️ Settings updated, reloading settings and avatars...')
+      logger.info('⚙️ Settings updated, reloading settings and avatars...')
       // Reload settings
       fetch(`${apiUrl}/api/settings`).then(r => r.json()).then(data => {
         const oldRows = settings?.avatarRows
@@ -561,23 +564,25 @@ export default function YappersPage() {
         // Clear saved assignments if layout configuration changed
         if (oldRows !== newRows || JSON.stringify(oldRowConfig) !== JSON.stringify(newRowConfig)) {
           localStorage.removeItem('chatyapper_avatar_assignments')
-          console.log('🔄 Avatar layout changed, cleared saved assignments')
+          logger.info('🔄 Avatar layout changed, cleared saved assignments')
         }
         
         setSettings(data)
-        console.log('✅ Settings reloaded')
+        logger.info('✅ Settings reloaded')
       })
       return
     }
     
     // Handle avatar update (reload avatars only)
     if (msg.type === 'refresh' || msg.type === 'avatar_updated') {
-      console.log('🔄 Avatars updated, reloading avatars...')
+      logger.info('🔄 Avatars updated, reloading avatars...')
       // Reload avatars without full page refresh
       fetch(`${apiUrl}/api/avatars/managed`).then(r => r.json()).then(data => {
         if (data.avatars && data.avatars.length > 0) {
           const grouped = {}
-          data.avatars.forEach(avatar => {
+          data.avatars
+            .filter(avatar => !avatar.disabled) // Exclude disabled avatars from selection pool
+            .forEach(avatar => {
             const key = avatar.avatar_group_id || `single_${avatar.id}`
             if (!grouped[key]) {
               grouped[key] = { 
@@ -612,7 +617,7 @@ export default function YappersPage() {
           setAvailableAvatars(avatarGroups)
           // Clear saved assignments since avatar configuration changed
           localStorage.removeItem('chatyapper_avatar_assignments')
-          console.log('✅ Avatars reloaded, cleared saved assignments')
+          logger.info('✅ Avatars reloaded, cleared saved assignments')
         }
       })
       return
@@ -620,19 +625,19 @@ export default function YappersPage() {
     
     // Handle avatar re-randomization
     if (msg.type === 're_randomize_avatars') {
-      console.log('🎲 Re-randomizing avatar assignments...')
+      logger.info('🎲 Re-randomizing avatar assignments...')
       reRandomizeAvatars()
       return
     }
     
     if (msg.type === 'play') {
-      console.log('▶️ Playing TTS:', msg.audioUrl)
+      logger.info('▶️ Playing TTS:', msg.audioUrl)
       
       const currentSlots = avatarSlotsRef.current
       const currentActiveSlots = activeSlotsRef.current
       
-      console.log('🎭 Available avatar slots:', currentSlots.length)
-      console.log('🎭 Active slots:', currentActiveSlots)
+      logger.info('🎭 Available avatar slots:', currentSlots.length)
+      logger.info('🎭 Active slots:', currentActiveSlots)
       
       const voiceId = msg.voice?.id || msg.voice?.name || 'unknown'
       
@@ -652,14 +657,14 @@ export default function YappersPage() {
           // Clean up any finished audio for this user
           const existingAudio = activeAudioRef.current.get(username)
           if (existingAudio && (existingAudio.ended || existingAudio.paused)) {
-            console.log(`🧹 Cleaning up finished audio for user: ${username}`)
+            logger.info(`🧹 Cleaning up finished audio for user: ${username}`)
             allActiveAudioRef.current.delete(existingAudio)
           }
           
           // Track new audio for this user (backend already handled per-user queuing logic)
           activeAudioRef.current.set(username, audio)
           allActiveAudioRef.current.add(audio)
-          console.log(`🎵 Now tracking audio for user: ${username} (Total active: ${allActiveAudioRef.current.size})`)
+          logger.info(`🎵 Now tracking audio for user: ${username} (Total active: ${allActiveAudioRef.current.size})`)
         }
       }
       
@@ -668,36 +673,36 @@ export default function YappersPage() {
       let selectedAvatar = null
       if (currentSlots.length > 0) {
         const availableSlots = currentSlots.filter(slot => !currentActiveSlots[slot.id])
-        console.log('🎯 Available (inactive) slots for animation:', availableSlots.length)
+        logger.info('🎯 Available (inactive) slots for animation:', availableSlots.length)
         
         if (availableSlots.length > 0) {
           // Prefer inactive slots for cleaner visual experience
           targetSlot = availableSlots[Math.floor(Math.random() * availableSlots.length)]
-          console.log('🎯 Selected inactive slot')
+          logger.info('🎯 Selected inactive slot')
         } else {
           // All slots are active - that's fine, just pick random slot
           targetSlot = currentSlots[Math.floor(Math.random() * currentSlots.length)]
-          console.log('🎯 All slots active - selected random slot')
+          logger.info('🎯 All slots active - selected random slot')
         }
         
         // Use the avatar assigned to the selected slot
         if (targetSlot) {
           selectedAvatar = targetSlot.avatarData
-          console.log(`🎯 Using slot ${targetSlot.id} with avatar "${selectedAvatar.name}"`)
+          logger.info(`🎯 Using slot ${targetSlot.id} with avatar "${selectedAvatar.name}"`)
         }
       }
       
       if (targetSlot && !isWebSpeech) {
-        console.log('🎬 Setting up avatar animation for slot:', targetSlot.id)
+        logger.info('🎬 Setting up avatar animation for slot:', targetSlot.id)
         
         // Note: targetSlot already has the correct avatarData assigned
         // If we selected a specific avatar, it should match what's in the slot
         if (selectedAvatar) {
-          console.log(`🎭 Using selected avatar "${selectedAvatar.name}" for slot ${targetSlot.id}`)
+          logger.info(`🎭 Using selected avatar "${selectedAvatar.name}" for slot ${targetSlot.id}`)
         }
         
         audio.addEventListener('play', () => {
-          console.log('🟢 Audio started playing - activating avatar:', targetSlot.id)
+          logger.info('🟢 Audio started playing - activating avatar:', targetSlot.id)
           setActiveSlots(slots => ({...slots, [targetSlot.id]: true}))
         })
         
@@ -706,7 +711,7 @@ export default function YappersPage() {
           if (cleanedUp) return // Prevent duplicate calls
           cleanedUp = true
           
-          console.log('🔴 Audio ended - deactivating avatar:', targetSlot.id)
+          logger.info('🔴 Audio ended - deactivating avatar:', targetSlot.id)
           setActiveSlots(slots => ({...slots, [targetSlot.id]: false}))
           
           // Clean up audio tracking
@@ -728,28 +733,28 @@ export default function YappersPage() {
       
       if (isWebSpeech) {
         // Handle Web Speech API with queue
-        console.log('🗣️ Using Web Speech API - checking user availability...')
+        logger.info('🗣️ Using Web Speech API - checking user availability...')
         
         // Backend already handled per-user queuing logic - just add to Web Speech queue
-        console.log('🗣️ Adding message to Web Speech queue (backend already validated per-user queuing)...')
+        logger.info('🗣️ Adding message to Web Speech queue (backend already validated per-user queuing)...')
         
         // Note: targetSlot already has the correct avatarData assigned
         if (selectedAvatar && targetSlot) {
-          console.log(`🎭 Using selected avatar "${selectedAvatar.name}" for slot ${targetSlot.id}`)
+          logger.info(`🎭 Using selected avatar "${selectedAvatar.name}" for slot ${targetSlot.id}`)
         }
         
         // Fetch the JSON instructions
         fetch(msg.audioUrl)
           .then(response => response.json())
           .then(data => {
-            console.log('📋 Web Speech instructions:', data)
+            logger.info('📋 Web Speech instructions:', data)
             
             // Add user information to the data for queue management
             const dataWithUser = { ...data, user: msg.user }
             
             // Add to speech queue instead of playing immediately
             setSpeechQueue(queue => [...queue, { data: dataWithUser, targetSlot }])
-            console.log(`✅ Web Speech added to queue for user: ${msg.user}`)
+            logger.info(`✅ Web Speech added to queue for user: ${msg.user}`)
           })
           .catch(error => {
             console.error('❌ Failed to load Web Speech instructions:', error)
@@ -758,10 +763,10 @@ export default function YappersPage() {
           })
       } else {
         // Handle regular audio file
-        console.log(`🔊 Attempting to play audio for ${msg.user}... (${allActiveAudioRef.current.size} total active)`)
+        logger.info(`🔊 Attempting to play audio for ${msg.user}... (${allActiveAudioRef.current.size} total active)`)
         audio.play()
           .then(() => {
-            console.log(`✅ Audio play() successful for ${msg.user} (parallel audio supported)`)
+            logger.info(`✅ Audio play() successful for ${msg.user} (parallel audio supported)`)
           })
           .catch((error) => {
             console.error(`❌ Audio play() failed for ${msg.user}:`, error)
@@ -791,7 +796,7 @@ export default function YappersPage() {
       
       import('../websocket-manager.js').then(({ default: wsManager }) => {
         if (!mounted) return
-        console.log('🔌 YappersPage: Adding WebSocket listener')
+        logger.info('🔌 YappersPage: Adding WebSocket listener')
         removeListener = wsManager.addListener(handleMessage)
       })
     }, 100) // Small delay to debounce rapid re-mounts
@@ -801,7 +806,7 @@ export default function YappersPage() {
       clearTimeout(connectTimeout)
       
       if (removeListener) {
-        console.log('🔌 YappersPage: Removing WebSocket listener')
+        logger.info('🔌 YappersPage: Removing WebSocket listener')
         // Add a small delay before removing to prevent rapid disconnect/reconnect
         setTimeout(() => removeListener(), 50)
       }

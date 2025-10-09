@@ -1,8 +1,12 @@
 import asyncio
+import logging
 from typing import Callable, Dict, Any
 
 from twitchio.ext import commands
 import twitchio
+
+# Get logger for this module
+logger = logging.getLogger('ChatYapper.Twitch')
 
 def _ti_major() -> int:
     try:
@@ -70,20 +74,13 @@ class TwitchBot(commands.Bot):
     async def event_ready(self):
         # self.nick is available in both, but keep fallback to provided nick
         who = getattr(self, "nick", None) or self._nick or "unknown"
-        print(f"Twitch bot connected successfully as {who}")
-        print(f"Listening to channel: {self.channel_name}")
         try:
-            import logging
-            logger = logging.getLogger("ChatYapper.Twitch")
             logger.info(f"Twitch bot ready as {who}, listening to {self.channel_name}")
         except Exception:
             pass
 
     async def event_error(self, error, data=None):
-        print(f"Twitch bot error: {error}")
         try:
-            import logging
-            logger = logging.getLogger("ChatYapper.Twitch")
             logger.error(f"Twitch bot error: {error}", exc_info=True)
         except Exception:
             pass
@@ -175,16 +172,16 @@ class TwitchBot(commands.Bot):
         ban_duration = tags.get("ban-duration")  # Present for timeouts, absent for bans
         
         # Debug: log all available tags for troubleshooting
-        print(f"CLEARCHAT tags: {tags}")
+        logger.info(f"CLEARCHAT tags: {tags}")
         if target_user:
-            print(f"Extracted target user: '{target_user}' from tags")
+            logger.info(f"Extracted target user: '{target_user}' from tags")
         
         if target_user:
             # This is a user-specific action (ban or timeout)
             event_type = "timeout" if ban_duration else "ban"
             duration = int(ban_duration) if ban_duration else None
             
-            print(f"Twitch moderation: {event_type} for user {target_user}" + (f" ({duration}s)" if duration else ""))
+            logger.info(f"Twitch moderation: {event_type} for user {target_user}" + (f" ({duration}s)" if duration else ""))
             
             self.on_event_cb({
                 "type": "moderation",
@@ -195,7 +192,7 @@ class TwitchBot(commands.Bot):
             })
         else:
             # This is a general chat clear
-            print("Twitch chat cleared by moderator")
+            logger.info("Twitch chat cleared by moderator")
             self.on_event_cb({
                 "type": "moderation",
                 "eventType": "clear_chat",
@@ -212,19 +209,19 @@ class TwitchBot(commands.Bot):
 
 
 async def run_twitch_bot(token: str, nick: str, channel: str, on_event: Callable[[Dict[str, Any]], None]):
-    print(f"Starting Twitch bot for channel: {channel}")
-    logger = None
+    bot_logger = None
     bot = None
     try:
         import logging
-        logger = logging.getLogger("ChatYapper.Twitch")
-        logger.info(f"Starting Twitch bot: nick={nick}, channel={channel}")
+        bot_logger = logging.getLogger("ChatYapper.Twitch")
+        bot_logger.info(f"Starting Twitch bot: nick={nick}, channel={channel}")
     except Exception:
         pass
 
     try:
         bot = TwitchBot(token, nick, channel, on_event)
-        print("Twitch bot instance created, connecting...")
+        if bot_logger:
+            bot_logger.info("Twitch bot instance created, connecting...")
 
         # Start compatibly across versions
         # Prefer async start() if present (2.x), else connect() (1.x),
@@ -250,9 +247,8 @@ async def run_twitch_bot(token: str, nick: str, channel: str, on_event: Callable
 
     except asyncio.CancelledError:
         # Task was cancelled (e.g., server shutdown), clean up gracefully
-        print("Twitch bot task cancelled")
-        if logger:
-            logger.info("Twitch bot task cancelled during startup")
+        if bot_logger:
+            bot_logger.info("Twitch bot task cancelled during startup")
         # Try to close the bot connection if it exists
         if bot:
             try:
@@ -264,14 +260,13 @@ async def run_twitch_bot(token: str, nick: str, channel: str, on_event: Callable
                         close_method()
             except Exception as close_err:
                 # Ignore cleanup errors during cancellation
-                if logger:
-                    logger.debug(f"Error during bot cleanup: {close_err}")
+                if bot_logger:
+                    bot_logger.debug(f"Error during bot cleanup: {close_err}")
         raise  # Re-raise CancelledError so the task properly terminates
     except Exception as e:
-        print(f"Twitch bot failed to start: {e}")
         try:
-            if logger:
-                logger.error(f"Twitch bot startup failed: {e}", exc_info=True)
+            if bot_logger:
+                bot_logger.error(f"Twitch bot startup failed: {e}", exc_info=True)
         except Exception:
             pass
         raise

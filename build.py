@@ -7,8 +7,29 @@ import sys
 import shutil
 import subprocess
 import logging
+import urllib.request
+import urllib.parse
 from datetime import datetime
 from pathlib import Path
+
+# Load environment variables from .env file if available
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # Load .env file
+    print("📄 Loaded .env file for build configuration")
+except ImportError:
+    print("💡 python-dotenv not installed, using system environment only")
+    print("   Run: pip install python-dotenv")
+except Exception as e:
+    print(f"⚠️  Could not load .env file: {e}")
+    print("   Continuing with system environment variables...")
+
+def is_executable():
+    """
+    Detect if we're running as a PyInstaller executable.
+    Returns True if running from .exe, False if running from source.
+    """
+    return getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
 
 # Set up build logging
 def setup_build_logging():
@@ -27,9 +48,14 @@ def setup_build_logging():
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     
-    # Console handler - only errors and warnings
+    # Console handler - adjust level based on environment
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.WARNING)
+    if is_executable():
+        # Production (.exe) - only show errors
+        console_handler.setLevel(logging.ERROR)
+    else:
+        # Development - show warnings and errors
+        console_handler.setLevel(logging.WARNING)
     console_handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
     
     logging.basicConfig(
@@ -107,7 +133,7 @@ def create_executable():
         # Install core dependencies manually if requirements.txt doesn't exist
         logger.warning("requirements.txt not found, installing core dependencies manually")
         print("Installing core dependencies...")
-        run_command("pip install fastapi uvicorn sqlmodel aiohttp pillow edge-tts twitchio")
+        run_command("pip install fastapi uvicorn sqlmodel aiohttp pillow edge-tts twitchio boto3")
     
     # Verify critical dependencies are now available
     print("Verifying dependencies...")
@@ -180,6 +206,12 @@ for root, dirs, files in os.walk('backend/public'):
 data_files = backend_py_data + public_files + [
     ('backend/settings_defaults.json', 'backend'),
 ]
+
+from PyInstaller.utils.hooks import collect_submodules, collect_data_files
+
+# Collect all jaraco and pkg_resources submodules
+jaraco_modules = collect_submodules('jaraco')
+pkg_resources_modules = collect_submodules('pkg_resources')
 
 a = Analysis(
     ['main.py'],
@@ -263,7 +295,29 @@ a = Analysis(
         'sqlalchemy.engine',
         'sqlalchemy.pool',
         'sqlite3',
-    ],
+        # AWS boto3 for Amazon Polly TTS
+        'boto3',
+        'boto3.client',
+        'boto3.session',
+        'botocore',
+        'botocore.client',
+        'botocore.session',
+        'botocore.config',
+        'botocore.exceptions',
+        'botocore.exceptions.BotoCoreError',
+        'botocore.exceptions.ClientError',
+        # Fix for jaraco.text missing dependency
+        'jaraco',
+        'jaraco.text',
+        'jaraco.functools',
+        'jaraco.context',
+        'pkg_resources',
+        'pkg_resources._vendor',
+        'pkg_resources._vendor.packaging',
+        'pkg_resources._vendor.packaging.version',
+        'setuptools',
+        'setuptools.dist',
+    ] + jaraco_modules + pkg_resources_modules,
     hookspath=[],
     hooksconfig={{
         # Configure matplotlib hook to avoid numpy issues
@@ -286,7 +340,6 @@ a = Analysis(
         'tensorflow',
         'torch',
         'numpy.distutils',
-        'setuptools',
         'pip',
         'wheel',
         'distutils',
@@ -383,7 +436,191 @@ exe = EXE(
     logger.info("Build artifacts cleaned up successfully")
     print("Cleaned up build artifacts")
 
+def test_executable():
+    """Test the built executable to ensure it works correctly"""
+    logger.info("=== Starting executable validation tests ===")
+    print()
+    print("🧪 Testing built executable...")
+    
+    exe_path = Path("dist") / "ChatYapper.exe"
+    if not exe_path.exists():
+        logger.error(f"Executable not found at {exe_path}")
+        print("❌ Executable file not found")
+        return False
+    
+    print(f"📁 Found executable: {exe_path}")
+    print(f"📊 File size: {exe_path.stat().st_size / 1024 / 1024:.1f} MB")
+    
+    all_tests_passed = True
+    
+    # Test 1: Basic startup test
+    print("\n🚀 Test 1: Basic startup validation...")
+    try:
+        import subprocess
+        import time
+        import signal
+        
+        # Start the executable with a timeout
+        logger.info("Starting executable for startup test")
+        process = subprocess.Popen(
+            [str(exe_path)], 
+            stdout=subprocess.PIPE, 
+            stderr=subprocess.PIPE,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+        )
+        
+        # Wait a few seconds to see if it starts properly
+        time.sleep(3)
+        
+        if process.poll() is None:
+            print("✅ Executable started successfully")
+            logger.info("Executable startup test passed")
+            
+            # Test 2: HTTP endpoint test
+            print("\n🌐 Test 2: HTTP server validation...")
+            try:
+                import urllib.request
+                import json
+                
+                # Wait a bit more for the server to be ready
+                time.sleep(2)
+                
+                # Test the status endpoint
+                response = urllib.request.urlopen("http://localhost:8000/api/status", timeout=5)
+                if response.getcode() == 200:
+                    data = json.loads(response.read().decode())
+                    if data.get("status") == "running":
+                        print("✅ HTTP server is responding correctly")
+                        logger.info("HTTP server validation passed")
+                    else:
+                        print("❌ HTTP server returned unexpected response")
+                        logger.error(f"HTTP server returned: {data}")
+                        all_tests_passed = False
+                else:
+                    print(f"❌ HTTP server returned status code: {response.getcode()}")
+                    logger.error(f"HTTP server validation failed with code {response.getcode()}")
+                    all_tests_passed = False
+                    
+            except Exception as e:
+                print(f"❌ HTTP server test failed: {e}")
+                logger.error(f"HTTP server validation failed: {e}")
+                all_tests_passed = False
+            
+            # Test 3: TTS functionality test
+            print("\n🎵 Test 3: TTS functionality validation...")
+            try:
+                # Test TTS endpoint with simulation
+                test_data = {
+                    'user': 'BuildTester',
+                    'text': 'Build validation test message',
+                    'eventType': 'chat'
+                }
+                
+                data = urllib.parse.urlencode(test_data).encode()
+                req = urllib.request.Request(
+                    "http://localhost:8000/api/simulate", 
+                    data=data,
+                    headers={'Content-Type': 'application/x-www-form-urlencoded'}
+                )
+                
+                response = urllib.request.urlopen(req, timeout=10)
+                if response.getcode() == 200:
+                    result = json.loads(response.read().decode())
+                    if result.get("ok"):
+                        print("✅ TTS functionality is working")
+                        logger.info("TTS validation passed")
+                    else:
+                        print(f"❌ TTS test failed: {result.get('error', 'Unknown error')}")
+                        logger.error(f"TTS validation failed: {result}")
+                        all_tests_passed = False
+                else:
+                    print(f"❌ TTS test returned status code: {response.getcode()}")
+                    logger.error(f"TTS validation failed with code {response.getcode()}")
+                    all_tests_passed = False
+                    
+            except Exception as e:
+                print(f"❌ TTS test failed: {e}")
+                logger.error(f"TTS validation failed: {e}")
+                all_tests_passed = False
+                
+        else:
+            print("❌ Executable failed to start or crashed immediately")
+            logger.error("Executable startup test failed - process terminated")
+            all_tests_passed = False
+            
+        # Clean shutdown
+        if process.poll() is None:
+            print("\n🛑 Shutting down test instance...")
+            try:
+                process.terminate()
+                process.wait(timeout=5)
+            except:
+                process.kill()
+                process.wait(timeout=2)
+            logger.info("Test process terminated cleanly")
+            
+    except Exception as e:
+        print(f"❌ Startup test failed: {e}")
+        logger.error(f"Startup validation failed: {e}")
+        all_tests_passed = False
+    
+    # Test 4: Dependency validation
+    print("\n📦 Test 4: Dependency validation...")
+    try:
+        # Check that the executable exists (onefile build)
+        dist_dir = Path("dist")
+        expected_patterns = [
+            "ChatYapper.exe"
+        ]
+        
+        missing_items = []
+        for pattern in expected_patterns:
+            if not any(dist_dir.glob(pattern)):
+                missing_items.append(pattern)
+        
+        if not missing_items:
+            print("✅ All expected files and directories are present")
+            logger.info("Dependency validation passed")
+        else:
+            print(f"❌ Missing expected items: {missing_items}")
+            logger.error(f"Missing dependencies: {missing_items}")
+            all_tests_passed = False
+            
+    except Exception as e:
+        print(f"❌ Dependency validation failed: {e}")
+        logger.error(f"Dependency validation failed: {e}")
+        all_tests_passed = False
+    
+    # Final results
+    print(f"\n{'='*50}")
+    if all_tests_passed:
+        print("🎉 All validation tests PASSED!")
+        print("   The executable is ready for distribution")
+        logger.info("All validation tests passed")
+    else:
+        print("💥 Some validation tests FAILED!")
+        print("   Review the errors above before distributing")
+        logger.error("Some validation tests failed")
+    print(f"{'='*50}")
+    
+    return all_tests_passed
+
 def main():
+    # Check for command line arguments
+    test_only = "--test-only" in sys.argv
+    
+    if test_only:
+        logger.info("=== Running executable validation tests only ===")
+        print("🧪 Testing existing executable...")
+        print()
+        
+        if test_executable():
+            print("\n✅ All tests passed!")
+            sys.exit(0)
+        else:
+            print("\n❌ Tests failed!")
+            sys.exit(1)
+    
     logger.info("=== Starting Chat Yapper build process ===")
     print(" Building Chat Yapper for Windows distribution...")
     print()
@@ -403,6 +640,21 @@ def main():
         
         logger.info("=== Build process completed successfully ===")
         log_important("Build complete!")
+        
+        # Test the built executable
+        if test_executable():
+            logger.info("=== Build validation tests PASSED ===")
+            log_important("All tests passed - executable is working correctly!")
+            print()
+            print("✅ Build validation successful!")
+        else:
+            logger.error("=== Build validation tests FAILED ===")
+            log_important("Build validation failed - executable may have issues")
+            print()
+            print("❌ Build validation failed!")
+            print("   Check the logs for details")
+            return False
+            
         print()
         print("Executable location: dist/ChatYapper.exe")
         print("Distribution folder: dist/")
@@ -411,6 +663,8 @@ def main():
         print("   1. Copy the dist/ChatYapper.exe file")
         print("   2. Users can run it directly - no installation needed!")
         print("   3. It will start a local server and open their browser")
+        print()
+        print("💡 Tip: Run 'python build.py --test-only' to test an existing executable")
         
     except Exception as e:
         logger.error(f"Build process failed: {e}", exc_info=True)
@@ -418,4 +672,21 @@ def main():
         sys.exit(1)
 
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] in ["--help", "-h"]:
+        print("Chat Yapper Build Script")
+        print("=======================")
+        print()
+        print("Usage:")
+        print("  python build.py              Build the application and run validation tests")
+        print("  python build.py --test-only  Test an existing executable without rebuilding")
+        print("  python build.py --help       Show this help message")
+        print()
+        print("The build script will:")
+        print("  1. Build the React frontend")
+        print("  2. Create Windows executable with PyInstaller")
+        print("  3. Run comprehensive validation tests")
+        print("  4. Report success/failure with detailed logs")
+        print()
+        sys.exit(0)
+    
     main()

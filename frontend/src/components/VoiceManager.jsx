@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import logger from '../utils/logger'
 
 export default function VoiceManager({ managedAvatars, apiUrl }) {
   const [voices, setVoices] = useState([])
@@ -63,7 +64,7 @@ export default function VoiceManager({ managedAvatars, apiUrl }) {
           const googleResponse = await fetch(`${apiUrl}/api/available-voices/google?api_key=${encodeURIComponent(googleApiKey)}`)
           googleData = await googleResponse.json()
 
-          console.log(googleData);
+          logger.info(googleData);
           
           
           // If there's an error, don't show any voices - user needs to fix the API key
@@ -143,13 +144,13 @@ export default function VoiceManager({ managedAvatars, apiUrl }) {
         edge: edgeData.voices || [],
       }
       
-      console.log('📊 Available voices loaded:', {
+      logger.info('📊 Available voices loaded:', {
         monstertts: newAvailableVoices.monstertts.length,
         google: newAvailableVoices.google.length,
         polly: newAvailableVoices.polly.length,
         edge: newAvailableVoices.edge.length
       })
-      console.log('🎤 Polly voices:', newAvailableVoices.polly)
+      logger.info('🎤 Polly voices:', newAvailableVoices.polly)
       
       setAvailableVoices(newAvailableVoices)
     } catch (error) {
@@ -215,7 +216,7 @@ export default function VoiceManager({ managedAvatars, apiUrl }) {
 
   const testVoice = async (provider, voiceId, voiceName) => {
     try {
-      console.log(`Testing voice: ${voiceName} (${provider}, ${voiceId})`)
+      logger.info(`Testing voice: ${voiceName} (${provider}, ${voiceId})`)
       
       // Create a temporary voice object for testing
       const testVoiceData = {
@@ -238,7 +239,7 @@ export default function VoiceManager({ managedAvatars, apiUrl }) {
       })
       
       if (response.ok) {
-        console.log('Voice test message sent successfully')
+        logger.info('Voice test message sent successfully')
       } else {
         console.error('Failed to send voice test message:', response.status)
       }

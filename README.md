@@ -81,6 +81,32 @@ The build process:
 
 ## Configuration Guide
 
+### Environment Variables (.env file)
+
+Chat Yapper supports configuration through environment variables. Create a `.env` file in the root directory to customize:
+
+```bash
+# Twitch OAuth Configuration (recommended for OAuth setup)
+TWITCH_CLIENT_ID=your_client_id_here
+TWITCH_CLIENT_SECRET=your_client_secret_here
+
+# Server Configuration (optional)
+PORT=8000                    # Backend server port
+HOST=0.0.0.0                 # Backend server host
+DEBUG=false                  # Enable debug logging
+FRONTEND_PORT=5173           # Frontend development server port
+
+# Database Configuration (optional)
+DB_PATH=custom_database.db   # Custom database file path
+```
+
+**Setting up Twitch OAuth (.env method):**
+1. Copy `.env.example` to `.env`
+2. Create a Twitch app at [dev.twitch.tv/console/apps](https://dev.twitch.tv/console/apps)
+3. Set redirect URL to: `http://localhost:8000/auth/twitch/callback` (or use your PORT value)
+4. Fill in your `TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET` in `.env`
+5. Restart Chat Yapper and use the "Connect to Twitch" button in settings
+
 ### Twitch Settings
 
 | Setting | Description | Required |
