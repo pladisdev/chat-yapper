@@ -2,14 +2,12 @@
 
 **Voice Avatar TTS System for Twitch Chat**
 
-Chat Yapper is a powerful text-to-speech application that reads Twitch chat messages aloud using customizable voice avatars. Perfect for streamers who want to engage with their chat through voice while maintaining visual focus on their game or content.
+Chat Yapper is a text-to-speech application that reads Twitch chat messages aloud using avatars. 
 
 ## Features
 - **Voice Avatars**: Assign different voices to different users or groups
-- **Multiple TTS Providers**: Support for ElevenLabs, OpenAI, Azure, AWS Polly, and Web Speech API
+- **Multiple TTS Providers**: Support for Edge, Google, Amazon, Monster
 - **Custom Avatar Images**: Upload and manage visual avatars for each voice
-- **Automated Testing**: Comprehensive unit tests with CI/CD via GitHub Actions
-
 
 ## Quick Start (End Users)
 
@@ -37,7 +35,6 @@ Chat Yapper is a powerful text-to-speech application that reads Twitch chat mess
 
 - **Python 3.9+** with pip
 - **Node.js 16+** with npm
-- **Git** for version control
 
 ### Installation
 
@@ -106,91 +103,6 @@ DB_PATH=custom_database.db   # Custom database file path
 3. Set redirect URL to: `http://localhost:8000/auth/twitch/callback` (or use your PORT value)
 4. Fill in your `TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET` in `.env`
 5. Restart Chat Yapper and use the "Connect to Twitch" button in settings
-
-### Twitch Settings
-
-| Setting | Description | Required |
-|---------|-------------|----------|
-| **Channel Name** | Your Twitch channel name (without #) | ✅ Yes |
-| **Bot Username** | Twitch account that will read chat | ✅ Yes |
-| **Access Token** | OAuth token for the bot account | ✅ Yes |
-| **Enable Chat** | Toggle Twitch chat reading on/off | ✅ Yes |
-
-#### Getting Twitch Access Tokens
-
-**Option 1: Twitch Token Generator (Easiest)**
-1. Go to [Twitch Token Generator](https://twitchtokengenerator.com/)
-2. Click "Generate Token"  
-3. Login with your Twitch account (or bot account)
-4. Copy the **Access Token** (long string of letters/numbers)
-5. Paste into Chat Yapper settings
-
-**Option 2: Official Twitch Developer Console**
-1. Go to [Twitch Developer Console](https://dev.twitch.tv/console)
-2. Create a new application
-3. Use Client ID/Secret to generate tokens via OAuth flow
-
-#### Bot Account Options
-
-**Use Your Main Account (Simple)**
-- Bot Username: Your Twitch username
-- Access Token: Token generated with your main account
-- ✅ Quick setup, works immediately
-- ❌ Chat appears to come from your main account
-
-**Create Dedicated Bot Account (Recommended)**
-1. Create new Twitch account (e.g., `YourChannelBot`)
-2. Generate token for this new account
-3. Bot Username: The new bot account name
-4. ✅ Professional appearance, clean separation
-5. ❌ Requires extra setup
-
-> **Note**: Chat Yapper only *reads* chat messages - no special permissions needed!
-
-### TTS Provider Configuration
-
-#### AWS Polly
-- **AWS Native**: Amazon's text-to-speech service
-- **Credentials**: AWS Access Key ID and Secret Access Key
-- **Region**: AWS region (e.g., us-east-1)
-- **Setup**:
-  1. Create AWS account
-  2. Create IAM user with Polly access
-  3. Generate access keys for the user
-
-#### Web Speech API (Browser)
-- **Free**: Uses your browser's built-in TTS
-- **No Setup**: Works immediately, no API keys needed
-- **Quality**: Varies by browser and system
-- **Limitations**: Only works when browser is open
-
-### Voice Management
-
-#### Adding Voices
-
-1. **Go to Settings** → Voices tab
-2. **Click "Add Voice"**
-3. **Configure**:
-   - **Name**: Display name for the voice
-   - **Provider**: Choose TTS provider
-   - **Voice ID**: Specific voice from provider
-   - **Speed**: Speech rate (0.5-2.0)
-   - **Pitch**: Voice pitch adjustment
-   - **Volume**: Voice volume level
-
-#### Voice Assignment Modes
-
-- **Random**: Randomly assigns voices to new users
-- **Sequential**: Cycles through voices in order
-- **User-Specific**: Manually assign voices to specific Twitch users
-- **Default**: Uses one voice for all messages
-
-#### Avatar Images
-
-- **Upload**: Custom images for each voice (PNG, JPG, GIF)
-- **Size Limit**: 5MB maximum per image
-- **Grouping**: Organize avatars into themed groups
-- **Management**: Edit, delete, or reorganize avatars
 
 ## 📁 Project Structure
 
@@ -270,26 +182,6 @@ npm run test:coverage              # Frontend
 bash install-test-deps.sh
 ```
 
-### CI/CD
-
-Automated tests run on every push and pull request via GitHub Actions:
-- ✅ Backend tests (Python 3.9, 3.10, 3.11)
-- ✅ Frontend tests (Node 18.x, 20.x)
-- ✅ Code linting and formatting checks
-- ✅ Coverage reporting
-
-**For detailed testing documentation, see [TESTING.md](TESTING.md)**
-
-## 🐛 Troubleshooting
-
-### To be added
-
-### Log Files
-
-- `logs/chatyapper_*.log` - Main application logs
-- `logs/backend_*.log` - Backend/API logs  
-- `logs/build_*.log` - Build process logs
-
 ## 📊 Changelog
 
 ### v1.0.0 (Latest)
@@ -304,4 +196,4 @@ Automated tests run on every push and pull request via GitHub Actions:
 
 **Made with ❤️ for the streaming community**
 
-For support, questions, or feature requests, please open an issue on GitHub.
+For support, questions, or feature requests, please open an issue on GitHub or email Pladis at pladisdev@gmail.com.
