@@ -1999,6 +1999,33 @@ function AboutSection() {
           <Separator />
 
           <div className="space-y-4">
+            <h3 className="font-medium text-lg">🎥 OBS Studio Integration</h3>
+            <div className="p-4 rounded-lg border bg-card">
+              <div className="space-y-3">
+                <p className="text-sm font-medium">Use Chat Yapper with OBS Studio</p>
+                <p className="text-sm text-muted-foreground">
+                  Display animated chat avatars in your stream by adding the yappers page as a Browser Source in OBS.
+                </p>
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-xs font-medium mb-2">📋 Steps to add to OBS:</p>
+                    <ol className="list-decimal list-inside text-xs text-muted-foreground space-y-1 ml-2">
+                      <li>In OBS, right-click in Sources and select "Add" → "Browser"</li>
+                      <li>Create new source and name it how you like</li>
+                      <li>Set the URL to: <code className="bg-muted px-1 rounded text-xs">http://localhost:8000/yappers</code></li>
+                      <li>Recommend Width: 1000 and Recommend Height: 600</li>
+                      <li>Check "Control audio via OBS", "Shutdown source when not visible" and "Refresh browser when scene becomes active"</li>
+                      <li>Click OK - avatars will appear when chat messages are spoken</li>
+                    </ol>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <Separator />
+
+          <div className="space-y-4">
             <h3 className="font-medium text-lg">Support & Contact</h3>
             <div className="p-4 rounded-lg border bg-card">
               <div className="flex items-center gap-3">

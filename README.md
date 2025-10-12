@@ -73,8 +73,15 @@ python build.py
 The build process:
 1. Builds the React frontend (`npm run build`)
 2. Copies build to `backend/public/`
-3. Creates Windows executable with PyInstaller
-4. Bundles all dependencies into single .exe file
+3. **Embeds Twitch credentials from .env file into executable**
+4. Creates Windows executable with PyInstaller
+5. Bundles all dependencies into single .exe file
+
+**Important**: Twitch OAuth credentials from your `.env` file are permanently embedded in the executable during build time. This means:
+- ✅ The .exe works on any PC without needing a separate .env file
+- ✅ Users don't need to configure Twitch credentials
+- ⚠️  Make sure your .env contains the correct credentials before building
+- ⚠️  The executable will contain your Twitch app credentials
 
 ## Configuration Guide
 

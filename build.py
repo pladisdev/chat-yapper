@@ -118,10 +118,53 @@ def build_frontend():
     logger.info("Frontend built and copied successfully")
     log_important("Frontend built and copied to backend/public")
 
+def create_embedded_env_config():
+    """Create embedded environment configuration for the executable"""
+    logger.info("Creating embedded environment configuration...")
+    
+    # Read Twitch environment variables from .env
+    twitch_client_id = os.environ.get("TWITCH_CLIENT_ID", "")
+    twitch_client_secret = os.environ.get("TWITCH_CLIENT_SECRET", "")
+    
+    logger.info(f"Found Twitch Client ID: {'Yes' if twitch_client_id else 'No'}")
+    logger.info(f"Found Twitch Client Secret: {'Yes' if twitch_client_secret else 'No'}")
+    
+    # Create embedded config Python file
+    config_content = f'''"""
+Embedded environment configuration for Chat Yapper executable.
+Generated during build process from .env file.
+"""
+
+# Twitch OAuth Configuration embedded from build-time .env file
+EMBEDDED_TWITCH_CLIENT_ID = "{twitch_client_id}"
+EMBEDDED_TWITCH_CLIENT_SECRET = "{twitch_client_secret}"
+
+def get_embedded_env(key, default=""):
+    """Get embedded environment variable by key"""
+    embedded_vars = {{
+        "TWITCH_CLIENT_ID": EMBEDDED_TWITCH_CLIENT_ID,
+        "TWITCH_CLIENT_SECRET": EMBEDDED_TWITCH_CLIENT_SECRET,
+    }}
+    return embedded_vars.get(key, default)
+'''
+    
+    # Write to backend directory so it gets included in the build
+    config_path = Path("backend/embedded_config.py")
+    with open(config_path, 'w', encoding='utf-8') as f:
+        f.write(config_content)
+    
+    logger.info(f"Created embedded config: {config_path}")
+    log_important(f"Embedded Twitch config {'with' if twitch_client_id else 'without'} credentials")
+    
+    return config_path
+
 def create_executable():
     """Create executable with PyInstaller"""
     logger.info("Starting executable creation process")
     log_important("Creating Windows executable...")
+    
+    # Create embedded environment configuration first
+    create_embedded_env_config()
     
     # Install Python dependencies first
     logger.info("Installing Python dependencies")
@@ -205,6 +248,7 @@ for root, dirs, files in os.walk('backend/public'):
 
 data_files = backend_py_data + public_files + [
     ('backend/settings_defaults.json', 'backend'),
+    ('backend/embedded_config.py', 'backend'),
 ]
 
 from PyInstaller.utils.hooks import collect_submodules, collect_data_files
@@ -317,6 +361,8 @@ a = Analysis(
         'pkg_resources._vendor.packaging.version',
         'setuptools',
         'setuptools.dist',
+        # Embedded configuration
+        'embedded_config',
     ] + jaraco_modules + pkg_resources_modules,
     hookspath=[],
     hooksconfig={{
@@ -424,7 +470,7 @@ exe = EXE(
         sys.exit(1)
     
     # Clean up build artifacts (optional)
-    cleanup_paths = ["build", "ChatYapper.spec"]
+    cleanup_paths = ["build", "ChatYapper.spec", "backend/embedded_config.py"]
     logger.info("Cleaning up build artifacts")
     for path in cleanup_paths:
         if Path(path).exists():

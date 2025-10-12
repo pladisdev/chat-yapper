@@ -36,7 +36,22 @@ try:
 except Exception:
     edge_tts = None
 
-AUDIO_DIR = os.environ.get("AUDIO_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "audio")))
+def find_project_root():
+    """Find the project root by looking for characteristic files"""
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # Look for project markers (package.json, requirements.txt, etc.)
+    markers = ['package.json', 'requirements.txt', 'main.py', '.git']
+    
+    while current_dir != os.path.dirname(current_dir):  # Not at filesystem root
+        if any(os.path.exists(os.path.join(current_dir, marker)) for marker in markers):
+            return current_dir
+        current_dir = os.path.dirname(current_dir)
+    
+    # Fallback to current directory if no markers found
+    return os.path.dirname(os.path.abspath(__file__))
+
+AUDIO_DIR = os.environ.get("AUDIO_DIR", os.path.join(find_project_root(), "audio"))
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
 @dataclass
@@ -50,7 +65,7 @@ class TTSProvider:
         raise NotImplementedError
 
 class MonsterTTSProvider(TTSProvider):
-    def __init__(self, api_key: str, voice_id: str = "9aad4a1b-f04e-43a1-8ff5-4830115a10a8"):
+    def __init__(self, api_key: str, voice_id: str = None):
         self.api_key = api_key
         self.voice_id = voice_id
         self.base_url = "https://api.console.tts.monster/generate"
@@ -375,72 +390,7 @@ class AmazonPollyProvider(TTSProvider):
         
         # For simplicity, return a comprehensive list of Polly voices
         # In a full implementation, we'd make an API call to DescribeVoices
-        polly_voices = [
-            # US English voices
-            {"voice_id": "Joanna", "name": "Joanna - Female US", "language": "en-US", "gender": "Female"},
-            {"voice_id": "Matthew", "name": "Matthew - Male US", "language": "en-US", "gender": "Male"},
-            {"voice_id": "Ivy", "name": "Ivy - Female US (Child)", "language": "en-US", "gender": "Female"},
-            {"voice_id": "Justin", "name": "Justin - Male US (Child)", "language": "en-US", "gender": "Male"},
-            {"voice_id": "Kendra", "name": "Kendra - Female US", "language": "en-US", "gender": "Female"},
-            {"voice_id": "Kimberly", "name": "Kimberly - Female US", "language": "en-US", "gender": "Female"},
-            {"voice_id": "Salli", "name": "Salli - Female US", "language": "en-US", "gender": "Female"},
-            {"voice_id": "Joey", "name": "Joey - Male US", "language": "en-US", "gender": "Male"},
-            {"voice_id": "Ruth", "name": "Ruth - Female US", "language": "en-US", "gender": "Female"},
-            {"voice_id": "Stephen", "name": "Stephen - Male US", "language": "en-US", "gender": "Male"},
-            
-            # UK English voices
-            {"voice_id": "Amy", "name": "Amy - Female GB", "language": "en-GB", "gender": "Female"},
-            {"voice_id": "Emma", "name": "Emma - Female GB", "language": "en-GB", "gender": "Female"},
-            {"voice_id": "Brian", "name": "Brian - Male GB", "language": "en-GB", "gender": "Male"},
-            {"voice_id": "Arthur", "name": "Arthur - Male GB", "language": "en-GB", "gender": "Male"},
-            
-            # Australian English voices
-            {"voice_id": "Nicole", "name": "Nicole - Female AU", "language": "en-AU", "gender": "Female"},
-            {"voice_id": "Russell", "name": "Russell - Male AU", "language": "en-AU", "gender": "Male"},
-            {"voice_id": "Olivia", "name": "Olivia - Female AU", "language": "en-AU", "gender": "Female"},
-            
-            # Other English variants
-            {"voice_id": "Aria", "name": "Aria - Female NZ", "language": "en-NZ", "gender": "Female"},
-            {"voice_id": "Ayanda", "name": "Ayanda - Female ZA", "language": "en-ZA", "gender": "Female"},
-            {"voice_id": "Aditi", "name": "Aditi - Female IN", "language": "en-IN", "gender": "Female"},
-            {"voice_id": "Raveena", "name": "Raveena - Female IN", "language": "en-IN", "gender": "Female"},
-            
-            # Spanish voices
-            {"voice_id": "Conchita", "name": "Conchita - Female ES", "language": "es-ES", "gender": "Female"},
-            {"voice_id": "Enrique", "name": "Enrique - Male ES", "language": "es-ES", "gender": "Male"},
-            {"voice_id": "Lucia", "name": "Lucia - Female ES", "language": "es-ES", "gender": "Female"},
-            {"voice_id": "Mia", "name": "Mia - Female MX", "language": "es-MX", "gender": "Female"},
-            {"voice_id": "Miguel", "name": "Miguel - Male US Spanish", "language": "es-US", "gender": "Male"},
-            {"voice_id": "Penelope", "name": "Penelope - Female US Spanish", "language": "es-US", "gender": "Female"},
-            
-            # French voices
-            {"voice_id": "Celine", "name": "Celine - Female FR", "language": "fr-FR", "gender": "Female"},
-            {"voice_id": "Mathieu", "name": "Mathieu - Male FR", "language": "fr-FR", "gender": "Male"},
-            {"voice_id": "Lea", "name": "Lea - Female FR", "language": "fr-FR", "gender": "Female"},
-            {"voice_id": "Chantal", "name": "Chantal - Female CA", "language": "fr-CA", "gender": "Female"},
-            
-            # German voices
-            {"voice_id": "Marlene", "name": "Marlene - Female DE", "language": "de-DE", "gender": "Female"},
-            {"voice_id": "Hans", "name": "Hans - Male DE", "language": "de-DE", "gender": "Male"},
-            {"voice_id": "Vicki", "name": "Vicki - Female DE", "language": "de-DE", "gender": "Female"},
-            
-            # Italian voices
-            {"voice_id": "Carla", "name": "Carla - Female IT", "language": "it-IT", "gender": "Female"},
-            {"voice_id": "Giorgio", "name": "Giorgio - Male IT", "language": "it-IT", "gender": "Male"},
-            {"voice_id": "Bianca", "name": "Bianca - Female IT", "language": "it-IT", "gender": "Female"},
-            
-            # Portuguese voices
-            {"voice_id": "Ines", "name": "Ines - Female PT", "language": "pt-PT", "gender": "Female"},
-            {"voice_id": "Cristiano", "name": "Cristiano - Male PT", "language": "pt-PT", "gender": "Male"},
-            {"voice_id": "Vitoria", "name": "Vitoria - Female BR", "language": "pt-BR", "gender": "Female"},
-            {"voice_id": "Ricardo", "name": "Ricardo - Male BR", "language": "pt-BR", "gender": "Male"},
-            
-            # Asian voices
-            {"voice_id": "Mizuki", "name": "Mizuki - Female JP", "language": "ja-JP", "gender": "Female"},
-            {"voice_id": "Takumi", "name": "Takumi - Male JP", "language": "ja-JP", "gender": "Male"},
-            {"voice_id": "Seoyeon", "name": "Seoyeon - Female KR", "language": "ko-KR", "gender": "Female"},
-            {"voice_id": "Zhiyu", "name": "Zhiyu - Female CN", "language": "zh-CN", "gender": "Female"},
-        ]
+        polly_voices = []
         
         logger.info(f"Returning {len(polly_voices)} Amazon Polly voices")
         return polly_voices
@@ -549,26 +499,6 @@ class WebSpeechTTSProvider(TTSProvider):
                 logger.info(f"Cleaned up temporary file: {filepath}")
         except Exception as e:
             logger.info(f"Failed to cleanup file {filepath}: {e}")
-
-class FakeToneProvider(TTSProvider):
-    """Offline fallback that generates a short tone + text length dependent duration.
-    Not real speech—just for overlapping playback/dev.
-    """
-    async def synth(self, job: TTSJob) -> str:
-        import wave, struct, math
-        framerate = 24000
-        duration = min(8.0, max(1.0, len(job.text) / 12.0))
-        frequency = 440 if hash(job.voice) % 2 == 0 else 554
-        nframes = int(duration * framerate)
-        outpath = os.path.join(AUDIO_DIR, f"{uuid.uuid4()}.wav")
-        with wave.open(outpath, 'w') as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)
-            wf.setframerate(framerate)
-            for i in range(nframes):
-                val = int(32767 * 0.2 * math.sin(2 * math.pi * frequency * (i / framerate)))
-                wf.writeframes(struct.pack('<h', val))
-        return outpath
 
 class HybridTTSProvider(TTSProvider):
     """Hybrid provider that uses MonsterTTS when available and under rate limit,
@@ -716,10 +646,8 @@ class HybridTTSProvider(TTSProvider):
             )
             return await self.edge_provider.synth(default_job)
         
-        # Ultimate fallback
-        logger.info("No TTS providers available, using FakeTone")
-        fake_provider = FakeToneProvider()
-        return await fake_provider.synth(job)
+
+        return None
 
 # Factory functions
 async def get_hybrid_provider(monster_api_key: str = None, monster_voice_id: str = None, edge_voice_id: str = None, 
@@ -738,4 +666,4 @@ async def get_provider(api_key: str = None, voice_id: str = "9aad4a1b-f04e-43a1-
         return EdgeTTSProvider()
     
     # Final fallback to fake tone
-    return FakeToneProvider()
+    return None

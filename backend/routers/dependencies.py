@@ -2,10 +2,33 @@
 Shared dependencies and utilities for routers
 """
 import os
+import sys
 import tempfile
 from sqlmodel import Session, create_engine, select, SQLModel
 from modules.models import Setting, Voice, AvatarImage, TwitchAuth
 from modules.backend_logging import setup_backend_logging
+
+def is_executable():
+    """Detect if running as PyInstaller executable"""
+    return getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
+
+def get_env_var(key, default=""):
+    """Get environment variable, checking embedded config if running as executable"""
+    # First try regular environment variables
+    value = os.environ.get(key)
+    if value:
+        return value
+    
+    # If running as executable, try embedded config
+    if is_executable():
+        try:
+            from embedded_config import get_embedded_env
+            return get_embedded_env(key, default)
+        except ImportError:
+            # Embedded config not found, use default
+            pass
+    
+    return default
 
 # Initialize logging
 logger = setup_backend_logging()
@@ -84,9 +107,9 @@ def save_settings(data: dict):
         logger.error(f"Error saving settings: {e}")
         raise
 
-# Twitch OAuth Configuration
-TWITCH_CLIENT_ID = os.environ.get("TWITCH_CLIENT_ID", "")
-TWITCH_CLIENT_SECRET = os.environ.get("TWITCH_CLIENT_SECRET", "")
+# Twitch OAuth Configuration - uses embedded config when running as executable
+TWITCH_CLIENT_ID = get_env_var("TWITCH_CLIENT_ID", "")
+TWITCH_CLIENT_SECRET = get_env_var("TWITCH_CLIENT_SECRET", "")
 TWITCH_REDIRECT_URI = f"http://localhost:{os.environ.get('PORT', 8000)}/auth/twitch/callback"
 TWITCH_SCOPE = "chat:read"
 

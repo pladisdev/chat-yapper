@@ -173,7 +173,7 @@ export default function YappersPage() {
     if (avatars.length === 0) return []
     
     logger.info('🎲 Creating randomized assignments for', totalSlots, 'slots with', avatars.length, 'avatars')
-    logger.info('🎤 Available voices for assignment:', enabledVoices.map(v => `${v.name} (ID: ${v.id})`))
+    logger.info('🎤 Available voices for assignment:', enabledVoices.length === 0 ? 'None (avatars will display without TTS functionality)' : enabledVoices.map(v => `${v.name} (ID: ${v.id})`))
     
     const assignments = []
     
@@ -207,7 +207,7 @@ export default function YappersPage() {
     logger.info('✅ Final assignments:', assignments.map((a, i) => `Slot ${i}: ${a.name}`))
     
     return assignments
-  }, [enabledVoices])
+  }, [])
 
   // State to store randomized avatar assignments
   const [avatarAssignments, setAvatarAssignments] = useState([])
@@ -271,14 +271,17 @@ export default function YappersPage() {
         return null
       }
 
-      // Check if voice configuration has changed
+      // Check if voice configuration has changed (only if voices are available)
       const currentVoiceIds = enabledVoices.map(v => v.id).sort()
       const savedVoiceIds = assignmentData.enabledVoiceIds || []
       
-      if (JSON.stringify(currentVoiceIds) !== JSON.stringify(savedVoiceIds)) {
-        logger.info('🔄 Voice configuration changed, clearing saved assignments')
-        localStorage.removeItem('chatyapper_avatar_assignments')
-        return null
+      // Only validate voice configuration if we have voices
+      if (enabledVoices.length > 0 || savedVoiceIds.length > 0) {
+        if (JSON.stringify(currentVoiceIds) !== JSON.stringify(savedVoiceIds)) {
+          logger.info('🔄 Voice configuration changed, clearing saved assignments')
+          localStorage.removeItem('chatyapper_avatar_assignments')
+          return null
+        }
       }
 
       logger.info('📂 Loaded avatar assignments from localStorage:', assignmentData.assignments.map(a => `${a.name} (voice_id: ${a.voice_id})`))
@@ -292,7 +295,7 @@ export default function YappersPage() {
 
   // Load assignments when avatars, voices, or settings change
   useEffect(() => {
-    if (availableAvatars.length === 0 || !settings || enabledVoices.length === 0) return // Wait for all to load
+    if (availableAvatars.length === 0 || !settings) return // Wait for avatars and settings to load (voices optional)
     
     // Try to load from localStorage first
     const savedAssignments = loadAvatarAssignments(settings)
@@ -306,7 +309,7 @@ export default function YappersPage() {
 
   // Generate avatar slots based on individual row configuration
   const avatarSlots = useMemo(() => {
-    if (availableAvatars.length === 0 || !settings || enabledVoices.length === 0) return [] // Wait for all to load
+    if (availableAvatars.length === 0 || !settings) return [] // Wait for avatars and settings to load (voices optional)
     
     const avatarRows = settings.avatarRows || 2
     const avatarRowConfig = settings.avatarRowConfig || [6, 6]
@@ -343,7 +346,7 @@ export default function YappersPage() {
     }
     
     return slots
-  }, [settings, availableAvatars, enabledVoices, avatarAssignments, createRandomizedAvatarAssignment, saveAvatarAssignments])
+  }, [settings, availableAvatars, avatarAssignments, createRandomizedAvatarAssignment, saveAvatarAssignments])
   
   // Send avatar configuration to backend whenever slots change
 

@@ -25,9 +25,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlmodel import SQLModel, Session, select, create_engine
 
-from models import Setting, Voice, AvatarImage, TwitchAuth
-from tts import get_provider, get_hybrid_provider, TTSJob
-from message_filter import get_message_history
+from modules.models import Setting, Voice, AvatarImage, TwitchAuth
+from modules.tts import get_provider, get_hybrid_provider, TTSJob, AUDIO_DIR
+from modules.message_filter import get_message_history
+from modules.backend_logging import setup_backend_logging, log_important
+from modules import is_executable
 
 def is_executable():
     """
@@ -42,61 +44,31 @@ def is_executable():
 # - Cancels ongoing TTS synthesis and removes from queue for banned/timed-out users
 # - Provides API endpoints for manual testing and management
 
-# Set up backend logging
-def setup_backend_logging():
-    """Set up logging for the backend"""
-    # Create logs directory
-    logs_dir = Path("../logs") if Path("../logs").exists() else Path("logs")
-    logs_dir.mkdir(exist_ok=True)
-    
-    # Create log filename with timestamp
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_filename = logs_dir / f"backend_{timestamp}.log"
-    
-    # Configure logging for this module
-    backend_logger = logging.getLogger('ChatYapper.Backend')
-    backend_logger.setLevel(logging.INFO)
-    
-    # Only add handlers if not already configured
-    if not backend_logger.handlers:
-        # File handler - logs everything
-        file_handler = logging.FileHandler(log_filename, encoding='utf-8')
-        file_handler.setLevel(logging.DEBUG)
-        file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        file_handler.setFormatter(file_formatter)
-        
-        # Console handler - adjust level based on environment
-        console_handler = logging.StreamHandler()
-        if is_executable():
-            # Production (.exe) - only show errors
-            console_handler.setLevel(logging.ERROR)
-            backend_logger.info("Production mode detected (.exe) - console logging set to ERROR level only")
-        else:
-            # Development - show warnings and errors
-            console_handler.setLevel(logging.WARNING)
-            backend_logger.info("Development mode detected - console logging set to WARNING level")
-        
-        console_formatter = logging.Formatter('%(levelname)s: %(message)s')
-        console_handler.setFormatter(console_formatter)
-        
-        # Add handlers
-        backend_logger.addHandler(file_handler)
-        backend_logger.addHandler(console_handler)
-    
-    backend_logger.info(f"Backend logging initialized - log file: {log_filename}")
-    return backend_logger
-
 # Initialize backend logging
 logger = setup_backend_logging()
 
-def log_important(message):
-    """Log important messages that should appear in both console and file"""
-    logger.warning(f"IMPORTANT: {message}")  # WARNING level ensures console output
+def get_env_var(key, default=""):
+    """Get environment variable, checking embedded config if running as executable"""
+    # First try regular environment variables
+    value = os.environ.get(key)
+    if value:
+        return value
+    
+    # If running as executable, try embedded config
+    if is_executable():
+        try:
+            from embedded_config import get_embedded_env
+            return get_embedded_env(key, default)
+        except ImportError:
+            # Embedded config not found, use default
+            pass
+    
+    return default
 
 # Twitch OAuth Configuration
 # For Twitch Developer Console, set redirect URL to: http://localhost:{PORT}/auth/twitch/callback
-TWITCH_CLIENT_ID = os.environ.get("TWITCH_CLIENT_ID", "")
-TWITCH_CLIENT_SECRET = os.environ.get("TWITCH_CLIENT_SECRET", "")
+TWITCH_CLIENT_ID = get_env_var("TWITCH_CLIENT_ID", "")
+TWITCH_CLIENT_SECRET = get_env_var("TWITCH_CLIENT_SECRET", "")
 TWITCH_REDIRECT_URI = f"http://localhost:{os.environ.get('PORT', 8000)}/auth/twitch/callback"
 TWITCH_SCOPE = "chat:read"  # Permissions needed
 
@@ -105,12 +77,18 @@ oauth_states = {}  # state -> user session info
 
 # Configuration validation and logging
 if TWITCH_CLIENT_ID:
-    logger.info(f"✅ Twitch OAuth configured - Client ID: {TWITCH_CLIENT_ID[:8]}... (masked)")
+    config_source = "embedded configuration" if is_executable() else "environment variables"
+    logger.info(f"✅ Twitch OAuth configured from {config_source} - Client ID: {TWITCH_CLIENT_ID[:8]}... (masked)")
 else:
-    logger.warning("⚠️  Twitch Client ID not configured!")
-    logger.warning("   💡 Create a .env file with TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET")
-    logger.warning("   💡 See .env.example for template")
-    logger.warning("   💡 Or set environment variables directly")
+    if is_executable():
+        logger.warning("⚠️  Twitch Client ID not found in embedded configuration!")
+        logger.warning("   💡 The executable was built without Twitch credentials")
+        logger.warning("   💡 Rebuild with TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET in .env file")
+    else:
+        logger.warning("⚠️  Twitch Client ID not configured!")
+        logger.warning("   💡 Create a .env file with TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET")
+        logger.warning("   💡 See .env.example for template")
+        logger.warning("   💡 Or set environment variables directly")
 
 # Voice usage tracking for distribution analysis
 voice_usage_stats = defaultdict(int)
@@ -162,7 +140,7 @@ logger.info(f"User data directory: {USER_DATA_DIR}")
 # Run database migrations BEFORE creating engine and tables
 # This ensures old databases are updated to the new schema
 try:
-    from db_migration import run_all_migrations, get_database_info
+    from modules.db_migration import run_all_migrations, get_database_info
     logger.info("Running database migration check...")
     run_all_migrations(DB_PATH)
     
@@ -231,8 +209,11 @@ async def log_requests(request: Request, call_next):
     return response
 
 # Serve generated audio files under /audio
-AUDIO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "audio"))
-os.makedirs(AUDIO_DIR, exist_ok=True)
+# Use AUDIO_DIR from TTS module to ensure consistency
+print(f"DEBUG: Audio directory: {AUDIO_DIR}")
+print(f"DEBUG: Audio directory exists: {os.path.isdir(AUDIO_DIR)}")
+logger.info(f"Audio directory: {AUDIO_DIR}")
+logger.info(f"Audio directory exists: {os.path.isdir(AUDIO_DIR)}")
 app.mount("/audio", StaticFiles(directory=AUDIO_DIR), name="audio")
 
 # Store PUBLIC_DIR for mounting later (after routes are defined)
@@ -1217,7 +1198,7 @@ async def api_get_available_voices(provider: str, api_key: str = None):
             return {"error": "API key required for Google TTS voices"}
         
         try:
-            from tts import GoogleTTSProvider
+            from modules.tts import GoogleTTSProvider
             google_provider = GoogleTTSProvider(api_key)
             voices = await google_provider.list_voices()
             return {"voices": voices}
@@ -1230,7 +1211,7 @@ async def api_get_available_voices(provider: str, api_key: str = None):
 async def api_get_polly_voices(credentials: dict):
     """Get available voices from Amazon Polly"""
     try:
-        from tts import AmazonPollyProvider
+        from modules.tts import AmazonPollyProvider
         polly_provider = AmazonPollyProvider(
             credentials.get('accessKey', ''),
             credentials.get('secretKey', ''),
@@ -1798,7 +1779,7 @@ async def handle_moderation_event(evt: Dict[str, Any]):
 @app.get("/api/voice-stats")
 async def api_voice_stats():
     """Get voice usage distribution statistics"""
-    from tts import fallback_voice_stats, fallback_selection_count
+    from modules.tts import fallback_voice_stats, fallback_selection_count
     
     # Calculate percentages for main voice selections
     main_stats = {}
@@ -1834,7 +1815,7 @@ async def api_voice_stats():
 @app.delete("/api/voice-stats")
 async def api_reset_voice_stats():
     """Reset voice usage distribution statistics"""
-    from tts import reset_fallback_stats
+    from modules.tts import reset_fallback_stats
     
     global voice_usage_stats, voice_selection_count
     voice_usage_stats.clear()
@@ -1849,7 +1830,7 @@ async def api_reset_voice_stats():
 # ---------- Twitch integration (optional) ----------
 TwitchTask = None
 try:
-    from twitch_listener import run_twitch_bot
+    from modules.twitch_listener import run_twitch_bot
     logger.info("Twitch listener imported successfully")
 except Exception as e:
     logger.error(f"Failed to import twitch_listener: {e}")
@@ -2173,7 +2154,7 @@ async def api_toggle_tts():
 async def api_debug_database():
     """Get database information for debugging"""
     try:
-        from db_migration import get_database_info
+        from modules.db_migration import get_database_info
         db_info = get_database_info(DB_PATH)
         
         # Also get some basic stats
