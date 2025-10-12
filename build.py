@@ -232,6 +232,36 @@ backend_dir = Path('backend')
 backend_py_files = glob.glob('backend/*.py')
 backend_py_data = [(f, 'backend') for f in backend_py_files]
 
+# Collect all modules directory files
+modules_files = []
+for root, dirs, files in os.walk('backend/modules'):
+    for file in files:
+        if file.endswith('.py'):
+            src_path = os.path.join(root, file)
+            # Convert to relative path for destination
+            rel_path = os.path.relpath(src_path, 'backend')
+            dest_dir = os.path.dirname(rel_path)
+            if dest_dir:
+                dest_path = os.path.join('backend', dest_dir)
+            else:
+                dest_path = 'backend'
+            modules_files.append((src_path, dest_path))
+
+# Collect all routers directory files
+routers_files = []
+for root, dirs, files in os.walk('backend/routers'):
+    for file in files:
+        if file.endswith('.py'):
+            src_path = os.path.join(root, file)
+            # Convert to relative path for destination
+            rel_path = os.path.relpath(src_path, 'backend')
+            dest_dir = os.path.dirname(rel_path)
+            if dest_dir:
+                dest_path = os.path.join('backend', dest_dir)
+            else:
+                dest_path = 'backend'
+            routers_files.append((src_path, dest_path))
+
 # Collect all public directory files recursively
 public_files = []
 for root, dirs, files in os.walk('backend/public'):
@@ -246,7 +276,7 @@ for root, dirs, files in os.walk('backend/public'):
             dest_path = 'backend'
         public_files.append((src_path, dest_path))
 
-data_files = backend_py_data + public_files + [
+data_files = backend_py_data + modules_files + routers_files + public_files + [
     ('backend/settings_defaults.json', 'backend'),
     ('backend/embedded_config.py', 'backend'),
 ]

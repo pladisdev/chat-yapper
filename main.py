@@ -132,9 +132,9 @@ def start_backend(port):
             logger.error(error_msg)
             raise ImportError(error_msg)
         
-        # Import the app from the current directory
+        # Import the app from the current directory (now in backend dir, so just import app)
         try:
-            import backend.app as backend_app
+            import app as backend_app
             logger.info("Backend app imported successfully")
         except ImportError as e:
             if "fastapi.middleware" in str(e):
