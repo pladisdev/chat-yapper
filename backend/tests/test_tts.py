@@ -160,7 +160,7 @@ class TestMonsterTTSProvider:
             mock_session.return_value = mock_session_instance
             
             # Set AUDIO_DIR to temp directory
-            with patch('tts.AUDIO_DIR', str(tmp_path)):
+            with patch('modules.tts.AUDIO_DIR', str(tmp_path)):
                 result = await provider.synth(job)
                 
                 # Verify result is a file path
@@ -238,7 +238,7 @@ class TestFallbackStats:
     
     def test_reset_fallback_stats(self):
         """Test resetting fallback statistics"""
-        from tts import fallback_voice_stats, fallback_selection_count
+        from modules.tts import fallback_voice_stats, fallback_selection_count
         
         # Add some fake data
         fallback_voice_stats["voice1"] = 10
@@ -270,7 +270,7 @@ class TestTTSIntegration:
         provider = get_provider(config)
         job = TTSJob(text="Hello, this is a test.", voice="en-US-GuyNeural")
         
-        with patch('tts.AUDIO_DIR', str(tmp_path)):
+        with patch('modules.tts.AUDIO_DIR', str(tmp_path)):
             result = await provider.synth(job)
             
             assert os.path.exists(result)
