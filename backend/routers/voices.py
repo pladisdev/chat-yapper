@@ -8,7 +8,7 @@ import aiohttp
 from fastapi import APIRouter, HTTPException
 from sqlmodel import Session, select
 
-from .dependencies import logger, engine
+from modules import logger, engine
 from modules.models import Voice
 
 router = APIRouter()

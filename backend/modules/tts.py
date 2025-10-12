@@ -40,16 +40,18 @@ def find_project_root():
     """Find the project root by looking for characteristic files"""
     current_dir = os.path.dirname(os.path.abspath(__file__))
     
-    # Look for project markers (package.json, requirements.txt, etc.)
-    markers = ['package.json', 'requirements.txt', 'main.py', '.git']
+    # Look for project markers that indicate the true project root
+    # Use more specific markers to avoid stopping at backend directory
+    markers = ['package.json', 'main.py', '.git']  # Removed requirements.txt as it exists in backend too
     
     while current_dir != os.path.dirname(current_dir):  # Not at filesystem root
         if any(os.path.exists(os.path.join(current_dir, marker)) for marker in markers):
             return current_dir
         current_dir = os.path.dirname(current_dir)
     
-    # Fallback to current directory if no markers found
-    return os.path.dirname(os.path.abspath(__file__))
+    # Fallback to going up two levels from the current file (backend/modules -> backend -> root)
+    fallback_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    return fallback_root
 
 AUDIO_DIR = os.environ.get("AUDIO_DIR", os.path.join(find_project_root(), "audio"))
 os.makedirs(AUDIO_DIR, exist_ok=True)

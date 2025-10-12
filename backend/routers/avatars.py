@@ -11,7 +11,7 @@ from typing import List
 from fastapi import APIRouter, UploadFile, Form, HTTPException
 from sqlmodel import Session, select
 
-from .dependencies import (
+from modules import (
     logger, engine, PERSISTENT_AVATARS_DIR, PUBLIC_DIR
 )
 from modules.models import AvatarImage

@@ -8,7 +8,7 @@ from typing import Dict, Any
 from fastapi import APIRouter, HTTPException
 from sqlmodel import Session, select
 
-from .dependencies import logger, engine, get_settings, save_settings, DB_PATH, USER_DATA_DIR
+from modules import logger, engine, get_settings, save_settings, DB_PATH, USER_DATA_DIR
 from modules.models import Voice, AvatarImage
 
 router = APIRouter()

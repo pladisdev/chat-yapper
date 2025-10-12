@@ -6,7 +6,7 @@ from typing import Dict, Any
 
 from fastapi import APIRouter, Form, HTTPException
 
-from .dependencies import logger, get_settings
+from modules import logger, get_settings
 
 router = APIRouter()
 
@@ -78,7 +78,10 @@ async def api_simulate_moderation(
             "duration": duration
         })
         
-        return {"ok": True, "message": f"Moderation event simulated for {target_user}"}
+        return {
+            "ok": True, 
+            "message": f"Moderation event simulated: {eventType} for {target_user}" + (f" ({duration}s)" if duration else "") + " - TTS stopped immediately"
+        }
     except Exception as e:
         logger.error(f"Moderation simulation failed: {e}", exc_info=True)
         return {"ok": False, "error": str(e)}
