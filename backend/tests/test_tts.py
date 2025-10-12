@@ -9,7 +9,7 @@ import aiohttp
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from tts import (
+from modules.tts import (
     TTSJob, 
     TTSProvider, 
     MonsterTTSProvider,

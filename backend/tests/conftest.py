@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 # Add parent directory to path to import app modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from models import Setting, Voice, AvatarImage
+from modules.models import Setting, Voice, AvatarImage
 
 
 @pytest.fixture(name="session")

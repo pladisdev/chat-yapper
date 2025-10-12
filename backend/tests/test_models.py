@@ -2,7 +2,7 @@
 import json
 import pytest
 from datetime import datetime
-from models import Setting, Voice, AvatarImage
+from modules.models import Setting, Voice, AvatarImage
 
 
 @pytest.mark.unit

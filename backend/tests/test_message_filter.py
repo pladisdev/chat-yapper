@@ -1,7 +1,7 @@
 """Unit tests for message filtering (duplicate and spam detection)"""
 import pytest
 import time
-from message_filter import MessageHistory, get_message_history, reset_message_history
+from modules.message_filter import MessageHistory, get_message_history, reset_message_history
 
 
 @pytest.fixture
