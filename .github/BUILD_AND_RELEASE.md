@@ -25,9 +25,25 @@ This repository is configured to automatically build Windows executables and cre
 
 ## ⚙️ Setup Instructions
 
-### 1. Configure Branch Protection Rules
+### 1. Commit and Push the Workflow (First!)
 
-Go to **Settings → Branches → Add branch protection rule** for `main`:
+The status checks won't exist until the workflow runs at least once:
+
+```bash
+git add .github/
+git commit -m "Add automated build and release workflow"
+git push origin develop
+```
+
+### 2. Create a Test PR (To Register Status Checks)
+
+Create a Pull Request from `develop` → `main` to trigger the workflow.
+
+**Don't merge it yet!** Just let it run so GitHub registers the status check names.
+
+### 3. Configure Branch Protection Rules
+
+**After the workflow has run**, go to **Settings → Branches → Add branch protection rule** for `main`:
 
 **Required settings:**
 - [x] Require a pull request before merging
@@ -36,6 +52,8 @@ Go to **Settings → Branches → Add branch protection rule** for `main`:
   - Add required check: `Build Windows Executable`
 - [x] Require branches to be up to date before merging
 - [x] Do not allow bypassing the above settings
+
+**Important**: These status check names will only appear in the search dropdown after the workflow has run successfully at least once.
 
 This ensures that:
 - All code must go through a PR

@@ -14,7 +14,19 @@
 
 ## 🎯 What You Need To Do
 
-### Step 1: Configure Branch Protection (Required)
+### Step 1: Commit and Push Workflow Files (Do This First!)
+```bash
+git add .github/ QUICK_START_BUILD_RELEASE.md
+git commit -m "Add automated build and release workflow"
+git push origin development
+```
+
+### Step 2: Create a Test PR (To Generate Status Checks)
+Create a PR from `development` → `main` to trigger the workflow for the first time.
+
+**Important**: Don't merge it yet! Just let it run so GitHub registers the status checks.
+
+### Step 3: Configure Branch Protection (After Workflow Runs)
 Go to: **GitHub → Settings → Branches**
 
 1. Click "Add branch protection rule"
@@ -26,6 +38,8 @@ Go to: **GitHub → Settings → Branches**
      - Search and add: `Build Windows Executable`
    - ✅ Require branches to be up to date before merging
 4. Click "Create" or "Save changes"
+
+**Note**: The status checks will only appear in the search after the workflow has run at least once!
 
 ### Step 2: Add Secrets (Optional)
 Only needed if you use Twitch OAuth features.
@@ -44,17 +58,13 @@ Set:
 - Workflow permissions: "Read and write permissions"
 - ✅ Check "Allow GitHub Actions to create and approve pull requests"
 
-### Step 4: Test It!
-```bash
-# On develop branch
-git add .github/
-git commit -m "Add automated build and release workflow"
-git push origin develop
+### Step 4: Close Test PR and Create Real One
+After the workflow runs and you've configured branch protection:
 
-# Create PR: develop → main
-# Watch the build run automatically
-# If successful, merge to create a release!
-```
+1. Close the test PR (don't merge)
+2. Create a new PR from `development` → `main`
+3. Now branch protection will enforce the checks!
+4. Merge when ready → automatic release! 🎉
 
 ## 📋 How It Works
 
