@@ -65,9 +65,9 @@ jobs:
           Write-Error "Build failed: ChatYapper.exe not found in dist directory"
           exit 1
         }
-        Write-Host "✅ Build successful: ChatYapper.exe found"
+        Write-Host "[SUCCESS] Build successful: ChatYapper.exe found"
         $size = (Get-Item "dist/ChatYapper.exe").Length / 1MB
-        Write-Host "📦 Executable size: $([math]::Round($size, 2)) MB"
+        Write-Host "Executable size: $([math]::Round($size, 2)) MB"
       shell: powershell
     
     - name: Get version info
@@ -109,7 +109,7 @@ jobs:
           const stats = fs.statSync('dist/ChatYapper.exe');
           const sizeMB = (stats.size / (1024 * 1024)).toFixed(2);
           
-          const comment = `## ✅ Build Successful
+          const comment = `## Build Successful
           
           **Executable:** \`ChatYapper.exe\`
           **Size:** ${sizeMB} MB
@@ -174,7 +174,7 @@ jobs:
     - name: Notify release created
       if: steps.version.outputs.is_release == 'true'
       run: |
-        Write-Host "🎉 Release created successfully!"
+        Write-Host "Release created successfully!"
         Write-Host "Version: ${{ steps.version.outputs.version }}"
         Write-Host "View at: https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.version }}"
       shell: powershell
@@ -190,8 +190,8 @@ jobs:
     - name: Check build status
       run: |
         if [ "${{ needs.build.result }}" != "success" ]; then
-          echo "❌ Build failed or was cancelled"
+          echo "[FAIL] Build failed or was cancelled"
           echo "Cannot merge to main until build succeeds"
           exit 1
         fi
-        echo "✅ Build succeeded - safe to merge"
+        echo "[PASS] Build succeeded - safe to merge"
