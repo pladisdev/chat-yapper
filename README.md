@@ -8,6 +8,7 @@ Chat Yapper is a text-to-speech application that reads Twitch chat messages alou
 - **Voice Avatars**: Assign different voices to different users or groups
 - **Multiple TTS Providers**: Support for Edge, Google, Amazon, Monster
 - **Custom Avatar Images**: Upload and manage visual avatars for each voice
+- **Audio Filters**: Apply reverb, echo, pitch shift, and speed changes to TTS audio (requires ffmpeg)
 
 ## Quick Start (End Users)
 
@@ -35,6 +36,10 @@ Chat Yapper is a text-to-speech application that reads Twitch chat messages alou
 
 - **Python 3.9+** with pip
 - **Node.js 16+** with npm
+- **FFmpeg** (optional, required for audio filters)
+  - Windows: Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add to PATH
+  - Linux: `sudo apt-get install ffmpeg` or equivalent
+  - Mac: `brew install ffmpeg`
 
 ### Installation
 
@@ -84,6 +89,30 @@ The build process:
 - ⚠️  The executable will contain your Twitch app credentials
 
 ## Configuration Guide
+
+### Audio Filters (Optional Feature)
+
+Chat Yapper supports server-side audio filtering to enhance TTS audio:
+
+**Available Filters:**
+- **Reverb**: Adds room ambiance (0-100% wetness)
+- **Echo**: Creates delayed repetitions (100-1000ms delay, 0-100% decay)
+- **Pitch Shift**: Changes voice pitch (-12 to +12 semitones)
+- **Speed Change**: Adjusts playback speed (0.5x to 2.0x)
+- **Random Mode**: Applies 1-3 random filters with random intensities
+
+**Requirements:**
+- FFmpeg must be installed and available in your system PATH
+- Audio filters are applied server-side after TTS synthesis
+- Filtered audio duration is automatically detected for accurate timing
+
+**Setup:**
+1. Install FFmpeg (see Prerequisites section)
+2. Enable audio filters in Settings > Audio Filters tab
+3. Configure individual filters or use random mode
+4. Test with a message to hear the results
+
+> **Note**: If FFmpeg is not installed, audio filters will be skipped and original TTS audio will be used.
 
 ### Environment Variables (.env file)
 

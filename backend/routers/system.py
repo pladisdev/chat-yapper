@@ -23,8 +23,31 @@ async def api_get_settings():
 @router.post("/api/settings")
 async def api_set_settings(payload: Dict[str, Any]):
     logger.info("API: POST /api/settings called")
+    
+    # Log volume changes specifically for debugging
+    if 'volume' in payload:
+        logger.info(f"🔊 Volume setting changed to: {payload['volume']} ({round(payload['volume'] * 100)}%)")
+    
     save_settings(payload)
     logger.info("Settings saved successfully")
+    
+    # Import hub and avatar functions when needed to avoid circular imports
+    from app import hub, generate_avatar_slot_assignments
+    
+    # Check if avatar-related settings changed that require slot regeneration
+    avatar_layout_settings = ['avatarRows', 'avatarRowConfig']
+    if any(setting in payload for setting in avatar_layout_settings):
+        logger.info("Avatar layout settings changed, regenerating slot assignments...")
+        generate_avatar_slot_assignments()
+        logger.info("Avatar slot assignments regenerated due to settings change")
+    
+    # Notify all WebSocket clients about settings changes
+    await hub.broadcast({
+        "type": "settings_updated",
+        "settings": payload
+    })
+    logger.info(f"Settings update broadcasted to {len(hub.clients)} WebSocket client(s)")
+    
     return {"ok": True}
 
 @router.get("/api/status")

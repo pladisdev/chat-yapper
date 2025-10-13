@@ -43,6 +43,7 @@ from modules import (
 # Voice usage tracking for distribution analysis
 voice_usage_stats = defaultdict(int)
 voice_selection_count = 0
+last_selected_voice_id = None  # Track last voice to prevent consecutive repeats
 
 # TTS job tracking for cancellation support - supports parallel audio with per-user queuing
 # Multiple users can have TTS playing simultaneously, only stopped by:
@@ -56,14 +57,416 @@ active_tts_jobs = {}
 # Global TTS control
 tts_enabled = True  # Global flag to control TTS processing
 
+# Avatar Slot Management System
+# Manages which avatars are assigned to which slots and tracks their active status
+avatar_slot_assignments = []  # List of slot objects with avatar assignments
+active_avatar_slots = {}  # slot_id -> {"user": str, "start_time": float, "audio_url": str, "audio_duration": float}
+avatar_message_queue = []  # Queue for messages when all slots are busy
+avatar_assignments_generation_id = 0  # Increments when assignments are regenerated
+
 def get_max_avatar_positions():
     """Calculate the maximum number of avatar positions from settings"""
-    settings = app_get_settings()
+    settings = get_settings()
     avatar_rows = settings.get("avatarRows", 2)
     avatar_row_config = settings.get("avatarRowConfig", [6, 6])
     # Sum up avatars across all configured rows
     max_positions = sum(avatar_row_config[:avatar_rows])
     return max_positions
+
+def get_available_avatars():
+    """Get all enabled avatar configurations from database"""
+    from modules.models import AvatarImage
+    
+    try:
+        with Session(engine) as session:
+            # Get all enabled avatars from database
+            avatars = session.exec(select(AvatarImage).where(AvatarImage.disabled == False)).all()
+            
+            if not avatars:
+                # Fallback to default avatars if no managed avatars
+                return [
+                    {
+                        "name": "Default Avatar 1",
+                        "defaultImage": "/voice_avatars/ava.png",
+                        "speakingImage": "/voice_avatars/ava.png",
+                        "isSingleImage": True,
+                        "spawn_position": None,
+                        "voice_id": None
+                    },
+                    {
+                        "name": "Default Avatar 2", 
+                        "defaultImage": "/voice_avatars/liam.png",
+                        "speakingImage": "/voice_avatars/liam.png",
+                        "isSingleImage": True,
+                        "spawn_position": None,
+                        "voice_id": None
+                    }
+                ]
+            
+            # Group avatars by avatar_group_id or create single groups
+            grouped = {}
+            for avatar in avatars:
+                key = avatar.avatar_group_id or f"single_{avatar.id}"
+                if key not in grouped:
+                    grouped[key] = {
+                        "name": avatar.name,
+                        "images": {},
+                        "spawn_position": avatar.spawn_position,
+                        "voice_id": avatar.voice_id
+                    }
+                else:
+                    # Update spawn_position and voice_id if not null
+                    if avatar.spawn_position is not None:
+                        grouped[key]["spawn_position"] = avatar.spawn_position
+                    if avatar.voice_id is not None:
+                        grouped[key]["voice_id"] = avatar.voice_id
+                
+                # Ensure file path is properly formatted for frontend access
+                file_path = avatar.file_path
+                if not file_path.startswith('http') and not file_path.startswith('/'):
+                    file_path = f"/{file_path}"
+                grouped[key]["images"][avatar.avatar_type] = file_path
+            
+            # Convert to avatar objects
+            avatar_groups = []
+            for group in grouped.values():
+                avatar_groups.append({
+                    "name": group["name"],
+                    "defaultImage": group["images"].get("default", group["images"].get("speaking", "/voice_avatars/ava.png")),
+                    "speakingImage": group["images"].get("speaking", group["images"].get("default", "/voice_avatars/ava.png")),
+                    "isSingleImage": not group["images"].get("speaking") or not group["images"].get("default") or group["images"].get("speaking") == group["images"].get("default"),
+                    "spawn_position": group["spawn_position"],  # None = random, number = specific slot
+                    "voice_id": group["voice_id"]  # None = random voice
+                })
+            
+            return avatar_groups
+            
+    except Exception as e:
+        logger.error(f"Failed to load avatars: {e}")
+        # Return default avatars on error
+        return [
+            {
+                "name": "Default Avatar 1",
+                "defaultImage": "/voice_avatars/ava.png",
+                "speakingImage": "/voice_avatars/ava.png", 
+                "isSingleImage": True,
+                "spawn_position": None,
+                "voice_id": None
+            }
+        ]
+
+def generate_avatar_slot_assignments():
+    """Generate randomized avatar assignments for all slots based on settings"""
+    global avatar_slot_assignments, avatar_assignments_generation_id
+    
+    settings = get_settings()
+    avatar_rows = settings.get("avatarRows", 2)
+    avatar_row_config = settings.get("avatarRowConfig", [6, 6])
+    
+    # Debug logging for settings
+    logger.info(f"🔧 Avatar settings from backend: avatarRows={avatar_rows}, avatarRowConfig={avatar_row_config}")
+    
+    available_avatars = get_available_avatars()
+    if not available_avatars:
+        logger.warning("No avatars available for assignment")
+        avatar_slot_assignments = []
+        return
+    
+    total_slots = sum(avatar_row_config[:avatar_rows])
+    logger.info(f"🎭 Generating avatar assignments for {total_slots} slots with {len(available_avatars)} avatars")
+    logger.info(f"📸 Available avatars: {[{'name': a['name'], 'defaultImage': a['defaultImage'][:50] + '...' if len(a['defaultImage']) > 50 else a['defaultImage']} for a in available_avatars]}")
+    
+    assignments = []
+    
+    # Handle avatars with specific spawn positions first
+    slot_index = 0
+    slots = []
+    
+    # Create all slots first
+    for row_index in range(avatar_rows):
+        avatars_in_row = avatar_row_config[row_index] if row_index < len(avatar_row_config) else 6
+        logger.debug(f"🔧 Creating row {row_index} with {avatars_in_row} avatars")
+        for col_index in range(avatars_in_row):
+            slots.append({
+                "id": f"slot_{slot_index}",
+                "row": row_index,
+                "col": col_index,
+                "totalInRow": avatars_in_row,
+                "avatarData": None,  # Will be assigned
+                "isActive": False
+            })
+            slot_index += 1
+    
+    logger.info(f"🔧 Total slots created: {len(slots)}")
+    
+    # First pass: Handle avatars with specific spawn positions
+    assigned_slots = set()
+    for avatar in available_avatars:
+        if avatar["spawn_position"] is not None:
+            spawn_pos = avatar["spawn_position"] - 1  # Convert to 0-based index
+            if 0 <= spawn_pos < len(slots) and spawn_pos not in assigned_slots:
+                slots[spawn_pos]["avatarData"] = avatar.copy()
+                assigned_slots.add(spawn_pos)
+                logger.info(f"🎯 Assigned {avatar['name']} to specific position {spawn_pos + 1}")
+    
+    # Second pass: Randomly assign remaining avatars to unassigned slots
+    unassigned_slots = [i for i in range(len(slots)) if i not in assigned_slots]
+    
+    # Create assignment pool - ensure each avatar appears at least once if we have enough slots
+    assignment_pool = []
+    if len(unassigned_slots) >= len(available_avatars):
+        # Add each avatar at least once
+        assignment_pool.extend(available_avatars)
+        # Fill remaining with random avatars
+        remaining = len(unassigned_slots) - len(available_avatars)
+        for _ in range(remaining):
+            assignment_pool.append(random.choice(available_avatars))
+    else:
+        # More avatars than slots, randomly select
+        for _ in range(len(unassigned_slots)):
+            assignment_pool.append(random.choice(available_avatars))
+    
+    # Shuffle the assignment pool
+    random.shuffle(assignment_pool)
+    
+    # Assign to unassigned slots
+    for i, slot_idx in enumerate(unassigned_slots):
+        if i < len(assignment_pool):
+            slots[slot_idx]["avatarData"] = assignment_pool[i].copy()
+            logger.info(f"🎲 Randomly assigned {assignment_pool[i]['name']} to slot {slot_idx}")
+    
+    avatar_slot_assignments = slots
+    avatar_assignments_generation_id += 1
+    
+    logger.info(f"✅ Generated {len(avatar_slot_assignments)} avatar slot assignments (gen #{avatar_assignments_generation_id})")
+    
+    # Log a sample of what will be sent to frontend for debugging
+    if avatar_slot_assignments:
+        sample_slot = avatar_slot_assignments[0]
+        logger.info(f"📤 Sample slot data being sent to frontend: {sample_slot}")
+    
+    # Broadcast new avatar assignments to all WebSocket clients
+    import asyncio
+    
+    async def broadcast_avatar_slots():
+        await hub.broadcast({
+            "type": "avatar_slots_updated",
+            "slots": avatar_slot_assignments,
+            "generationId": avatar_assignments_generation_id
+        })
+        logger.info("Avatar slot assignments broadcasted to WebSocket clients")
+    
+    # Schedule the broadcast if we're in an async context, or run in background
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(broadcast_avatar_slots())
+    except RuntimeError:
+        # If no event loop is running, create one for this broadcast
+        asyncio.run(broadcast_avatar_slots())
+    
+    return avatar_slot_assignments
+
+def get_audio_duration(file_path: str) -> float:
+    """
+    Get the duration of an audio file in seconds.
+    Returns the duration if successful, or None if it fails.
+    """
+    try:
+        # Try using mutagen library for MP3 files (most common)
+        try:
+            from mutagen.mp3 import MP3
+            audio = MP3(file_path)
+            duration = audio.info.length
+            logger.info(f"📏 Audio duration for {os.path.basename(file_path)}: {duration:.2f}s (mutagen)")
+            return duration
+        except ImportError:
+            # mutagen not installed, try alternative method
+            pass
+        except Exception as e:
+            logger.debug(f"Failed to get duration with mutagen: {e}")
+        
+        # Fallback: try to estimate from file size (very rough approximation)
+        # MP3 bitrate is typically 128-320 kbps, we'll assume 192 kbps average
+        try:
+            file_size = os.path.getsize(file_path)
+            # 192 kbps = 24 KB/s
+            estimated_duration = file_size / (24 * 1024)
+            logger.info(f"📏 Audio duration estimated for {os.path.basename(file_path)}: ~{estimated_duration:.2f}s (file size)")
+            return estimated_duration
+        except Exception as e:
+            logger.debug(f"Failed to estimate duration from file size: {e}")
+        
+        return None
+        
+    except Exception as e:
+        logger.warning(f"Failed to get audio duration: {e}")
+        return None
+
+def find_available_slot_for_tts(voice_id=None, user=None):
+    """Find the best available slot for TTS based on voice matching and availability"""
+    global active_avatar_slots
+    
+    if not avatar_slot_assignments:
+        logger.warning("No avatar slot assignments available")
+        return None
+    
+    # Get current timestamp for cleanup
+    current_time = time.time()
+    
+    # Clean up expired active slots (safety mechanism in case frontend doesn't report end)
+    expired_slots = []
+    for slot_id, slot_info in active_avatar_slots.items():
+        # Use audio duration + 5 second buffer, or fallback to 30 seconds if duration unknown
+        audio_duration = slot_info.get("audio_duration", 30)
+        expiry_time = audio_duration + 5  # Add 5 second buffer for network/processing delays
+        if current_time - slot_info.get("start_time", 0) > expiry_time:
+            expired_slots.append(slot_id)
+            logger.info(f"🕐 Slot {slot_id} expired after {expiry_time}s (audio: {audio_duration}s + 5s buffer)")
+    
+    for slot_id in expired_slots:
+        logger.info(f"🧹 Cleaning up expired active slot: {slot_id}")
+        del active_avatar_slots[slot_id]
+    
+    # Find slots that match the voice_id if specified
+    matching_slots = []
+    available_slots = []
+    
+    for slot in avatar_slot_assignments:
+        slot_id = slot["id"]
+        avatar_data = slot["avatarData"]
+        
+        is_active = slot_id in active_avatar_slots
+        
+        if not is_active:
+            available_slots.append(slot)
+            
+            # Check if this avatar matches the voice_id
+            if voice_id and avatar_data and avatar_data.get("voice_id") == voice_id:
+                matching_slots.append(slot)
+    
+    # Prefer voice-matched slots if available
+    if matching_slots:
+        selected_slot = random.choice(matching_slots)
+        logger.info(f"🎯 Selected voice-matched slot {selected_slot['id']} for voice {voice_id}")
+        return selected_slot
+    
+    # Use any available slot
+    if available_slots:
+        selected_slot = random.choice(available_slots)
+        logger.info(f"🎲 Selected random available slot {selected_slot['id']} (no voice match)")
+        return selected_slot
+    
+    # No available slots
+    logger.info("⏳ All avatar slots are busy, message will be queued")
+    return None
+
+def reserve_avatar_slot(slot_id, user, audio_url, audio_duration=None):
+    """Reserve an avatar slot for TTS playback"""
+    global active_avatar_slots
+    
+    active_avatar_slots[slot_id] = {
+        "user": user,
+        "start_time": time.time(),
+        "audio_url": audio_url,
+        "audio_duration": audio_duration or 30  # Default to 30s if duration not provided
+    }
+    duration_info = f" (duration: {audio_duration}s)" if audio_duration else " (duration: unknown, using 30s default)"
+    logger.info(f"🔒 Reserved slot {slot_id} for user {user}{duration_info} (active slots: {len(active_avatar_slots)})")
+
+def release_avatar_slot(slot_id):
+    """Release an avatar slot when TTS playback ends"""
+    global active_avatar_slots
+    
+    if slot_id in active_avatar_slots:
+        user = active_avatar_slots[slot_id]["user"]
+        del active_avatar_slots[slot_id]
+        logger.info(f"🔓 Released slot {slot_id} for user {user} (active slots: {len(active_avatar_slots)})")
+        
+        # Process queue if there are waiting messages
+        process_avatar_message_queue()
+    else:
+        logger.warning(f"Attempted to release slot {slot_id} that wasn't reserved")
+
+def queue_avatar_message(message_data):
+    """Add a message to the avatar queue when all slots are busy"""
+    global avatar_message_queue
+    
+    avatar_message_queue.append({
+        "message_data": message_data,
+        "queued_time": time.time()
+    })
+    logger.info(f"📥 Queued message for {message_data.get('user')} (queue length: {len(avatar_message_queue)})")
+
+def process_avatar_message_queue():
+    """Process queued messages if slots become available"""
+    global avatar_message_queue
+    
+    if not avatar_message_queue:
+        return
+    
+    # Try to process the oldest queued message
+    queued_item = avatar_message_queue[0]
+    message_data = queued_item["message_data"]
+    
+    # Check if message is too old (ignore messages older than 60 seconds)
+    if time.time() - queued_item["queued_time"] > 60:
+        avatar_message_queue.pop(0)
+        logger.info(f"🗑️ Discarded old queued message for {message_data.get('user')}")
+        # Try to process next message
+        if avatar_message_queue:
+            process_avatar_message_queue()
+        return
+    
+    # Try to find an available slot
+    voice_id = message_data.get("voice", {}).get("id") if message_data.get("voice") else None
+    available_slot = find_available_slot_for_tts(voice_id, message_data.get("user"))
+    
+    if available_slot:
+        # Remove from queue and process
+        avatar_message_queue.pop(0)
+        logger.info(f"📤 Processing queued message for {message_data.get('user')} in slot {available_slot['id']}")
+        
+        # Process the queued TTS message
+        asyncio.create_task(process_queued_tts_message(message_data, available_slot))
+
+async def process_queued_tts_message(message_data, target_slot):
+    """Process a TTS message that was queued due to all slots being busy"""
+    try:
+        # Reserve the slot
+        audio_url = message_data.get("audioUrl", "")
+        user = message_data.get("user", "")
+        
+        # Try to get audio duration from the file
+        audio_duration = None
+        if audio_url:
+            audio_filename = os.path.basename(audio_url)
+            audio_path = os.path.join(AUDIO_DIR, audio_filename)
+            if os.path.exists(audio_path):
+                audio_duration = get_audio_duration(audio_path)
+        
+        reserve_avatar_slot(target_slot["id"], user, audio_url, audio_duration)
+        
+        # Add slot information to the message
+        enriched_message = message_data.copy()
+        enriched_message.update({
+            "targetSlot": {
+                "id": target_slot["id"],
+                "row": target_slot["row"],
+                "col": target_slot["col"],
+                "totalInRow": target_slot["totalInRow"]
+            },
+            "avatarData": target_slot["avatarData"],
+            "assignmentGeneration": avatar_assignments_generation_id
+        })
+        
+        # Broadcast to clients
+        await hub.broadcast(enriched_message)
+        logger.info(f"📡 Broadcasted queued TTS for {user} in slot {target_slot['id']}")
+        
+    except Exception as e:
+        logger.error(f"Failed to process queued TTS message: {e}")
+        # Release the slot on error
+        release_avatar_slot(target_slot["id"])
 
 # ---------- Config & DB ----------
 # Database and user directory setup is now handled in modules/__init__.py
@@ -205,6 +608,11 @@ class Hub:
 
 hub = Hub()
 
+# Initialize avatar slot assignments on startup
+logger.info("Initializing avatar slot assignments...")
+generate_avatar_slot_assignments()
+logger.info(f"Avatar slot management initialized with {len(avatar_slot_assignments)} slots")
+
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
     client_info = f"{ws.client.host}:{ws.client.port}" if ws.client else "unknown"
@@ -226,10 +634,17 @@ async def ws_endpoint(ws: WebSocket):
         logger.info(f"Sent welcome message to WebSocket client")
         
         while True:
-            # In this app, server pushes; but you can accept pings or config messages:
+            # Handle messages from frontend (avatar slot status updates, etc.)
             message = await ws.receive_text()
             logger.debug(f"WebSocket received message from {client_info}: {message}")
-            logger.info(f"WebSocket received: {message}")
+            
+            try:
+                data = json.loads(message)
+                await handle_websocket_message(data)
+            except json.JSONDecodeError:
+                logger.warning(f"Invalid JSON received from WebSocket: {message}")
+            except Exception as e:
+                logger.error(f"Error handling WebSocket message: {e}")
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected from {client_info}. Remaining clients: {len(hub.clients)-1}")
         logger.info(f"WebSocket disconnected. Remaining clients: {len(hub.clients)-1}")
@@ -238,6 +653,46 @@ async def ws_endpoint(ws: WebSocket):
         logger.error(f"WebSocket error from {client_info}: {e}")
         logger.info(f"WebSocket error: {e}")
         hub.unregister(ws)
+
+async def handle_websocket_message(data: Dict[str, Any]):
+    """Handle incoming WebSocket messages from frontend"""
+    message_type = data.get("type", "")
+    
+    if message_type == "avatar_slot_ended":
+        # Frontend reports that an avatar slot has finished playing
+        slot_id = data.get("slot_id")
+        if slot_id:
+            release_avatar_slot(slot_id)
+            logger.info(f"🔓 Avatar slot {slot_id} released by frontend")
+    
+    elif message_type == "avatar_slot_error":
+        # Frontend reports an error with avatar slot playback
+        slot_id = data.get("slot_id")
+        if slot_id:
+            release_avatar_slot(slot_id)
+            logger.info(f"❌ Avatar slot {slot_id} released due to frontend error")
+    
+    elif message_type == "request_avatar_slots":
+        # Frontend requests current avatar slot assignments (for page refresh)
+        logger.info(f"📋 Frontend requested avatar slots - sending {len(avatar_slot_assignments)} slots")
+        response = {
+            "type": "avatar_slots_updated",
+            "slots": avatar_slot_assignments,
+            "assignmentGeneration": avatar_assignments_generation_id,
+            "activeSlots": list(active_avatar_slots.keys()),
+            "queueLength": len(avatar_message_queue)
+        }
+        # Send only to the requesting client (would need to track client in real implementation)
+        # For now, broadcast to all clients
+        await hub.broadcast(response)
+        logger.info(f"📡 Sent avatar slots update to frontend: {len(avatar_slot_assignments)} slots (gen #{avatar_assignments_generation_id})")
+    
+    elif message_type == "ping":
+        # Simple ping/pong for connection health
+        await hub.broadcast({"type": "pong"})
+    
+    else:
+        logger.info(f"Unknown WebSocket message type: {message_type}")
 
 # ---------- Settings with App-specific Logic ----------
 
@@ -254,16 +709,20 @@ def app_get_settings() -> Dict[str, Any]:
 
 def app_save_settings(data: Dict[str, Any]):
     """App-specific wrapper for save_settings with TTS and Twitch bot management"""
-    # Update global TTS state from settings
+    # Check if avatar layout settings have changed
+    old_settings = app_get_settings()
+    avatar_layout_changed = (
+        data.get("avatarRows") != old_settings.get("avatarRows") or
+        data.get("avatarRowConfig") != old_settings.get("avatarRowConfig")
+    )
+    
+    # Update global TTS state from settings (but don't call stop/resume here)
+    # The toggle endpoint handles the actual stop/resume logic
+    # This just ensures the tts_enabled flag stays in sync with saved settings
     global tts_enabled
     tts_control = data.get("ttsControl", {})
     new_tts_enabled = tts_control.get("enabled", True)
-    
-    if new_tts_enabled != tts_enabled:
-        if new_tts_enabled:
-            resume_all_tts()
-        else:
-            stop_all_tts()
+    tts_enabled = new_tts_enabled
     
     # Use the modules save_settings function but without circular import
     # Save settings first
@@ -277,6 +736,25 @@ def app_save_settings(data: Dict[str, Any]):
             
             # Restart Twitch bot if settings changed
             asyncio.create_task(restart_twitch_if_needed(data))
+            
+            # Regenerate avatar assignments if layout changed
+            if avatar_layout_changed:
+                logger.info("🎭 Avatar layout settings changed, regenerating slot assignments...")
+                # Clear active slots and queue to avoid conflicts
+                global active_avatar_slots, avatar_message_queue
+                active_avatar_slots.clear()
+                avatar_message_queue.clear()
+                
+                # Regenerate assignments
+                generate_avatar_slot_assignments()
+                
+                # Broadcast avatar slot update
+                asyncio.create_task(hub.broadcast({
+                    "type": "avatar_slots_updated",
+                    "slots": avatar_slot_assignments,
+                    "assignmentGeneration": avatar_assignments_generation_id,
+                    "message": "Avatar layout updated"
+                }))
             
             # Broadcast refresh message to update Yappers page with new settings
             asyncio.create_task(hub.broadcast({
@@ -443,14 +921,32 @@ def resume_all_tts():
 
 def toggle_tts():
     """
-    Toggle TTS on/off
+    Toggle TTS on/off and save state to database
     """
+    global tts_enabled
+    
     if tts_enabled:
         stop_all_tts()
-        return False
+        new_state = False
     else:
         resume_all_tts()
-        return True
+        new_state = True
+    
+    # Save the new state to database settings
+    try:
+        settings = get_settings()
+        settings['ttsControl'] = {'enabled': new_state}
+        with Session(engine) as s:
+            row = s.exec(select(Setting).where(Setting.key == "settings")).first()
+            if row:
+                row.value_json = json.dumps(settings)
+                s.add(row)
+                s.commit()
+                logger.info(f"💾 TTS state saved to database: {new_state}")
+    except Exception as e:
+        logger.error(f"Failed to save TTS state to database: {e}")
+    
+    return new_state
 
 def should_process_message(text: str, settings: Dict[str, Any], username: str = None, active_tts_jobs: Dict[str, Any] = None) -> tuple[bool, str]:
     """
@@ -727,11 +1223,29 @@ async def process_tts_message(evt: Dict[str, Any]):
         selected_voice = next((v for v in enabled_voices if str(v.id) == str(vid)), None)
     
     if not selected_voice:
-        # Random selection from enabled voices
-        selected_voice = random.choice(enabled_voices)
-        logger.info(f"🎲 Random voice selected: {selected_voice.name} ({selected_voice.provider})")
+        # Random selection from enabled voices, avoiding last selected voice if possible
+        global last_selected_voice_id
+        
+        # If we have more than 2 voices, avoid selecting the same voice as last time
+        if len(enabled_voices) >= 2 and last_selected_voice_id is not None:
+            available_voices = [v for v in enabled_voices if v.id != last_selected_voice_id]
+            if available_voices:
+                selected_voice = random.choice(available_voices)
+                logger.info(f"🎲 Random voice selected (avoiding last voice): {selected_voice.name} ({selected_voice.provider})")
+            else:
+                # Fallback if filtering didn't work
+                selected_voice = random.choice(enabled_voices)
+                logger.info(f"🎲 Random voice selected (fallback): {selected_voice.name} ({selected_voice.provider})")
+        else:
+            # Not enough voices to avoid repetition, or no last voice tracked
+            selected_voice = random.choice(enabled_voices)
+            logger.info(f"🎲 Random voice selected: {selected_voice.name} ({selected_voice.provider})")
+        
+        # Update last selected voice
+        last_selected_voice_id = selected_voice.id
     else:
         logger.info(f"🎯 Special event voice selected: {selected_voice.name} ({selected_voice.provider})")
+        # Don't update last_selected_voice_id for special events, so they don't affect the pattern
     
     # Track voice usage for distribution analysis
     global voice_usage_stats, voice_selection_count
@@ -774,28 +1288,88 @@ async def process_tts_message(evt: Dict[str, Any]):
         path = await provider.synth(job)
         logger.info(f"TTS generated: {path}")
         
-        # Broadcast to clients to play
+        # Apply audio filters if enabled
+        audio_filter_settings = settings.get("audioFilters", {})
+        if audio_filter_settings.get("enabled", False):
+            from modules.audio_filters import get_audio_filter_processor
+            
+            filter_processor = get_audio_filter_processor()
+            random_filters = audio_filter_settings.get("randomFilters", False)
+            
+            # Apply filters (returns new path and duration)
+            filtered_path, filtered_duration = filter_processor.apply_filters(
+                path,
+                audio_filter_settings,
+                random_filters=random_filters
+            )
+            
+            # Use filtered audio and its duration
+            path = filtered_path
+            audio_duration = filtered_duration
+            logger.info(f"🎚️ Audio filters applied: {path} (new duration: {audio_duration:.2f}s)")
+        else:
+            # Get audio duration for accurate slot timeout (no filters applied)
+            audio_duration = get_audio_duration(path)
+        
+        # Find available avatar slot for this TTS
+        voice_id = selected_voice.id
+        target_slot = find_available_slot_for_tts(voice_id, username)
+        
+        audio_url = f"/audio/{os.path.basename(path)}"
+        
+        # Create base payload
         voice_info = {
             "id": selected_voice.id,
             "name": selected_voice.name,
             "provider": selected_voice.provider,
             "avatar": selected_voice.avatar_image
         }
-        payload = {
+        
+        base_payload = {
             "type": "play",
             "user": evt.get("user"),
             "message": evt.get("text"),
             "eventType": event_type,
             "voice": voice_info,
-            "audioUrl": f"/audio/{os.path.basename(path)}"
+            "audioUrl": audio_url
         }
-        logger.info(f"Broadcasting to {len(hub.clients)} clients: {payload}")
-        await hub.broadcast(payload)
         
-        # Clean up - frontend handles playback independently
+        if target_slot:
+            # Slot available - reserve it and send enhanced payload
+            reserve_avatar_slot(target_slot["id"], username, audio_url, audio_duration)
+            
+            enhanced_payload = base_payload.copy()
+            enhanced_payload.update({
+                "targetSlot": {
+                    "id": target_slot["id"],
+                    "row": target_slot["row"],
+                    "col": target_slot["col"],
+                    "totalInRow": target_slot["totalInRow"]
+                },
+                "avatarData": target_slot["avatarData"],
+                "assignmentGeneration": avatar_assignments_generation_id
+            })
+            
+            logger.info(f"📡 Broadcasting TTS with slot {target_slot['id']} to {len(hub.clients)} clients")
+            await hub.broadcast(enhanced_payload)
+        else:
+            # No slots available - queue the message
+            logger.info(f"⏳ All slots busy, queuing TTS for {username}")
+            queue_avatar_message(base_payload)
+            
+            # Still broadcast a notification that the message is queued
+            queue_notification = {
+                "type": "tts_queued",
+                "user": evt.get("user"),
+                "message": evt.get("text"),
+                "queuePosition": len(avatar_message_queue)
+            }
+            await hub.broadcast(queue_notification)
+        
+        # Clean up TTS job tracking
         if username_lower in active_tts_jobs:
             del active_tts_jobs[username_lower]
-        logger.info(f"✅ TTS broadcast complete. Active users: {list(active_tts_jobs.keys())}")
+        logger.info(f"✅ TTS processing complete. Active TTS jobs: {list(active_tts_jobs.keys())}")
             
     except asyncio.CancelledError:
         logger.info(f"TTS synthesis cancelled for user: {evt.get('user')}")
@@ -853,6 +1427,107 @@ except Exception as e:
     logger.error(f"Failed to import twitch_listener: {e}")
     logger.info(f"❌ Failed to import Twitch listener: {e}")
     run_twitch_bot = None
+
+# ---------- Avatar Slot Management API ----------
+
+@app.get("/api/avatar-slots")
+async def api_get_avatar_slots():
+    """Get current avatar slot assignments and active status"""
+    try:
+        slots_with_status = []
+        for slot in avatar_slot_assignments:
+            slot_data = slot.copy()
+            slot_data["isActive"] = slot["id"] in active_avatar_slots
+            if slot_data["isActive"]:
+                active_info = active_avatar_slots[slot["id"]]
+                slot_data["activeUser"] = active_info["user"]
+                slot_data["activeSince"] = active_info["start_time"]
+            slots_with_status.append(slot_data)
+        
+        return {
+            "slots": slots_with_status,
+            "assignmentGeneration": avatar_assignments_generation_id,
+            "queueLength": len(avatar_message_queue),
+            "activeSlots": len(active_avatar_slots)
+        }
+    except Exception as e:
+        logger.error(f"Failed to get avatar slots: {e}")
+        return {"slots": [], "assignmentGeneration": 0, "queueLength": 0, "activeSlots": 0}
+
+@app.post("/api/avatar-slots/regenerate")
+async def api_regenerate_avatar_slots():
+    """Force regeneration of avatar slot assignments"""
+    try:
+        # Clear any active slots to avoid conflicts
+        global active_avatar_slots, avatar_message_queue
+        active_avatar_slots.clear()
+        avatar_message_queue.clear()
+        
+        # Regenerate assignments
+        generate_avatar_slot_assignments()
+        
+        # Broadcast to all clients to update their assignments
+        await hub.broadcast({
+            "type": "avatar_slots_updated",
+            "slots": avatar_slot_assignments,
+            "assignmentGeneration": avatar_assignments_generation_id
+        })
+        
+        logger.info(f"🎲 Avatar slots regenerated (generation #{avatar_assignments_generation_id})")
+        
+        return {
+            "success": True,
+            "slots": avatar_slot_assignments,
+            "assignmentGeneration": avatar_assignments_generation_id,
+            "message": "Avatar slots regenerated"
+        }
+    except Exception as e:
+        logger.error(f"Failed to regenerate avatar slots: {e}")
+        return {"success": False, "error": str(e)}
+
+@app.post("/api/avatar-slots/{slot_id}/release")
+async def api_release_avatar_slot(slot_id: str):
+    """Manually release an avatar slot (for debugging/management)"""
+    try:
+        if slot_id in active_avatar_slots:
+            user = active_avatar_slots[slot_id]["user"]
+            release_avatar_slot(slot_id)
+            return {
+                "success": True,
+                "message": f"Released slot {slot_id} (was used by {user})"
+            }
+        else:
+            return {
+                "success": False,
+                "message": f"Slot {slot_id} was not active"
+            }
+    except Exception as e:
+        logger.error(f"Failed to release slot {slot_id}: {e}")
+        return {"success": False, "error": str(e)}
+
+@app.get("/api/avatar-slots/queue")
+async def api_get_avatar_queue():
+    """Get current avatar message queue status"""
+    try:
+        queue_info = []
+        for i, item in enumerate(avatar_message_queue):
+            queue_info.append({
+                "position": i + 1,
+                "user": item["message_data"].get("user", "unknown"),
+                "text": item["message_data"].get("text", "")[:50] + "..." if len(item["message_data"].get("text", "")) > 50 else item["message_data"].get("text", ""),
+                "queued_time": item["queued_time"],
+                "wait_time": time.time() - item["queued_time"]
+            })
+        
+        return {
+            "queue": queue_info,
+            "length": len(avatar_message_queue),
+            "active_slots": len(active_avatar_slots),
+            "total_slots": len(avatar_slot_assignments)
+        }
+    except Exception as e:
+        logger.error(f"Failed to get avatar queue: {e}")
+        return {"queue": [], "length": 0, "active_slots": 0, "total_slots": 0}
 
 @app.on_event("startup")
 async def startup():

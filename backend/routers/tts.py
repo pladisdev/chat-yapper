@@ -160,11 +160,11 @@ async def api_toggle_tts():
     """Toggle TTS on/off"""
     try:
         # Import function when needed to avoid circular imports
-        from app import toggle_tts, tts_enabled
+        from app import toggle_tts
         
         new_state = toggle_tts()
         message = "TTS enabled" if new_state else "TTS disabled"
-        return {"success": True, "message": message, "tts_enabled": tts_enabled}
+        return {"success": True, "message": message, "tts_enabled": new_state}
     except Exception as e:
         logger.error(f"Failed to toggle TTS: {e}", exc_info=True)
         return {"success": False, "error": str(e)}

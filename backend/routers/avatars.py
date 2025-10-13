@@ -154,9 +154,16 @@ async def api_upload_avatar(file: UploadFile, avatar_name: str = Form(...), avat
                 session.commit()
                 session.refresh(avatar)
         
-        # Broadcast refresh message to all connected clients
+        # Broadcast refresh message to all connected clients and regenerate slot assignments
         # Import here to avoid circular imports
-        from app import hub
+        from app import hub, generate_avatar_slot_assignments, avatar_slot_assignments, avatar_assignments_generation_id, active_avatar_slots, avatar_message_queue
+        
+        # Regenerate avatar slot assignments since available avatars changed
+        active_avatar_slots.clear()
+        avatar_message_queue.clear()
+        generate_avatar_slot_assignments()
+        
+        # Broadcast avatar update message (slot updates are handled by generate_avatar_slot_assignments)
         asyncio.create_task(hub.broadcast({
             "type": "avatar_updated",
             "message": f"Avatar '{avatar.name}' uploaded"
@@ -224,10 +231,17 @@ async def api_delete_avatar(avatar_id: int):
             session.delete(avatar)
             session.commit()
             
-            # Broadcast refresh message to all connected clients
-            from app import hub
+            # Broadcast refresh message and regenerate slot assignments
+            from app import hub, generate_avatar_slot_assignments, avatar_slot_assignments, avatar_assignments_generation_id, active_avatar_slots, avatar_message_queue
+            
+            # Regenerate avatar slot assignments since available avatars changed
+            active_avatar_slots.clear()
+            avatar_message_queue.clear()
+            generate_avatar_slot_assignments()
+            
+            # Broadcast avatar update message (slot updates are handled by generate_avatar_slot_assignments)
             asyncio.create_task(hub.broadcast({
-                "type": "avatar_updated",
+                "type": "avatar_updated", 
                 "message": "Avatar deleted"
             }))
             
@@ -268,8 +282,15 @@ async def api_delete_avatar_group(group_id: str):
             
             session.commit()
             
-            # Broadcast refresh message to all connected clients
-            from app import hub
+            # Broadcast refresh message and regenerate slot assignments
+            from app import hub, generate_avatar_slot_assignments, avatar_slot_assignments, avatar_assignments_generation_id, active_avatar_slots, avatar_message_queue
+            
+            # Regenerate avatar slot assignments since available avatars changed
+            active_avatar_slots.clear()
+            avatar_message_queue.clear()
+            generate_avatar_slot_assignments()
+            
+            # Broadcast avatar update message (slot updates are handled by generate_avatar_slot_assignments)
             asyncio.create_task(hub.broadcast({
                 "type": "avatar_updated",
                 "message": "Avatar group deleted"
@@ -311,12 +332,20 @@ async def api_update_avatar_position(group_id: str, position_data: dict):
             
             session.commit()
             
-            # Broadcast refresh message to all connected clients
-            from app import hub
+            # Broadcast refresh message and regenerate slot assignments
+            from app import hub, generate_avatar_slot_assignments, avatar_slot_assignments, avatar_assignments_generation_id, active_avatar_slots, avatar_message_queue
+            
+            # Regenerate avatar slot assignments since spawn positions changed
+            active_avatar_slots.clear()
+            avatar_message_queue.clear()
+            generate_avatar_slot_assignments()
+            
             asyncio.create_task(hub.broadcast({
                 "type": "avatar_updated",
                 "message": "Avatar spawn position updated"
             }))
+            
+
             
             return {"success": True, "updated_count": len([a for a in avatars if a])}
     
@@ -337,12 +366,20 @@ async def api_toggle_avatar_disabled(avatar_id: int):
             session.add(avatar)
             session.commit()
             
-            # Broadcast refresh message to all connected clients
-            from app import hub
+            # Broadcast refresh message and regenerate slot assignments
+            from app import hub, generate_avatar_slot_assignments, avatar_slot_assignments, avatar_assignments_generation_id, active_avatar_slots, avatar_message_queue
+            
+            # Regenerate avatar slot assignments since available avatars changed
+            active_avatar_slots.clear()
+            avatar_message_queue.clear()
+            generate_avatar_slot_assignments()
+            
             asyncio.create_task(hub.broadcast({
                 "type": "avatar_updated",
                 "message": f"Avatar {'disabled' if avatar.disabled else 'enabled'}"
             }))
+            
+
             
             return {
                 "success": True,
@@ -390,12 +427,20 @@ async def api_toggle_avatar_group_disabled(group_id: str):
             
             session.commit()
             
-            # Broadcast refresh message to all connected clients
-            from app import hub
+            # Broadcast refresh message and regenerate slot assignments
+            from app import hub, generate_avatar_slot_assignments, avatar_slot_assignments, avatar_assignments_generation_id, active_avatar_slots, avatar_message_queue
+            
+            # Regenerate avatar slot assignments since available avatars changed
+            active_avatar_slots.clear()
+            avatar_message_queue.clear()
+            generate_avatar_slot_assignments()
+            
             asyncio.create_task(hub.broadcast({
                 "type": "avatar_updated",
                 "message": f"Avatar group {'disabled' if new_disabled_status else 'enabled'}"
             }))
+            
+
             
             return {
                 "success": True,

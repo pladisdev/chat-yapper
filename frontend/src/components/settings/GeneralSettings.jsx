@@ -6,7 +6,7 @@ import { Button } from '../ui/button'
 import { Settings } from 'lucide-react'
 import logger from '../../utils/logger'
 
-function GeneralSettings({ settings, updateSettings, apiUrl }) {
+function GeneralSettings({ settings, setSettings, updateSettings, apiUrl }) {
   const [tempVolume, setTempVolume] = useState(Math.round((settings.volume !== undefined ? settings.volume : 1.0) * 100))
 
   return (
@@ -27,12 +27,14 @@ function GeneralSettings({ settings, updateSettings, apiUrl }) {
           <Button
             onClick={async () => {
               try {
-                const currentState = settings.ttsControl?.enabled !== false
+                // Toggle TTS state in backend
                 const response = await fetch(`${apiUrl}/api/tts/toggle`, { method: 'POST' })
                 const result = await response.json()
                 if (result.success) {
-                  // Update settings to reflect new state
-                  updateSettings({ ttsControl: { enabled: result.tts_enabled } })
+                  // Backend is now the source of truth - refetch settings to get accurate state
+                  const settingsResponse = await fetch(`${apiUrl}/api/settings`)
+                  const settingsData = await settingsResponse.json()
+                  setSettings(settingsData)
                   logger.info(`✅ TTS ${result.tts_enabled ? 'enabled' : 'disabled'}`)
                 } else {
                   console.error('❌ TTS toggle failed:', result.error)
@@ -58,9 +60,30 @@ function GeneralSettings({ settings, updateSettings, apiUrl }) {
               max="100"
               step="1"
               value={tempVolume}
-              onChange={e => setTempVolume(parseInt(e.target.value))}
-              onMouseUp={e => updateSettings({ volume: parseInt(e.target.value) / 100 })}
-              onTouchEnd={e => updateSettings({ volume: tempVolume / 100 })}
+              onChange={e => {
+                const newVolume = parseInt(e.target.value)
+                setTempVolume(newVolume)
+                // Update immediately for keyboard input (arrow keys)
+                // Mouse drag will be handled by onMouseUp
+              }}
+              onMouseUp={e => {
+                const newVolume = parseInt(e.target.value) / 100
+                logger.info(`🎚️ Volume slider changed to ${Math.round(newVolume * 100)}% (mouse)`)
+                updateSettings({ volume: newVolume })
+              }}
+              onTouchEnd={e => {
+                const newVolume = tempVolume / 100
+                logger.info(`🎚️ Volume slider changed to ${Math.round(newVolume * 100)}% (touch)`)
+                updateSettings({ volume: newVolume })
+              }}
+              onKeyUp={e => {
+                // Handle keyboard input (arrow keys, page up/down, etc.)
+                if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(e.key)) {
+                  const newVolume = tempVolume / 100
+                  logger.info(`🎚️ Volume slider changed to ${Math.round(newVolume * 100)}% (keyboard: ${e.key})`)
+                  updateSettings({ volume: newVolume })
+                }
+              }}
               className="flex-1"
             />
             <span className="text-sm text-muted-foreground w-12 text-right">

@@ -15,6 +15,7 @@ import AvatarManagement from '../components/settings/AvatarManagement'
 import TTSConfiguration from '../components/settings/TTSConfiguration'
 import TwitchIntegrationTab from '../components/settings/TwitchIntegration'
 import MessageFiltering from '../components/settings/MessageFiltering'
+import AudioFiltersSettings from '../components/settings/AudioFiltersSettings'
 import { 
   Settings, 
   Image, 
@@ -24,7 +25,8 @@ import {
   TestTube2,
   BarChart3,
   CheckCircle2,
-  XCircle
+  XCircle,
+  Music
 } from 'lucide-react'
 
 export default function SettingsPage() {
@@ -60,26 +62,8 @@ export default function SettingsPage() {
     })
   }, [apiUrl])
 
-  // WebSocket listener for TTS control updates
-  useEffect(() => {
-    const removeListener = addListener((data) => {
-      if (data.type === 'tts_global_stopped') {
-        logger.info('🔇 TTS globally stopped via WebSocket')
-        setSettings(prevSettings => ({
-          ...prevSettings,
-          ttsControl: { enabled: false }
-        }))
-      } else if (data.type === 'tts_global_resumed') {
-        logger.info('🔊 TTS globally resumed via WebSocket')
-        setSettings(prevSettings => ({
-          ...prevSettings,
-          ttsControl: { enabled: true }
-        }))
-      }
-    })
-
-    return removeListener
-  }, [addListener])
+  // No need for WebSocket listener here - backend is source of truth
+  // Settings will be refreshed from backend when needed
 
   const updateSettings = async (partial) => {
     const next = { ...(settings || {}), ...partial }
@@ -128,7 +112,7 @@ export default function SettingsPage() {
         </div>
 
         <Tabs defaultValue="general" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-7 lg:w-auto lg:inline-grid">
+          <TabsList className="grid w-full grid-cols-8 lg:w-auto lg:inline-grid">
             <TabsTrigger value="general" className="flex items-center gap-2">
               <Settings className="w-4 h-4" />
               <span className="hidden sm:inline">General</span>
@@ -140,6 +124,10 @@ export default function SettingsPage() {
             <TabsTrigger value="tts" className="flex items-center gap-2">
               <Mic className="w-4 h-4" />
               <span className="hidden sm:inline">TTS</span>
+            </TabsTrigger>
+            <TabsTrigger value="filters" className="flex items-center gap-2">
+              <Music className="w-4 h-4" />
+              <span className="hidden sm:inline">Effects</span>
             </TabsTrigger>
             <TabsTrigger value="twitch" className="flex items-center gap-2">
               <Zap className="w-4 h-4" />
@@ -160,7 +148,7 @@ export default function SettingsPage() {
           </TabsList>
 
           <TabsContent value="general" className="space-y-6">
-            <GeneralSettings settings={settings} updateSettings={updateSettings} apiUrl={apiUrl} />
+            <GeneralSettings settings={settings} setSettings={setSettings} updateSettings={updateSettings} apiUrl={apiUrl} />
           </TabsContent>
 
           <TabsContent value="avatars" className="space-y-6">
@@ -186,6 +174,10 @@ export default function SettingsPage() {
           <TabsContent value="tts" className="space-y-6">
             <TTSConfiguration settings={settings} updateSettings={updateSettings} />
             <VoiceManager managedAvatars={managedAvatars} apiUrl={apiUrl} />
+          </TabsContent>
+
+          <TabsContent value="filters" className="space-y-6">
+            <AudioFiltersSettings settings={settings} updateSettings={updateSettings} />
           </TabsContent>
 
           <TabsContent value="twitch" className="space-y-6">

@@ -48,5 +48,36 @@
 },
 "ttsControl": {
 "enabled": true
+},
+"audioFilters": {
+"enabled": false,
+"randomFilters": false,
+"reverb": {
+"enabled": false,
+"amount": 50,
+"randomEnabled": true,
+"randomRange": {
+"min": 20,
+"max": 80
+}
+},
+"pitch": {
+"enabled": false,
+"semitones": 0,
+"randomEnabled": true,
+"randomRange": {
+"min": -8,
+"max": 8
+}
+},
+"speed": {
+"enabled": false,
+"multiplier": 1.0,
+"randomEnabled": true,
+"randomRange": {
+"min": 0.75,
+"max": 1.3
+}
+}
 }
 }
