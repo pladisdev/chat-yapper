@@ -1,0 +1,197 @@
+name: Build and Release
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  build:
+    name: Build Windows Executable
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch all history for proper versioning
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-build.txt
+    
+    - name: Create .env file for build
+      run: |
+        echo "TWITCH_CLIENT_ID=${{ secrets.TWITCH_CLIENT_ID }}" > .env
+        echo "TWITCH_CLIENT_SECRET=${{ secrets.TWITCH_CLIENT_SECRET }}" >> .env
+      shell: bash
+    
+    - name: Build frontend
+      working-directory: ./frontend
+      run: |
+        npm install
+        npm run build
+    
+    - name: Run build script
+      run: python build.py
+      env:
+        TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
+        TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
+    
+    - name: Verify executable exists
+      run: |
+        if (!(Test-Path "dist/ChatYapper.exe")) {
+          Write-Error "Build failed: ChatYapper.exe not found in dist directory"
+          exit 1
+        }
+        Write-Host "[SUCCESS] Build successful: ChatYapper.exe found"
+        $size = (Get-Item "dist/ChatYapper.exe").Length / 1MB
+        Write-Host "Executable size: $([math]::Round($size, 2)) MB"
+      shell: powershell
+    
+    - name: Get version info
+      id: version
+      run: |
+        $date = Get-Date -Format "yyyy.MM.dd"
+        $shortSha = "${{ github.sha }}".Substring(0, 7)
+        
+        # Check if this is a merge to main
+        if ("${{ github.event_name }}" -eq "push" -and "${{ github.ref }}" -eq "refs/heads/main") {
+          # This is a push to main (after merge)
+          $version = "v$date-$shortSha"
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+          echo "is_release=true" >> $env:GITHUB_OUTPUT
+          Write-Host "Release version: $version"
+        } else {
+          # This is a PR build
+          $version = "build-$date-$shortSha"
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+          echo "is_release=false" >> $env:GITHUB_OUTPUT
+          Write-Host "PR build version: $version"
+        }
+      shell: powershell
+    
+    - name: Upload artifact for PR
+      if: github.event_name == 'pull_request'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ChatYapper-${{ steps.version.outputs.version }}
+        path: dist/ChatYapper.exe
+        retention-days: 7
+    
+    - name: Comment PR with build status
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const stats = fs.statSync('dist/ChatYapper.exe');
+          const sizeMB = (stats.size / (1024 * 1024)).toFixed(2);
+          
+          const comment = `## Build Successful
+          
+          **Executable:** \`ChatYapper.exe\`
+          **Size:** ${sizeMB} MB
+          **Version:** \`${{ steps.version.outputs.version }}\`
+          **Commit:** ${{ github.sha }}
+          
+          The executable has been built and is ready for testing.
+          Download the artifact from the workflow run to test before merging.
+          
+          Once merged to \`main\`, an official release will be created automatically.`;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });
+    
+    - name: Create Release (on merge to main)
+      if: steps.version.outputs.is_release == 'true'
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.version.outputs.version }}
+        release_name: Chat Yapper ${{ steps.version.outputs.version }}
+        body: |
+          ## Chat Yapper Release ${{ steps.version.outputs.version }}
+          
+          ### What's Changed
+          This release was automatically created from the latest merge to main.
+          
+          **Commit:** ${{ github.sha }}
+          **Build Date:** ${{ steps.version.outputs.version }}
+          
+          ### Download
+          Download `ChatYapper.exe` below to run the application.
+          
+          ### Installation
+          1. Download `ChatYapper.exe`
+          2. Run the executable
+          3. The application will start on `http://localhost:8000`
+          
+          ### System Requirements
+          - Windows 10 or later
+          - No additional dependencies required (all bundled in the executable)
+        draft: false
+        prerelease: false
+    
+    - name: Upload Release Asset
+      if: steps.version.outputs.is_release == 'true'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./dist/ChatYapper.exe
+        asset_name: ChatYapper.exe
+        asset_content_type: application/vnd.microsoft.portable-executable
+    
+    - name: Notify release created
+      if: steps.version.outputs.is_release == 'true'
+      run: |
+        Write-Host "Release created successfully!"
+        Write-Host "Version: ${{ steps.version.outputs.version }}"
+        Write-Host "View at: https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.version }}"
+      shell: powershell
+
+  # This job runs after build and prevents merge if build failed
+  build-status-check:
+    name: Build Status Check
+    runs-on: ubuntu-latest
+    needs: build
+    if: always()
+    
+    steps:
+    - name: Check build status
+      run: |
+        if [ "${{ needs.build.result }}" != "success" ]; then
+          echo "[FAIL] Build failed or was cancelled"
+          echo "Cannot merge to main until build succeeds"
+          exit 1
+        fi
+        echo "[PASS] Build succeeded - safe to merge"
