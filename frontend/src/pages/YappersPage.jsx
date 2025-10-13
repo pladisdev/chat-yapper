@@ -699,11 +699,9 @@ export default function YappersPage() {
                   alt={`Avatar ${index + 1}`}
                   style={{
                     imageRendering: 'auto',
-                    maxWidth: `${Math.floor((baseSize - 8) * 1.5)}px`,
-                    maxHeight: `${Math.floor((baseSize - 8) * 1.5)}px`,
-                    width: 'auto',
-                    height: 'auto',
-                    objectFit: 'contain'
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover'
                   }}
                 />
               </div>

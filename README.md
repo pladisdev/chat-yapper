@@ -220,7 +220,7 @@ bash install-test-deps.sh
 
 ## 📊 Changelog
 
-### v1.0.0 (Latest)
+### v0.5.0 (Latest)
 - ✅ Initial release with full TTS functionality
 - ✅ Multi-provider TTS support
 - ✅ Voice avatar system
@@ -229,6 +229,22 @@ bash install-test-deps.sh
 - ✅ Comprehensive logging system
 
 ---
+
+## TODO
+
+### Features
+- Discord integration
+- Youtube Integration
+- Fix emote detection system
+- Better placement of avatars in UI
+- Instead of localhost, use DNS
+- Allow mapping of voices to avatars
+- Allow users to upload an avatar and preferred voice, with streamer allowing user to be added
+- More audio effects
+- Built in sound alert system
+
+### Bugs
+- None lmao
 
 **Made with ❤️ for the streaming community**
 
