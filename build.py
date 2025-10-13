@@ -16,12 +16,12 @@ from pathlib import Path
 try:
     from dotenv import load_dotenv
     load_dotenv()  # Load .env file
-    print("📄 Loaded .env file for build configuration")
+    print("Loaded .env file for build configuration")
 except ImportError:
-    print("💡 python-dotenv not installed, using system environment only")
+    print("python-dotenv not installed, using system environment only")
     print("   Run: pip install python-dotenv")
 except Exception as e:
-    print(f"⚠️  Could not load .env file: {e}")
+    print(f"Could not load .env file: {e}")
     print("   Continuing with system environment variables...")
 
 def is_executable():
@@ -516,21 +516,21 @@ def test_executable():
     """Test the built executable to ensure it works correctly"""
     logger.info("=== Starting executable validation tests ===")
     print()
-    print("🧪 Testing built executable...")
+    print("Testing built executable...")
     
     exe_path = Path("dist") / "ChatYapper.exe"
     if not exe_path.exists():
         logger.error(f"Executable not found at {exe_path}")
-        print("❌ Executable file not found")
+        print("[ERROR] Executable file not found")
         return False
     
-    print(f"📁 Found executable: {exe_path}")
-    print(f"📊 File size: {exe_path.stat().st_size / 1024 / 1024:.1f} MB")
+    print(f"Found executable: {exe_path}")
+    print(f"File size: {exe_path.stat().st_size / 1024 / 1024:.1f} MB")
     
     all_tests_passed = True
     
     # Test 1: Basic startup test
-    print("\n🚀 Test 1: Basic startup validation...")
+    print("\nTest 1: Basic startup validation...")
     try:
         import subprocess
         import time
@@ -549,11 +549,11 @@ def test_executable():
         time.sleep(3)
         
         if process.poll() is None:
-            print("✅ Executable started successfully")
+            print("[PASS] Executable started successfully")
             logger.info("Executable startup test passed")
             
             # Test 2: HTTP endpoint test
-            print("\n🌐 Test 2: HTTP server validation...")
+            print("\nTest 2: HTTP server validation...")
             try:
                 import urllib.request
                 import json
@@ -566,24 +566,24 @@ def test_executable():
                 if response.getcode() == 200:
                     data = json.loads(response.read().decode())
                     if data.get("status") == "running":
-                        print("✅ HTTP server is responding correctly")
+                        print("[PASS] HTTP server is responding correctly")
                         logger.info("HTTP server validation passed")
                     else:
-                        print("❌ HTTP server returned unexpected response")
+                        print("[FAIL] HTTP server returned unexpected response")
                         logger.error(f"HTTP server returned: {data}")
                         all_tests_passed = False
                 else:
-                    print(f"❌ HTTP server returned status code: {response.getcode()}")
+                    print(f"[FAIL] HTTP server returned status code: {response.getcode()}")
                     logger.error(f"HTTP server validation failed with code {response.getcode()}")
                     all_tests_passed = False
                     
             except Exception as e:
-                print(f"❌ HTTP server test failed: {e}")
+                print(f"[FAIL] HTTP server test failed: {e}")
                 logger.error(f"HTTP server validation failed: {e}")
                 all_tests_passed = False
             
             # Test 3: TTS functionality test
-            print("\n🎵 Test 3: TTS functionality validation...")
+            print("\nTest 3: TTS functionality validation...")
             try:
                 # Test TTS endpoint with simulation
                 test_data = {
@@ -603,30 +603,30 @@ def test_executable():
                 if response.getcode() == 200:
                     result = json.loads(response.read().decode())
                     if result.get("ok"):
-                        print("✅ TTS functionality is working")
+                        print("[PASS] TTS functionality is working")
                         logger.info("TTS validation passed")
                     else:
-                        print(f"❌ TTS test failed: {result.get('error', 'Unknown error')}")
+                        print(f"[FAIL] TTS test failed: {result.get('error', 'Unknown error')}")
                         logger.error(f"TTS validation failed: {result}")
                         all_tests_passed = False
                 else:
-                    print(f"❌ TTS test returned status code: {response.getcode()}")
+                    print(f"[FAIL] TTS test returned status code: {response.getcode()}")
                     logger.error(f"TTS validation failed with code {response.getcode()}")
                     all_tests_passed = False
                     
             except Exception as e:
-                print(f"❌ TTS test failed: {e}")
+                print(f"[FAIL] TTS test failed: {e}")
                 logger.error(f"TTS validation failed: {e}")
                 all_tests_passed = False
                 
         else:
-            print("❌ Executable failed to start or crashed immediately")
+            print("[FAIL] Executable failed to start or crashed immediately")
             logger.error("Executable startup test failed - process terminated")
             all_tests_passed = False
             
         # Clean shutdown
         if process.poll() is None:
-            print("\n🛑 Shutting down test instance...")
+            print("\nShutting down test instance...")
             try:
                 process.terminate()
                 process.wait(timeout=5)
@@ -636,12 +636,12 @@ def test_executable():
             logger.info("Test process terminated cleanly")
             
     except Exception as e:
-        print(f"❌ Startup test failed: {e}")
+        print(f"[FAIL] Startup test failed: {e}")
         logger.error(f"Startup validation failed: {e}")
         all_tests_passed = False
     
     # Test 4: Dependency validation
-    print("\n📦 Test 4: Dependency validation...")
+    print("\nTest 4: Dependency validation...")
     try:
         # Check that the executable exists (onefile build)
         dist_dir = Path("dist")
@@ -655,26 +655,26 @@ def test_executable():
                 missing_items.append(pattern)
         
         if not missing_items:
-            print("✅ All expected files and directories are present")
+            print("[PASS] All expected files and directories are present")
             logger.info("Dependency validation passed")
         else:
-            print(f"❌ Missing expected items: {missing_items}")
+            print(f"[FAIL] Missing expected items: {missing_items}")
             logger.error(f"Missing dependencies: {missing_items}")
             all_tests_passed = False
             
     except Exception as e:
-        print(f"❌ Dependency validation failed: {e}")
+        print(f"[FAIL] Dependency validation failed: {e}")
         logger.error(f"Dependency validation failed: {e}")
         all_tests_passed = False
     
     # Final results
     print(f"\n{'='*50}")
     if all_tests_passed:
-        print("🎉 All validation tests PASSED!")
+        print("All validation tests PASSED!")
         print("   The executable is ready for distribution")
         logger.info("All validation tests passed")
     else:
-        print("💥 Some validation tests FAILED!")
+        print("Some validation tests FAILED!")
         print("   Review the errors above before distributing")
         logger.error("Some validation tests failed")
     print(f"{'='*50}")
@@ -687,14 +687,14 @@ def main():
     
     if test_only:
         logger.info("=== Running executable validation tests only ===")
-        print("🧪 Testing existing executable...")
+        print("Testing existing executable...")
         print()
         
         if test_executable():
-            print("\n✅ All tests passed!")
+            print("\n[SUCCESS] All tests passed!")
             sys.exit(0)
         else:
-            print("\n❌ Tests failed!")
+            print("\n[ERROR] Tests failed!")
             sys.exit(1)
     
     logger.info("=== Starting Chat Yapper build process ===")
@@ -722,12 +722,12 @@ def main():
             logger.info("=== Build validation tests PASSED ===")
             log_important("All tests passed - executable is working correctly!")
             print()
-            print("✅ Build validation successful!")
+            print("[SUCCESS] Build validation successful!")
         else:
             logger.error("=== Build validation tests FAILED ===")
             log_important("Build validation failed - executable may have issues")
             print()
-            print("❌ Build validation failed!")
+            print("[ERROR] Build validation failed!")
             print("   Check the logs for details")
             return False
             
@@ -740,7 +740,7 @@ def main():
         print("   2. Users can run it directly - no installation needed!")
         print("   3. It will start a local server and open their browser")
         print()
-        print("💡 Tip: Run 'python build.py --test-only' to test an existing executable")
+        print("TIP: Run 'python build.py --test-only' to test an existing executable")
         
     except Exception as e:
         logger.error(f"Build process failed: {e}", exc_info=True)
