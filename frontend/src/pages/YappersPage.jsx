@@ -639,6 +639,26 @@ export default function YappersPage() {
           const x = baseX + slot.col * spacingX + centerOffset + honeycombOffset
           const y = baseY + slot.row * spacingY
           
+          // Get glow effect settings
+          const glowEnabled = settings?.avatarGlowEnabled ?? true
+          const glowColor = settings?.avatarGlowColor ?? '#ffffff'
+          const glowOpacity = settings?.avatarGlowOpacity ?? 0.9
+          const glowSize = settings?.avatarGlowSize ?? 20
+          
+          // Convert hex color to rgba for glow effect
+          const hexToRgba = (hex, opacity) => {
+            const r = parseInt(hex.slice(1, 3), 16)
+            const g = parseInt(hex.slice(3, 5), 16)
+            const b = parseInt(hex.slice(5, 7), 16)
+            return `rgba(${r},${g},${b},${opacity})`
+          }
+          
+          // Build filter based on glow settings
+          const activeFilter = glowEnabled
+            ? `brightness(1.25) drop-shadow(0 0 ${glowSize}px ${hexToRgba(glowColor, glowOpacity)})`
+            : 'brightness(1.25)'
+          const inactiveFilter = 'drop-shadow(0 4px 8px rgba(0,0,0,0.3))'
+          
           return (
             <div 
               key={slot.id}
@@ -649,7 +669,7 @@ export default function YappersPage() {
                 width: `${baseSize}px`,
                 height: `${baseSize}px`,
                 transform: activeSlots[slot.id] ? 'translateY(-2.5px)' : 'translateY(0)',
-                filter: activeSlots[slot.id] ? 'brightness(1.25) drop-shadow(0 0 20px rgba(255,255,255,0.9))' : 'drop-shadow(0 4px 8px rgba(0,0,0,0.3))',
+                filter: activeSlots[slot.id] ? activeFilter : inactiveFilter,
                 zIndex: 10 + index,
                 transition: 'all 300ms ease-out',
                 pointerEvents: 'none'

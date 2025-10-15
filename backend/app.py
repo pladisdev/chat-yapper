@@ -53,6 +53,24 @@ active_tts_jobs = {}
 # Global TTS control
 tts_enabled = True  # Global flag to control TTS processing
 
+# Message History for Testing and Replay
+# Stores last 100 processed messages with original and filtered text
+from collections import deque
+message_history = deque(maxlen=100)  # Automatically removes oldest when full
+
+def add_to_message_history(username: str, original_text: str, filtered_text: str, 
+                           event_type: str = "chat", tags: Dict[str, Any] = None):
+    """Add a message to the history for replay testing"""
+    message_history.append({
+        "timestamp": time.time(),
+        "username": username,
+        "original_text": original_text,
+        "filtered_text": filtered_text,
+        "event_type": event_type,
+        "was_filtered": original_text != filtered_text,
+        "tags": tags or {}
+    })
+
 # Avatar Slot Management System
 # Manages which avatars are assigned to which slots and tracks their active status
 
@@ -180,12 +198,14 @@ from routers.auth import router as auth_router
 from routers.static import router as static_router
 from routers.voices import router as voices_router
 from routers.system import router as system_router
+from routers.config_backup import router as config_backup_router
 app.include_router(tts_router)
 app.include_router(avatars_router)
 app.include_router(auth_router)
 app.include_router(static_router)
 app.include_router(voices_router)
 app.include_router(system_router)
+app.include_router(config_backup_router)
 
 # Serve generated audio files under /audio
 # Use AUDIO_DIR from TTS module to ensure consistency
@@ -270,7 +290,13 @@ async def ws_endpoint(ws: WebSocket):
                 data = json.loads(message)
                 await handle_websocket_message(data)
             except json.JSONDecodeError:
-                logger.warning(f"Invalid JSON received from WebSocket: {message}")
+                # Handle plain text messages (like connection tests)
+                if message.strip().lower() in ['hello', 'ping', 'test']:
+                    logger.debug(f"Received connection test message: {message}")
+                    # Optionally send a response
+                    await ws.send_text(json.dumps({"type": "pong", "message": "ok"}))
+                else:
+                    logger.warning(f"Invalid JSON received from WebSocket: {message}")
             except Exception as e:
                 logger.error(f"Error handling WebSocket message: {e}")
     except WebSocketDisconnect:
@@ -373,6 +399,14 @@ def app_save_settings(data: Dict[str, Any]):
         old_twitch_config.get("channel") != new_twitch_config.get("channel")
     )
     
+    # Check if YouTube settings have changed
+    old_youtube_config = old_settings.get("youtube", {})
+    new_youtube_config = data.get("youtube", {})
+    youtube_settings_changed = (
+        old_youtube_config.get("enabled") != new_youtube_config.get("enabled") or
+        old_youtube_config.get("channel") != new_youtube_config.get("channel")
+    )
+    
     # Use the modules save_settings function but without circular import
     # Save settings first
     save_settings(data)
@@ -383,6 +417,13 @@ def app_save_settings(data: Dict[str, Any]):
         asyncio.create_task(restart_twitch_if_needed(data))
     else:
         logger.debug("Twitch settings unchanged, skipping bot restart")
+    
+    # Restart YouTube bot only if YouTube settings changed
+    if youtube_settings_changed:
+        logger.info("🔄 YouTube settings changed, restarting bot...")
+        asyncio.create_task(restart_youtube_if_needed(data))
+    else:
+        logger.debug("YouTube settings unchanged, skipping bot restart")
     
     # Regenerate avatar assignments if layout changed
     if avatar_layout_changed:
@@ -481,6 +522,88 @@ async def get_twitch_token_for_bot():
             }
     except Exception as e:
         logger.error(f"Error getting Twitch token: {e}")
+    
+    return None
+
+async def restart_youtube_if_needed(settings: Dict[str, Any]):
+    """Restart YouTube bot when settings change"""
+    global YouTubeTask
+    try:
+        # Stop existing task if running
+        if YouTubeTask and not YouTubeTask.done():
+            logger.info("Stopping existing YouTube bot")
+            YouTubeTask.cancel()
+            try:
+                await YouTubeTask
+            except asyncio.CancelledError:
+                logger.info("YouTube bot task cancelled successfully")
+            except Exception as e:
+                logger.warning(f"Error while cancelling YouTube bot task: {e}")
+            
+            # Give it a moment to fully clean up
+            await asyncio.sleep(0.1)
+        
+        # Start new task if enabled
+        if run_youtube_bot and settings.get("youtube", {}).get("enabled"):
+            logger.info("Restarting YouTube bot with new settings")
+            
+            # Get OAuth token from database
+            token_info = await get_youtube_token_for_bot()
+            if not token_info:
+                logger.warning("No YouTube OAuth token found. Cannot restart bot.")
+                YouTubeTask = None
+                return
+                
+            youtube_config = settings.get("youtube", {})
+            video_id = youtube_config.get("channel")  # Can be video/stream ID or None for auto-detect
+            
+            # Event router to handle different event types
+            async def route_youtube_event(e):
+                event_type = e.get("type", "")
+                if event_type == "moderation":
+                    await handle_moderation_event(e)
+                else:
+                    # Default to chat event handler
+                    await handle_event(e)
+            
+            YouTubeTask = asyncio.create_task(run_youtube_bot(
+                credentials=token_info["credentials"],
+                video_id=video_id,
+                on_event=lambda e: asyncio.create_task(route_youtube_event(e))
+            ))
+            logger.info("YouTube bot restarted")
+        else:
+            YouTubeTask = None
+            logger.info("YouTube bot disabled")
+    except Exception as e:
+        logger.error(f"Failed to restart YouTube bot: {e}", exc_info=True)
+
+
+async def get_youtube_token_for_bot():
+    """Get current YouTube token for bot connection"""
+    try:
+        from modules.persistent_data import get_youtube_auth
+        auth = get_youtube_auth()
+        if auth:
+            # Return credentials object for YouTube API
+            from google.oauth2.credentials import Credentials
+            from modules.persistent_data import YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET
+            
+            credentials = Credentials(
+                token=auth.access_token,
+                refresh_token=auth.refresh_token,
+                token_uri='https://oauth2.googleapis.com/token',
+                client_id=YOUTUBE_CLIENT_ID,
+                client_secret=YOUTUBE_CLIENT_SECRET
+            )
+            
+            return {
+                "credentials": credentials,
+                "channel_id": auth.channel_id,
+                "channel_name": auth.channel_name
+            }
+    except Exception as e:
+        logger.error(f"Error getting YouTube token: {e}")
     
     return None
 
@@ -864,7 +987,11 @@ async def handle_event(evt: Dict[str, Any]):
     original_text = evt.get('text', '').strip()
     username = evt.get('user', '')
     tags = evt.get('tags', {})  # Get Twitch tags for emote detection
+    event_type = evt.get('eventType', 'chat')
     should_process, filtered_text = should_process_message(original_text, settings, username, active_tts_jobs, tags)
+    
+    # Add to message history for testing/replay (even if not processed)
+    add_to_message_history(username, original_text, filtered_text, event_type, tags)
     
     if not should_process:
         logger.info(f"Skipping message due to filtering: {original_text[:50]}... (user: {username})")
@@ -1130,6 +1257,16 @@ except Exception as e:
     logger.info(f"❌ Failed to import Twitch listener: {e}")
     run_twitch_bot = None
 
+# ---------- YouTube integration (optional) ----------
+YouTubeTask = None
+try:
+    from modules.youtube_listener import run_youtube_bot
+    logger.info("YouTube listener imported successfully")
+except Exception as e:
+    logger.error(f"Failed to import youtube_listener: {e}")
+    logger.info(f"❌ Failed to import YouTube listener: {e}")
+    run_youtube_bot = None
+
 # ---------- Avatar Slot Management API ----------
 # Avatar slot endpoints have been moved to routers/avatars.py
 
@@ -1194,6 +1331,55 @@ async def startup():
             else:
                 logger.info("Twitch integration disabled in settings")
         
+        # Start YouTube bot if enabled
+        logger.info(f"YouTube enabled: {settings.get('youtube', {}).get('enabled')}")
+        if run_youtube_bot and settings.get("youtube", {}).get("enabled"):
+            logger.info("Starting YouTube bot...")
+            
+            # Get OAuth token from database
+            token_info = await get_youtube_token_for_bot()
+            if not token_info:
+                logger.warning("No YouTube OAuth token found. Please connect your YouTube account.")
+            else:
+                youtube_config = settings.get("youtube", {})
+                video_id = youtube_config.get("channel")  # Can be video/stream ID or None
+                
+                logger.info(f"YouTube config: video_id={video_id or 'auto-detect'}, channel={token_info.get('channel_name', 'Unknown')}")
+                
+                # Event router to handle different event types
+                async def route_youtube_event(e):
+                    event_type = e.get("type", "")
+                    if event_type == "moderation":
+                        await handle_moderation_event(e)
+                    else:
+                        # Default to chat event handler
+                        await handle_event(e)
+                
+                global YouTubeTask
+                yt = asyncio.create_task(run_youtube_bot(
+                    credentials=token_info["credentials"],
+                    video_id=video_id,
+                    on_event=lambda e: asyncio.create_task(route_youtube_event(e))
+                ))
+                
+                # Add error handler for the YouTube task
+                def handle_youtube_task_exception(task):
+                    try:
+                        task.result()
+                    except asyncio.CancelledError:
+                        logger.info("YouTube bot task was cancelled")
+                    except Exception as e:
+                        logger.error(f"YouTube bot task failed: {e}", exc_info=True)
+                        logger.info(f"ERROR: YouTube bot task failed: {e}")
+                
+                yt.add_done_callback(handle_youtube_task_exception)
+                YouTubeTask = yt
+                logger.info("YouTube bot task created")
+        else:
+            if not run_youtube_bot:
+                logger.warning("YouTube bot not available (import failed)")
+            else:
+                logger.info("YouTube integration disabled in settings")
 
     except Exception as e:
         logger.error(f"Startup event failed: {e}", exc_info=True)

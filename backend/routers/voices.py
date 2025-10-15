@@ -168,15 +168,160 @@ async def api_get_available_voices(provider: str, api_key: str = None):
 
 @router.post("/api/available-voices/polly")
 async def api_get_polly_voices(credentials: dict):
-    """Get available voices from Amazon Polly"""
+    """Get available voices from Amazon Polly (with caching)"""
     try:
         from modules.tts import AmazonPollyProvider
+        from modules import logger
+        
+        refresh = credentials.get('refresh', False)
+        use_cache = not refresh
+        
         polly_provider = AmazonPollyProvider(
             credentials.get('accessKey', ''),
             credentials.get('secretKey', ''),
             credentials.get('region', 'us-east-1')
         )
-        voices = await polly_provider.list_voices()
-        return {"voices": voices}
+        
+        if refresh:
+            logger.info("🔄 Force refresh requested for Polly voices")
+        
+        voices = await polly_provider.list_voices(use_cache=use_cache)
+        
+        # Get cache info
+        from modules.persistent_data import get_cached_voices, hash_credentials
+        credentials_hash = hash_credentials(credentials.get('accessKey', ''), credentials.get('secretKey', ''))
+        
+        # Get the cache entry to find last_updated
+        from modules.persistent_data import Session, engine, select, ProviderVoiceCache
+        with Session(engine) as session:
+            cache = session.exec(select(ProviderVoiceCache).where(ProviderVoiceCache.provider == "polly")).first()
+            last_updated = cache.last_updated if cache else None
+        
+        return {
+            "voices": voices,
+            "cached": use_cache and len(voices) > 0,
+            "last_updated": last_updated
+        }
     except Exception as e:
+        from modules import logger
+        logger.error(f"Error fetching Polly voices: {e}")
         return {"error": f"Error fetching Polly voices: {str(e)}"}
+
+@router.post("/api/available-voices/google")
+async def api_get_google_voices(credentials: dict):
+    """Get available voices from Google Cloud TTS (with caching)"""
+    try:
+        from modules.tts import GoogleTTSProvider
+        from modules import logger
+        
+        api_key = credentials.get('apiKey', '')
+        if not api_key:
+            return {"error": "API key required for Google TTS voices"}
+        
+        refresh = credentials.get('refresh', False)
+        use_cache = not refresh
+        
+        google_provider = GoogleTTSProvider(api_key)
+        
+        if refresh:
+            logger.info("🔄 Force refresh requested for Google TTS voices")
+        
+        voices = await google_provider.list_voices(use_cache=use_cache)
+        
+        # Get cache info
+        from modules.persistent_data import get_cached_voices, hash_credentials
+        credentials_hash = hash_credentials(api_key)
+        
+        # Get the cache entry to find last_updated
+        from modules.persistent_data import Session, engine, select, ProviderVoiceCache
+        with Session(engine) as session:
+            cache = session.exec(select(ProviderVoiceCache).where(ProviderVoiceCache.provider == "google")).first()
+            last_updated = cache.last_updated if cache else None
+        
+        return {
+            "voices": voices,
+            "cached": use_cache and len(voices) > 0,
+            "last_updated": last_updated
+        }
+    except Exception as e:
+        from modules import logger
+        logger.error(f"Error fetching Google TTS voices: {e}")
+        return {"error": f"Error fetching Google TTS voices: {str(e)}"}
+
+@router.post("/api/available-voices/monstertts")
+async def api_get_monstertts_voices(credentials: dict):
+    """Get available voices from MonsterTTS (with caching)"""
+    try:
+        from modules.tts import MonsterTTSProvider
+        from modules import logger
+        
+        api_key = credentials.get('apiKey', '')
+        if not api_key:
+            return {"error": "API key required for MonsterTTS voices"}
+        
+        refresh = credentials.get('refresh', False)
+        use_cache = not refresh
+        
+        monster_provider = MonsterTTSProvider(api_key)
+        
+        if refresh:
+            logger.info("🔄 Force refresh requested for MonsterTTS voices")
+        
+        voices = await monster_provider.list_voices(use_cache=use_cache)
+        
+        # Get cache info
+        from modules.persistent_data import get_cached_voices, hash_credentials
+        credentials_hash = hash_credentials(api_key)
+        
+        # Get the cache entry to find last_updated
+        from modules.persistent_data import Session, engine, select, ProviderVoiceCache
+        with Session(engine) as session:
+            cache = session.exec(select(ProviderVoiceCache).where(ProviderVoiceCache.provider == "monstertts")).first()
+            last_updated = cache.last_updated if cache else None
+        
+        return {
+            "voices": voices,
+            "cached": use_cache and len(voices) > 0,
+            "last_updated": last_updated
+        }
+    except Exception as e:
+        from modules import logger
+        logger.error(f"Error fetching MonsterTTS voices: {e}")
+        return {"error": f"Error fetching MonsterTTS voices: {str(e)}"}
+
+@router.post("/api/available-voices/edge")
+async def api_get_edge_voices(request: dict = None):
+    """Get available voices from Edge TTS (with caching)
+    
+    Note: Edge TTS is free and doesn't require credentials.
+    """
+    try:
+        from modules.tts import EdgeTTSProvider
+        from modules import logger
+        
+        # Edge TTS doesn't need credentials, but we support refresh parameter
+        refresh = request.get('refresh', False) if request else False
+        use_cache = not refresh
+        
+        edge_provider = EdgeTTSProvider()
+        
+        if refresh:
+            logger.info("🔄 Force refresh requested for Edge TTS voices")
+        
+        voices = await edge_provider.list_voices(use_cache=use_cache)
+        
+        # Get cache info (no credential hash for free service)
+        from modules.persistent_data import Session, engine, select, ProviderVoiceCache
+        with Session(engine) as session:
+            cache = session.exec(select(ProviderVoiceCache).where(ProviderVoiceCache.provider == "edge")).first()
+            last_updated = cache.last_updated if cache else None
+        
+        return {
+            "voices": voices,
+            "cached": use_cache and len(voices) > 0,
+            "last_updated": last_updated
+        }
+    except Exception as e:
+        from modules import logger
+        logger.error(f"Error fetching Edge TTS voices: {e}")
+        return {"error": f"Error fetching Edge TTS voices: {str(e)}"}

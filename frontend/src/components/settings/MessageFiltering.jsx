@@ -408,7 +408,6 @@ function MessageFiltering({ settings, updateSettings, apiUrl }) {
 
             <div className="space-y-6">
               <h4 className="font-medium flex items-center gap-2 text-lg">
-                <span>⏱️</span>
                 Rate Limiting & Message Control
               </h4>
               
@@ -427,7 +426,7 @@ function MessageFiltering({ settings, updateSettings, apiUrl }) {
                     />
                     <div className="space-y-1 flex-1">
                       <Label htmlFor="enableSpamFilter" className="text-base font-medium">
-                        🚫 Rate Limit Users
+                        Rate Limit Users
                       </Label>
                       <p className="text-sm text-muted-foreground">
                         Prevent users from sending too many messages in a short time period. New messages from rate-limited users are completely ignored.
@@ -492,7 +491,7 @@ function MessageFiltering({ settings, updateSettings, apiUrl }) {
                     />
                     <div className="space-y-1">
                       <Label htmlFor="ignoreIfUserSpeaking" className="text-base font-medium">
-                        🔊 Ignore New Messages from Speaking User
+                        Ignore New Messages from Speaking User
                       </Label>
                       <p className="text-sm text-muted-foreground">
                         When a user's message is currently playing TTS, ignore any new messages from that same user until the current message finishes. This prevents interrupting or queueing multiple messages from one person.
@@ -509,7 +508,6 @@ function MessageFiltering({ settings, updateSettings, apiUrl }) {
 
             <div className="space-y-4">
               <h4 className="font-medium flex items-center gap-2">
-                <span>🤬</span>
                 Profanity Filter
               </h4>
               

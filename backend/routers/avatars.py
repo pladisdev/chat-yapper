@@ -52,10 +52,11 @@ async def api_upload_avatar(file: UploadFile, avatar_name: str = Form(...), avat
     """Upload a new avatar image"""
     logger.info(f"API: POST /api/avatars/upload called - name: {avatar_name}, type: {avatar_type}, group: {avatar_group_id}")
     try:
-        # Validate file type
-        if not file.content_type or not file.content_type.startswith('image/'):
+        # Validate file type (accept PNG, JPG, JPEG, GIF, WebP)
+        allowed_types = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp']
+        if not file.content_type or file.content_type not in allowed_types:
             logger.error(f"Invalid file type uploaded: {file.content_type}")
-            return {"error": "File must be an image", "success": False}
+            return {"error": "File must be an image (PNG, JPG, GIF, or WebP)", "success": False}
         
         # Validate file size (max 5MB)
         if file.size and file.size > 5 * 1024 * 1024:
@@ -82,40 +83,43 @@ async def api_upload_avatar(file: UploadFile, avatar_name: str = Form(...), avat
         # Read and process image
         content = await file.read()
         
-        # Resize image if larger than 200px on any side
-        try:
-            from PIL import Image
-            import io
-            
-            # Open image from bytes
-            image = Image.open(io.BytesIO(content))
-            
-            # Calculate new size maintaining aspect ratio
-            max_size = 200
-            if image.width > max_size or image.height > max_size:
-                # Calculate resize dimensions
-                ratio = min(max_size / image.width, max_size / image.height)
-                new_width = int(image.width * ratio)
-                new_height = int(image.height * ratio)
+        # Resize image if larger than 200px on any side (skip GIFs and animated WebP to preserve animation)
+        is_animated_format = file.content_type in ['image/gif', 'image/webp']
+        
+        if not is_animated_format:
+            try:
+                from PIL import Image
+                import io
                 
-                # Resize image
-                image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                # Open image from bytes
+                image = Image.open(io.BytesIO(content))
                 
-                # Convert back to bytes
-                output = io.BytesIO()
-                # Preserve original format, default to PNG if unknown
-                format = image.format or 'PNG'
-                if format not in ['JPEG', 'PNG', 'GIF', 'WEBP']:
-                    format = 'PNG'
-                image.save(output, format=format, optimize=True, quality=85)
-                content = output.getvalue()
-            
-        except ImportError:
-            # Pillow not available, skip resizing
-            pass
-        except Exception as e:
-            logger.info(f"Warning: Failed to resize image: {e}")
-            # Continue with original image
+                # Calculate new size maintaining aspect ratio
+                max_size = 200
+                if image.width > max_size or image.height > max_size:
+                    # Calculate resize dimensions
+                    ratio = min(max_size / image.width, max_size / image.height)
+                    new_width = int(image.width * ratio)
+                    new_height = int(image.height * ratio)
+                    
+                    # Resize image
+                    image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                    
+                    # Convert back to bytes
+                    output = io.BytesIO()
+                    # Preserve original format, default to PNG if unknown
+                    format = image.format or 'PNG'
+                    if format not in ['JPEG', 'PNG', 'WEBP']:
+                        format = 'PNG'
+                    image.save(output, format=format, optimize=True, quality=85)
+                    content = output.getvalue()
+                
+            except ImportError:
+                # Pillow not available, skip resizing
+                pass
+            except Exception as e:
+                logger.info(f"Warning: Failed to resize image: {e}")
+                # Continue with original image
         
         # Save processed file
         with open(file_path, "wb") as f:

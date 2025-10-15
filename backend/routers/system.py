@@ -182,3 +182,60 @@ async def api_debug_database():
     except Exception as e:
         logger.error(f"Failed to get database info: {e}", exc_info=True)
         return {"success": False, "error": str(e), "database_path": DB_PATH}
+
+@router.get("/api/test/message-history")
+async def api_get_message_history():
+    """Get message history for testing and replay"""
+    try:
+        from app import message_history
+        
+        # Convert deque to list and format timestamps
+        history_list = []
+        for msg in message_history:
+            history_list.append({
+                "timestamp": msg["timestamp"],
+                "username": msg["username"],
+                "original_text": msg["original_text"],
+                "filtered_text": msg["filtered_text"],
+                "event_type": msg["event_type"],
+                "was_filtered": msg["was_filtered"]
+            })
+        
+        # Return in reverse order (newest first)
+        return {"success": True, "messages": list(reversed(history_list))}
+    except Exception as e:
+        logger.error(f"Failed to get message history: {e}", exc_info=True)
+        return {"success": False, "error": str(e), "messages": []}
+
+@router.post("/api/test/replay-message")
+async def api_replay_message(payload: Dict[str, Any]):
+    """Replay a message through the TTS pipeline for testing"""
+    try:
+        from app import handle_event
+        import asyncio
+        
+        # Extract message data
+        username = payload.get("username", "TestUser")
+        text = payload.get("text", "")
+        event_type = payload.get("eventType", "chat")
+        
+        if not text:
+            return {"success": False, "error": "No text provided"}
+        
+        # Create event object
+        event = {
+            "user": username,
+            "text": text,
+            "eventType": event_type,
+            "tags": {}  # Empty tags for replay
+        }
+        
+        # Process the message
+        asyncio.create_task(handle_event(event))
+        
+        logger.info(f"🔁 Replaying message from {username}: {text[:50]}...")
+        
+        return {"success": True, "message": "Message sent for processing"}
+    except Exception as e:
+        logger.error(f"Failed to replay message: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}

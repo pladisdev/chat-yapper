@@ -12,21 +12,25 @@ import { useWebSocket } from '../WebSocketContext'
 import VoiceManager from '../components/VoiceManager'
 import GeneralSettings from '../components/settings/GeneralSettings'
 import AvatarManagement from '../components/settings/AvatarManagement'
+import GlowEffectSettings from '../components/settings/GlowEffectSettings'
 import TTSConfiguration from '../components/settings/TTSConfiguration'
-import TwitchIntegrationTab from '../components/settings/TwitchIntegration'
+import PlatformIntegration from '../components/settings/PlatformIntegration'
 import MessageFiltering from '../components/settings/MessageFiltering'
 import AudioFiltersSettings from '../components/settings/AudioFiltersSettings'
+import MessageHistory from '../components/MessageHistory'
+import ExportImportSettings from '../components/settings/ExportImportSettings'
 import { 
   Settings, 
   Image, 
   Mic, 
-  Zap, 
+  Radio, 
   MessageSquare, 
   TestTube2,
   BarChart3,
   CheckCircle2,
   XCircle,
-  Music
+  Music,
+  Database
 } from 'lucide-react'
 
 export default function SettingsPage() {
@@ -112,7 +116,7 @@ export default function SettingsPage() {
         </div>
 
         <Tabs defaultValue="general" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-8 lg:w-auto lg:inline-grid">
+          <TabsList className="grid w-full grid-cols-9 lg:w-auto lg:inline-grid">
             <TabsTrigger value="general" className="flex items-center gap-2">
               <Settings className="w-4 h-4" />
               <span className="hidden sm:inline">General</span>
@@ -129,13 +133,17 @@ export default function SettingsPage() {
               <Music className="w-4 h-4" />
               <span className="hidden sm:inline">Effects</span>
             </TabsTrigger>
-            <TabsTrigger value="twitch" className="flex items-center gap-2">
-              <Zap className="w-4 h-4" />
-              <span className="hidden sm:inline">Twitch</span>
+            <TabsTrigger value="platforms" className="flex items-center gap-2">
+              <Radio className="w-4 h-4" />
+              <span className="hidden sm:inline">Platforms</span>
             </TabsTrigger>
             <TabsTrigger value="filtering" className="flex items-center gap-2">
               <MessageSquare className="w-4 h-4" />
               <span className="hidden sm:inline">Filtering</span>
+            </TabsTrigger>
+            <TabsTrigger value="data" className="flex items-center gap-2">
+              <Database className="w-4 h-4" />
+              <span className="hidden sm:inline">Data</span>
             </TabsTrigger>
             <TabsTrigger value="test" className="flex items-center gap-2">
               <TestTube2 className="w-4 h-4" />
@@ -152,6 +160,10 @@ export default function SettingsPage() {
           </TabsContent>
 
           <TabsContent value="avatars" className="space-y-6">
+            <GlowEffectSettings
+              settings={settings}
+              onUpdate={updateSettings}
+            />
             <AvatarManagement
               managedAvatars={managedAvatars}
               apiUrl={apiUrl}
@@ -172,7 +184,7 @@ export default function SettingsPage() {
           </TabsContent>
 
           <TabsContent value="tts" className="space-y-6">
-            <TTSConfiguration settings={settings} updateSettings={updateSettings} />
+            <TTSConfiguration settings={settings} updateSettings={updateSettings} apiUrl={apiUrl} />
             <VoiceManager managedAvatars={managedAvatars} apiUrl={apiUrl} />
           </TabsContent>
 
@@ -180,16 +192,21 @@ export default function SettingsPage() {
             <AudioFiltersSettings settings={settings} updateSettings={updateSettings} />
           </TabsContent>
 
-          <TabsContent value="twitch" className="space-y-6">
-            <TwitchIntegrationTab settings={settings} updateSettings={updateSettings} allVoices={allVoices} apiUrl={apiUrl} />
+          <TabsContent value="platforms" className="space-y-6">
+            <PlatformIntegration settings={settings} updateSettings={updateSettings} allVoices={allVoices} apiUrl={apiUrl} />
           </TabsContent>
 
           <TabsContent value="filtering" className="space-y-6">
             <MessageFiltering settings={settings} updateSettings={updateSettings} apiUrl={apiUrl} />
           </TabsContent>
 
+          <TabsContent value="data" className="space-y-6">
+            <ExportImportSettings apiUrl={apiUrl} />
+          </TabsContent>
+
           <TabsContent value="test" className="space-y-6">
             <Simulator onSend={simulate} />
+            <MessageHistory apiUrl={apiUrl} />
           </TabsContent>
 
           <TabsContent value="about" className="space-y-6">
@@ -209,12 +226,12 @@ function Simulator({ onSend }) {
   const [userMode, setUserMode] = useState('single') // 'single' or 'random'
   
   const eventTypes = [
-    { value: 'chat', label: '💬 Chat', desc: 'Regular chat message' },
-    { value: 'raid', label: '⚔️ Raid', desc: 'Raid event' },
-    { value: 'bits', label: '💎 Bits', desc: 'Bits/Cheers' },
-    { value: 'sub', label: '⭐ Subscribe', desc: 'New subscription' },
-    { value: 'highlight', label: '✨ Highlight', desc: 'Highlighted message' },
-    { value: 'vip', label: '👑 VIP', desc: 'VIP message' }
+    { value: 'chat', label: 'Chat', desc: 'Regular chat message' },
+    { value: 'raid', label: 'Raid', desc: 'Raid event' },
+    { value: 'bits', label: 'Bits', desc: 'Bits/Cheers' },
+    { value: 'sub', label: 'Subscribe', desc: 'New subscription' },
+    { value: 'highlight', label: 'Highlight', desc: 'Highlighted message' },
+    { value: 'vip', label: 'VIP', desc: 'VIP message' }
   ]
 
   const randomUsernames = [
@@ -262,7 +279,7 @@ function Simulator({ onSend }) {
                 onChange={e => setUserMode(e.target.value)}
                 className="w-4 h-4"
               />
-              <span className="text-sm">🎯 Single User - Test per-user queuing</span>
+              <span className="text-sm">Single User - Test per-user queuing</span>
             </label>
             <label className="flex items-center space-x-2 cursor-pointer">
               <input
@@ -273,7 +290,7 @@ function Simulator({ onSend }) {
                 onChange={e => setUserMode(e.target.value)}
                 className="w-4 h-4"
               />
-              <span className="text-sm">🎲 Random Users - Test parallel audio</span>
+              <span className="text-sm">Random Users - Test parallel audio</span>
             </label>
           </div>
           <p className="text-xs text-muted-foreground">
@@ -373,7 +390,7 @@ function AboutSection() {
             </p>
             <div className="space-y-2 text-sm">
               <div className="flex items-center gap-2">
-                <span className="font-medium">✨ Features:</span>
+                <span className="font-medium">Features:</span>
               </div>
               <ul className="list-disc list-inside ml-4 space-y-1 text-muted-foreground">
                 <li>Voice avatars supporting multi-image avatars</li>
@@ -387,7 +404,7 @@ function AboutSection() {
           <Separator />
 
           <div className="space-y-4">
-            <h3 className="font-medium text-lg">🎥 OBS Studio Integration</h3>
+            <h3 className="font-medium text-lg">OBS Studio Integration</h3>
             <div className="p-4 rounded-lg border bg-card">
               <div className="space-y-3">
                 <p className="text-sm font-medium">Use Chat Yapper with OBS Studio</p>
@@ -396,7 +413,7 @@ function AboutSection() {
                 </p>
                 <div className="space-y-3">
                   <div>
-                    <p className="text-xs font-medium mb-2">📋 Steps to add to OBS:</p>
+                    <p className="text-xs font-medium mb-2">Steps to add to OBS:</p>
                     <ol className="list-decimal list-inside text-xs text-muted-foreground space-y-1 ml-2">
                       <li>In OBS, right-click in Sources and select "Add" → "Browser"</li>
                       <li>Create new source and name it how you like</li>
@@ -437,7 +454,7 @@ function AboutSection() {
           <Separator />
 
           <div className="space-y-4">
-            <h3 className="font-medium text-lg">ℹ️ System Information</h3>
+            <h3 className="font-medium text-lg">System Information</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="p-3 rounded-lg border bg-card">
                 <div className="text-sm font-medium mb-1">Version</div>

@@ -9,6 +9,10 @@
 "avatarSpacing": 150,
 "avatarSpacingX": 180,
 "avatarSpacingY": 100,
+"avatarGlowEnabled": true,
+"avatarGlowColor": "#ffffff",
+"avatarGlowOpacity": 0.9,
+"avatarGlowSize": 20,
 "tts": {
 "monstertts": {
 "apiKey": ""

@@ -2,10 +2,13 @@ from sqlmodel import SQLModel, Session, select, create_engine
 import os
 import sys
 import tempfile
+import json
+import hashlib
+from datetime import datetime
 
 from modules import logger, get_env_var, log_important
 
-from modules.models import Setting, Voice, TwitchAuth, AvatarImage
+from modules.models import Setting, Voice, TwitchAuth, YouTubeAuth, AvatarImage, ProviderVoiceCache
 
 def find_project_root():
     """Find the project root by looking for characteristic files"""
@@ -48,6 +51,12 @@ TWITCH_CLIENT_ID = get_env_var("TWITCH_CLIENT_ID", "")
 TWITCH_CLIENT_SECRET = get_env_var("TWITCH_CLIENT_SECRET", "")
 TWITCH_REDIRECT_URI = f"http://localhost:{os.environ.get('PORT', 8000)}/auth/twitch/callback"
 TWITCH_SCOPE = "chat:read"
+
+# YouTube OAuth Configuration
+YOUTUBE_CLIENT_ID = get_env_var("YOUTUBE_CLIENT_ID", "")
+YOUTUBE_CLIENT_SECRET = get_env_var("YOUTUBE_CLIENT_SECRET", "")
+YOUTUBE_REDIRECT_URI = f"http://localhost:{os.environ.get('PORT', 8000)}/auth/youtube/callback"
+YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl"
 
 AUDIO_DIR = os.environ.get("AUDIO_DIR", os.path.join(find_project_root(), "audio"))
 os.makedirs(AUDIO_DIR, exist_ok=True)
@@ -314,6 +323,89 @@ def get_twitch_token():
     
     return None
 
+# YouTube OAuth functions
+
+def get_youtube_auth():
+    """Get YouTube auth from database"""
+    with Session(engine) as session:
+        auth = session.exec(select(YouTubeAuth)).first()
+        return auth
+    return None
+
+def delete_youtube_auth():
+    """Delete YouTube auth from database"""
+    with Session(engine) as session:
+        auth = session.exec(select(YouTubeAuth)).first()
+        if auth:
+            session.delete(auth)
+            session.commit()
+            return {"success": True}
+        return {"success": False, "error": "No connection found"}
+
+def save_youtube_auth(channel_info: dict, token_data: dict):
+    """Store or update YouTube auth in database"""
+    from datetime import datetime
+    
+    with Session(engine) as session:
+        # Check if auth already exists for this channel
+        existing_auth = session.exec(
+            select(YouTubeAuth).where(YouTubeAuth.channel_id == channel_info["id"])
+        ).first()
+        
+        if existing_auth:
+            # Update existing auth
+            existing_auth.access_token = token_data["access_token"]
+            existing_auth.refresh_token = token_data.get("refresh_token", "")
+            existing_auth.channel_name = channel_info.get("snippet", {}).get("title", "Unknown")
+            existing_auth.updated_at = datetime.now().isoformat()
+            if "expires_in" in token_data:
+                expires_at = datetime.now().timestamp() + token_data["expires_in"]
+                existing_auth.expires_at = datetime.fromtimestamp(expires_at).isoformat()
+        else:
+            # Create new auth
+            expires_at = None
+            if "expires_in" in token_data:
+                expires_at = datetime.fromtimestamp(
+                    datetime.now().timestamp() + token_data["expires_in"]
+                ).isoformat()
+            
+            new_auth = YouTubeAuth(
+                channel_id=channel_info["id"],
+                channel_name=channel_info.get("snippet", {}).get("title", "Unknown"),
+                access_token=token_data["access_token"],
+                refresh_token=token_data.get("refresh_token", ""),
+                expires_at=expires_at,
+                created_at=datetime.now().isoformat(),
+                updated_at=datetime.now().isoformat()
+            )
+            session.add(new_auth)
+        
+        session.commit()
+        logger.info(f"Stored YouTube auth for channel: {channel_info.get('snippet', {}).get('title', 'Unknown')}")
+
+def get_youtube_token():
+    """Get current YouTube token for bot connection"""
+    from datetime import datetime
+    
+    with Session(engine) as session:
+        auth = session.exec(select(YouTubeAuth)).first()
+        if auth:
+            # Check if token needs refresh (if expires_at is set and in the past)
+            if auth.expires_at:
+                expires_at = datetime.fromisoformat(auth.expires_at)
+                if expires_at <= datetime.now():
+                    logger.info("YouTube token expired, attempting refresh...")
+                    # TODO: Implement token refresh
+                    
+            return {
+                "access_token": auth.access_token,
+                "refresh_token": auth.refresh_token,
+                "channel_id": auth.channel_id,
+                "channel_name": auth.channel_name
+            }
+    
+    return None
+
 def get_enabled_voices():
     with Session(engine) as session:
         enabled_voices = session.exec(select(Voice).where(Voice.enabled == True)).all()
@@ -349,10 +441,13 @@ def add_voice(new_voice: Voice):
         session.commit()
         session.refresh(new_voice)
 
-def remove_voice(voice: Voice):
+def remove_voice(voice_id: int):
+    """Remove a voice by its ID"""
     with Session(engine) as session:
-        session.delete(voice)
-        session.commit()
+        voice = session.get(Voice, voice_id)
+        if voice:
+            session.delete(voice)
+            session.commit()
 
 def Debug_Database():
     with Session(engine) as session:
@@ -409,5 +504,92 @@ with Session(engine) as s:
         logger.info("Default settings created and saved to database")
     else:
         logger.info("Existing settings found in database")
+
+
+# ---------- Provider Voice Cache Functions ----------
+
+def get_cached_voices(provider: str, credentials_hash: str = None):
+    """Get cached voice list for a provider"""
+    with Session(engine) as session:
+        query = select(ProviderVoiceCache).where(ProviderVoiceCache.provider == provider)
+        cache = session.exec(query).first()
+        
+        if cache:
+            # Check if credentials match (if hash provided)
+            if credentials_hash and cache.credentials_hash != credentials_hash:
+                logger.info(f"Credentials changed for {provider}, cache invalidated")
+                return None
+            
+            try:
+                voices = json.loads(cache.voices_json)
+                logger.info(f"📦 Loaded {len(voices)} cached voices for {provider} (last updated: {cache.last_updated})")
+                return voices
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse cached voices for {provider}: {e}")
+                return None
+        
+        return None
+
+
+def save_cached_voices(provider: str, voices: list, credentials_hash: str = None):
+    """Save voice list to cache for a provider"""
+    with Session(engine) as session:
+        # Check if cache exists
+        query = select(ProviderVoiceCache).where(ProviderVoiceCache.provider == provider)
+        cache = session.exec(query).first()
+        
+        voices_json = json.dumps(voices)
+        now = datetime.now().isoformat()
+        
+        if cache:
+            # Update existing cache
+            cache.voices_json = voices_json
+            cache.last_updated = now
+            cache.credentials_hash = credentials_hash
+            session.add(cache)
+        else:
+            # Create new cache entry
+            cache = ProviderVoiceCache(
+                provider=provider,
+                voices_json=voices_json,
+                last_updated=now,
+                credentials_hash=credentials_hash
+            )
+            session.add(cache)
+        
+        session.commit()
+        logger.info(f"💾 Saved {len(voices)} voices to cache for {provider}")
+
+
+def clear_voice_cache(provider: str = None):
+    """Clear voice cache for a specific provider or all providers"""
+    with Session(engine) as session:
+        if provider:
+            cache = session.exec(select(ProviderVoiceCache).where(ProviderVoiceCache.provider == provider)).first()
+            if cache:
+                session.delete(cache)
+                session.commit()
+                logger.info(f"🗑️ Cleared voice cache for {provider}")
+        else:
+            # Clear all caches
+            caches = session.exec(select(ProviderVoiceCache)).all()
+            for cache in caches:
+                session.delete(cache)
+            session.commit()
+            logger.info("🗑️ Cleared all voice caches")
+
+
+def hash_credentials(*credentials: str) -> str:
+    """Create a hash of credentials to detect changes
+    
+    Args:
+        *credentials: One or more credential strings to hash
+        
+    Examples:
+        hash_credentials(api_key)  # For single credential (Google)
+        hash_credentials(access_key, secret_key)  # For multiple credentials (Polly)
+    """
+    combined = ":".join(credentials)
+    return hashlib.sha256(combined.encode()).hexdigest()[:16]
 
 

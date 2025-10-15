@@ -259,7 +259,7 @@ function AvatarManagement({
                   <>
                     <div className="text-2xl mb-2">📁</div>
                     <div className="text-sm font-medium">Click to upload single avatar image</div>
-                    <div className="text-xs text-muted-foreground mt-1">PNG, JPG, GIF up to 5MB</div>
+                    <div className="text-xs text-muted-foreground mt-1">PNG, JPG, GIF, WebP up to 5MB</div>
                   </>
                 )}
               </div>
@@ -287,7 +287,6 @@ function AvatarManagement({
                     <div className="text-xs text-yellow-600 dark:text-yellow-400">Enter name first</div>
                   ) : (
                     <>
-                      <div className="text-lg mb-1">😴</div>
                       <div className="text-xs font-medium">Upload default image</div>
                     </>
                   )}
@@ -315,7 +314,6 @@ function AvatarManagement({
                     <div className="text-xs text-yellow-600 dark:text-yellow-400">Enter name first</div>
                   ) : (
                     <>
-                      <div className="text-lg mb-1">🗣️</div>
                       <div className="text-xs font-medium">Upload speaking image</div>
                     </>
                   )}
@@ -408,7 +406,7 @@ function AvatarManagement({
                                 )}
                               </div>
                               <div className={`text-xs font-medium ${avatar.disabled ? 'text-muted-foreground' : ''}`}>
-                                {avatar.avatar_type === 'default' ? '😴 Default' : '🗣️ Speaking'}
+                                {avatar.avatar_type === 'default' ? 'Default' : 'Speaking'}
                                 {avatar.disabled && ' (Disabled)'}
                               </div>
                               <div className="text-xs text-muted-foreground mt-1">

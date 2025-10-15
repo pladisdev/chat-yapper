@@ -220,7 +220,17 @@ bash install-test-deps.sh
 
 ## 📊 Changelog
 
-### v0.5.0 (Latest)
+### v0.6.0 (Latest)
+- ✅ GIF and WebP support for animated avatars
+- ✅ Customizable speaking glow effects (color, opacity, size, enable/disable)
+- ✅ Message history and replay system (stores 100 recent messages)
+- ✅ Export/Import configuration system (backup/restore settings, voices, and avatars)
+- ✅ Persistent voice caching for all TTS providers (MonsterTTS, Google Cloud, Amazon Polly, Edge TTS)
+- ✅ English-only voice filtering for Google Cloud TTS and Edge TTS
+- ✅ Improved audio filter error handling
+- ✅ Enhanced Twitch bot restart logic
+
+### v0.5.0
 - ✅ Initial release with full TTS functionality
 - ✅ Multi-provider TTS support
 - ✅ Voice avatar system
@@ -232,6 +242,11 @@ bash install-test-deps.sh
 
 ## TODO
 
+### In Testing
+- gif/webp support
+- glow effect mamangement
+- import/export feature
+
 ### Features
 - Discord integration
 - Youtube Integration
@@ -240,6 +255,15 @@ bash install-test-deps.sh
 - Allow users to upload an avatar and preferred voice, with streamer allowing user to be added
 - More audio effects
 - Built in sound alert system
+- Sprite sheet support
+- auth token refresh
+- Statistics
+- More TTS options
+- Select scenes
+- Factory Reset
+- Waveform visualization in settings UI
+- Better error recovery for TTS provider failure, network issues, and db corruption
+- Memory Management
 
 ### Bugs
 - None lmao

@@ -208,11 +208,11 @@ function TwitchIntegration({ settings, updateSettings, apiUrl = '' }) {
 
 function SpecialEventVoices({ settings, updateSettings, allVoices }) {
   const events = [
-    { key: 'raid', name: 'Raids', icon: '⚔️', desc: 'When someone raids your stream' },
-    { key: 'bits', name: 'Bits/Cheers', icon: '💎', desc: 'When viewers donate bits' },
-    { key: 'sub', name: 'Subscriptions', icon: '⭐', desc: 'New subscribers' },
-    { key: 'highlight', name: 'Highlights', icon: '✨', desc: 'Highlighted messages' },
-    { key: 'vip', name: 'VIP Messages', icon: '👑', desc: 'Messages from VIPs' }
+    { key: 'raid', name: 'Raids',  desc: 'When someone raids your stream' },
+    { key: 'bits', name: 'Bits/Cheers',  desc: 'When viewers donate bits' },
+    { key: 'sub', name: 'Subscriptions',  desc: 'New subscribers' },
+    { key: 'highlight', name: 'Highlights', desc: 'Highlighted messages' },
+    { key: 'vip', name: 'VIP Messages', desc: 'Messages from VIPs' }
   ]
 
   return (
@@ -241,7 +241,7 @@ function SpecialEventVoices({ settings, updateSettings, allVoices }) {
                 onChange={e => updateSettings({
                   specialVoices: { ...settings.specialVoices, [event.key]: { voiceId: e.target.value } }
                 })}>
-                <option value="">🎲 Random Voice</option>
+                <option value="">Random Voice</option>
                 {allVoices.filter(v => v.enabled).map(v => <option key={v.id} value={v.id}>{v.name} ({v.provider})</option>)}
               </select>
             </div>
