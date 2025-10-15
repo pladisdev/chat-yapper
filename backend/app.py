@@ -365,12 +365,24 @@ def app_save_settings(data: Dict[str, Any]):
         # Just sync the flag if no change
         tts_enabled = new_tts_enabled
     
+    # Check if Twitch settings have changed
+    old_twitch_config = old_settings.get("twitch", {})
+    new_twitch_config = data.get("twitch", {})
+    twitch_settings_changed = (
+        old_twitch_config.get("enabled") != new_twitch_config.get("enabled") or
+        old_twitch_config.get("channel") != new_twitch_config.get("channel")
+    )
+    
     # Use the modules save_settings function but without circular import
     # Save settings first
     save_settings(data)
             
-    # Restart Twitch bot if settings changed
-    asyncio.create_task(restart_twitch_if_needed(data))
+    # Restart Twitch bot only if Twitch settings changed
+    if twitch_settings_changed:
+        logger.info("🔄 Twitch settings changed, restarting bot...")
+        asyncio.create_task(restart_twitch_if_needed(data))
+    else:
+        logger.debug("Twitch settings unchanged, skipping bot restart")
     
     # Regenerate avatar assignments if layout changed
     if avatar_layout_changed:
@@ -404,7 +416,13 @@ async def restart_twitch_if_needed(settings: Dict[str, Any]):
             try:
                 await TwitchTask
             except asyncio.CancelledError:
-                pass
+                logger.info("Twitch bot task cancelled successfully")
+            except Exception as e:
+                # Catch any other errors during cancellation (e.g., twitchio internal errors)
+                logger.warning(f"Error while cancelling Twitch bot task: {e}")
+            
+            # Give it a moment to fully clean up
+            await asyncio.sleep(0.1)
         
         # Start new task if enabled
         if run_twitch_bot and settings.get("twitch", {}).get("enabled"):
@@ -979,7 +997,18 @@ async def process_tts_message(evt: Dict[str, Any]):
             # Use filtered audio and its duration
             path = filtered_path
             audio_duration = filtered_duration
-            logger.info(f"🎚️ Audio filters applied: {path} (new duration: {audio_duration:.2f}s)")
+            
+            # If filter didn't return duration, it means no filters were applied
+            if audio_duration is None:
+                audio_duration = get_audio_duration(path)
+                if path == filtered_path:
+                    # Path unchanged means filters were skipped (no effects enabled)
+                    logger.debug("Audio filters skipped (no individual effects enabled)")
+                else:
+                    # Path changed but no duration means filter processing had an issue
+                    logger.info(f"🎚️ Audio filters applied: {path}")
+            else:
+                logger.info(f"🎚️ Audio filters applied: {path} (new duration: {audio_duration:.2f}s)")
         else:
             # Get audio duration for accurate slot timeout (no filters applied)
             audio_duration = get_audio_duration(path)

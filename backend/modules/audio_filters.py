@@ -80,6 +80,7 @@ class AudioFilterProcessor:
         
         # Check if any filters are enabled
         if not random_filters and not self._has_enabled_filters(filter_settings):
+            logger.debug("No individual audio filters enabled, skipping filter processing")
             return input_path, None
         
         # Generate output filename

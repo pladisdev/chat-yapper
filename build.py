@@ -232,11 +232,11 @@ backend_dir = Path('backend')
 backend_py_files = glob.glob('backend/*.py')
 backend_py_data = [(f, 'backend') for f in backend_py_files]
 
-# Collect all modules directory files
+# Collect all modules directory files (Python and JSON)
 modules_files = []
 for root, dirs, files in os.walk('backend/modules'):
     for file in files:
-        if file.endswith('.py'):
+        if file.endswith('.py') or file.endswith('.json'):
             src_path = os.path.join(root, file)
             # Convert to relative path for destination
             rel_path = os.path.relpath(src_path, 'backend')
@@ -277,7 +277,7 @@ for root, dirs, files in os.walk('backend/public'):
         public_files.append((src_path, dest_path))
 
 data_files = backend_py_data + modules_files + routers_files + public_files + [
-    ('backend/settings_defaults.json', 'backend'),
+    # settings_defaults.json is now collected automatically via modules_files
     ('backend/embedded_config.py', 'backend'),
 ]
 
@@ -424,6 +424,8 @@ a = Analysis(
         'unittest',
         'test',
         'tests',
+        # Exclude railroad (used by pyparsing for diagram generation, not needed at runtime)
+        'railroad',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,

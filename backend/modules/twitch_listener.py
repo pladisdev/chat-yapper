@@ -224,16 +224,27 @@ async def run_twitch_bot(token: str, nick: str, channel: str, on_event: Callable
         # else last-resort run() via a thread to avoid blocking an async caller.
         started = False
 
-        start_coro = getattr(bot, "start", None)
-        if start_coro and asyncio.iscoroutinefunction(start_coro):
-            await bot.start()
-            started = True
+        try:
+            start_coro = getattr(bot, "start", None)
+            if start_coro and asyncio.iscoroutinefunction(start_coro):
+                await bot.start()
+                started = True
+        except AttributeError as attr_err:
+            # Handle twitchio internal errors during startup
+            if bot_logger:
+                bot_logger.warning(f"Twitchio startup error (may be due to cancellation): {attr_err}")
+            raise asyncio.CancelledError() from attr_err
 
         if not started:
-            connect_coro = getattr(bot, "connect", None)
-            if connect_coro and asyncio.iscoroutinefunction(connect_coro):
-                await bot.connect()
-                started = True
+            try:
+                connect_coro = getattr(bot, "connect", None)
+                if connect_coro and asyncio.iscoroutinefunction(connect_coro):
+                    await bot.connect()
+                    started = True
+            except AttributeError as attr_err:
+                if bot_logger:
+                    bot_logger.warning(f"Twitchio connect error (may be due to cancellation): {attr_err}")
+                raise asyncio.CancelledError() from attr_err
 
         if not started:
             # Blocking fallback (older 1.x) — run in executor so our async
@@ -254,8 +265,12 @@ async def run_twitch_bot(token: str, nick: str, channel: str, on_event: Callable
                         await close_method()
                     else:
                         close_method()
+            except AttributeError as attr_err:
+                # Twitchio internal cleanup error (e.g., NoneType has no attribute 'cancel')
+                if bot_logger:
+                    bot_logger.debug(f"Twitchio internal cleanup error (safe to ignore): {attr_err}")
             except Exception as close_err:
-                # Ignore cleanup errors during cancellation
+                # Ignore other cleanup errors during cancellation
                 if bot_logger:
                     bot_logger.debug(f"Error during bot cleanup: {close_err}")
         raise  # Re-raise CancelledError so the task properly terminates

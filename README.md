@@ -235,9 +235,7 @@ bash install-test-deps.sh
 ### Features
 - Discord integration
 - Youtube Integration
-- Fix emote detection system
 - Better placement of avatars in UI
-- Instead of localhost, use DNS
 - Allow mapping of voices to avatars
 - Allow users to upload an avatar and preferred voice, with streamer allowing user to be added
 - More audio effects
