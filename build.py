@@ -104,19 +104,19 @@ def build_frontend():
         sys.exit(1)
     
     # Install dependencies and build
+    # Note: vite.config.js is configured to build directly to backend/public
     run_command("npm install", cwd=frontend_dir)
     run_command("npm run build", cwd=frontend_dir)
     
-    # Copy build to backend/public
+    # Verify the build output exists
     backend_public = Path("backend/public")
-    if backend_public.exists():
-        logger.info("Removing existing backend/public directory")
-        shutil.rmtree(backend_public)
+    if not backend_public.exists() or not (backend_public / "index.html").exists():
+        logger.error(f"Frontend build failed - {backend_public / 'index.html'} not found")
+        print("Frontend build failed - output not found in backend/public")
+        sys.exit(1)
     
-    logger.info(f"Copying frontend build from {frontend_dir / 'dist'} to {backend_public}")
-    shutil.copytree(frontend_dir / "dist", backend_public)
-    logger.info("Frontend built and copied successfully")
-    log_important("Frontend built and copied to backend/public")
+    logger.info("Frontend built successfully")
+    log_important("Frontend built to backend/public")
 
 def create_embedded_env_config():
     """Create embedded environment configuration for the executable"""
@@ -126,8 +126,14 @@ def create_embedded_env_config():
     twitch_client_id = os.environ.get("TWITCH_CLIENT_ID", "")
     twitch_client_secret = os.environ.get("TWITCH_CLIENT_SECRET", "")
     
+    # Read YouTube environment variables from .env
+    youtube_client_id = os.environ.get("YOUTUBE_CLIENT_ID", "")
+    youtube_client_secret = os.environ.get("YOUTUBE_CLIENT_SECRET", "")
+    
     logger.info(f"Found Twitch Client ID: {'Yes' if twitch_client_id else 'No'}")
     logger.info(f"Found Twitch Client Secret: {'Yes' if twitch_client_secret else 'No'}")
+    logger.info(f"Found YouTube Client ID: {'Yes' if youtube_client_id else 'No'}")
+    logger.info(f"Found YouTube Client Secret: {'Yes' if youtube_client_secret else 'No'}")
     
     # Create embedded config Python file
     config_content = f'''"""
@@ -139,11 +145,17 @@ Generated during build process from .env file.
 EMBEDDED_TWITCH_CLIENT_ID = "{twitch_client_id}"
 EMBEDDED_TWITCH_CLIENT_SECRET = "{twitch_client_secret}"
 
+# YouTube OAuth Configuration embedded from build-time .env file
+EMBEDDED_YOUTUBE_CLIENT_ID = "{youtube_client_id}"
+EMBEDDED_YOUTUBE_CLIENT_SECRET = "{youtube_client_secret}"
+
 def get_embedded_env(key, default=""):
     """Get embedded environment variable by key"""
     embedded_vars = {{
         "TWITCH_CLIENT_ID": EMBEDDED_TWITCH_CLIENT_ID,
         "TWITCH_CLIENT_SECRET": EMBEDDED_TWITCH_CLIENT_SECRET,
+        "YOUTUBE_CLIENT_ID": EMBEDDED_YOUTUBE_CLIENT_ID,
+        "YOUTUBE_CLIENT_SECRET": EMBEDDED_YOUTUBE_CLIENT_SECRET,
     }}
     return embedded_vars.get(key, default)
 '''
@@ -155,6 +167,7 @@ def get_embedded_env(key, default=""):
     
     logger.info(f"Created embedded config: {config_path}")
     log_important(f"Embedded Twitch config {'with' if twitch_client_id else 'without'} credentials")
+    log_important(f"Embedded YouTube config {'with' if youtube_client_id else 'without'} credentials")
     
     return config_path
 
@@ -380,6 +393,19 @@ a = Analysis(
         'botocore.exceptions',
         'botocore.exceptions.BotoCoreError',
         'botocore.exceptions.ClientError',
+        # Google API for YouTube integration
+        'google',
+        'google.auth',
+        'google.auth.transport',
+        'google.auth.transport.requests',
+        'google.oauth2',
+        'google.oauth2.credentials',
+        'google_auth_oauthlib',
+        'google_auth_oauthlib.flow',
+        'googleapiclient',
+        'googleapiclient.discovery',
+        'googleapiclient.errors',
+        'googleapiclient.http',
         # Fix for jaraco.text missing dependency
         'jaraco',
         'jaraco.text',

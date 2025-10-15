@@ -1,7 +1,10 @@
 import asyncio
-from typing import Callable, Dict, Any, Optional
+from typing import Callable, Dict, Any, Optional, TYPE_CHECKING
 from datetime import datetime, timedelta
 from modules import logger
+
+if TYPE_CHECKING:
+    from google.oauth2.credentials import Credentials
 
 try:
     from google.oauth2.credentials import Credentials
@@ -12,12 +15,14 @@ except ImportError as e:
     logger.error(f"Failed to import YouTube dependencies: {e}")
     logger.info("Please install: pip install google-auth google-auth-oauthlib google-api-python-client")
     YOUTUBE_AVAILABLE = False
+    Credentials = None  # type: ignore
+    HttpError = Exception
 
 
 class YouTubeListener:
     """YouTube Live Chat listener using YouTube Data API v3"""
     
-    def __init__(self, credentials: Credentials, video_id: Optional[str] = None):
+    def __init__(self, credentials: Any, video_id: Optional[str] = None):
         """
         Initialize YouTube listener
         
@@ -297,7 +302,7 @@ class YouTubeListener:
         logger.info("YouTube chat listener stop requested")
 
 
-async def run_youtube_bot(credentials: Credentials, video_id: Optional[str] = None, 
+async def run_youtube_bot(credentials: Any, video_id: Optional[str] = None, 
                          on_event: Callable[[Dict[str, Any]], None] = None):
     """
     Main entry point for YouTube listener

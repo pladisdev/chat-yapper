@@ -125,8 +125,7 @@ class TwitchBot(commands.Bot):
         tags = _normalize_tags(tags_in)
         msgid = (tags.get("msg-id") or "").lower()
         user = tags.get("display-name") or tags.get("login") or "unknown"
-        text = tags.get("system-msg") or ""
-
+        
         etype = {
             "sub": "sub",
             "resub": "sub",
@@ -136,6 +135,15 @@ class TwitchBot(commands.Bot):
             "raid": "raid",
             "bitsbadgetier": "bits",
         }.get(msgid, "chat")
+        
+        # For subscription events, check if there's an actual user message attached
+        # If not, send empty text so TTS doesn't read the system notification
+        if etype == "sub":
+            # User messages in sub events are in the 'message' tag, not 'system-msg'
+            text = tags.get("message") or ""
+        else:
+            # For other events (raids, bits), system-msg is appropriate
+            text = tags.get("system-msg") or ""
 
         self.on_event_cb({
             "type": "notice",

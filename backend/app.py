@@ -1014,11 +1014,18 @@ async def process_tts_message(evt: Dict[str, Any]):
     username = evt.get('user', 'unknown')
     username_lower = username.lower()
     
+    # Skip TTS if there's no text to speak (e.g., subscription notifications without messages)
+    text = evt.get("text", "").strip()
+    if not text:
+        event_type = evt.get("eventType", "chat")
+        logger.info(f"⏭️ Skipping TTS for {username} - no text to speak (eventType: {event_type})")
+        return
+    
     # Track this job for cancellation
     task = asyncio.current_task()
     active_tts_jobs[username_lower] = {
         "task": task,
-        "message": evt.get("text", "")
+        "message": text
     }
     
     settings = app_get_settings()
