@@ -9,13 +9,13 @@ from pathlib import Path
 from typing import List
 
 from fastapi import APIRouter, UploadFile, Form, HTTPException
-from sqlmodel import Session, select
-
-from modules import (
-    logger, engine, PERSISTENT_AVATARS_DIR, PUBLIC_DIR
+from modules.persistent_data import (
+    PUBLIC_DIR, PERSISTENT_AVATARS_DIR,
+    delete_avatar, get_avatar, get_avatars, get_all_avatars, add_avatar, update_avatar,
+    delete_avatar_group, update_avatar_group_position, toggle_avatar_group_disabled
 )
 from modules.models import AvatarImage
-
+from modules import logger
 router = APIRouter()
 
 @router.get("/api/avatars")
@@ -62,14 +62,7 @@ async def api_upload_avatar(file: UploadFile, avatar_name: str = Form(...), avat
             return {"error": "File size must be less than 5MB", "success": False}
         
         # Check for existing avatar with same name and type for replacement
-        existing_avatar = None
-        with Session(engine) as session:
-            query = select(AvatarImage).where(
-                AvatarImage.name == avatar_name,
-                AvatarImage.avatar_type == avatar_type
-            )
-            existing_avatar = session.exec(query).first()
-        
+        existing_avatar = get_avatar(avatar_name, avatar_type)
         # Use the persistent avatars directory for uploads
         avatars_dir = PERSISTENT_AVATARS_DIR
         logger.info(f"Saving avatar to persistent directory: {avatars_dir}")
@@ -129,41 +122,47 @@ async def api_upload_avatar(file: UploadFile, avatar_name: str = Form(...), avat
             f.write(content)
         
         # Save to database (update existing or create new)
-        with Session(engine) as session:
-            if existing_avatar:
-                # Update existing avatar
-                existing_avatar.upload_date = str(int(time.time()))
-                existing_avatar.file_size = len(content)
-                existing_avatar.avatar_group_id = avatar_group_id or existing_avatar.avatar_group_id
-                session.add(existing_avatar)
-                session.commit()
-                session.refresh(existing_avatar)
-                avatar = existing_avatar
-            else:
-                # Create new avatar
-                avatar = AvatarImage(
-                    name=avatar_name,
-                    filename=unique_filename,
-                    file_path=f"/user_avatars/{unique_filename}",
-                    upload_date=str(int(time.time())),
-                    file_size=len(content),
-                    avatar_type=avatar_type,
-                    avatar_group_id=avatar_group_id
-                )
-                session.add(avatar)
-                session.commit()
-                session.refresh(avatar)
+       
+        if existing_avatar:
+            # Update existing avatar
+            existing_avatar.upload_date = str(int(time.time()))
+            existing_avatar.file_size = len(content)
+            existing_avatar.avatar_group_id = avatar_group_id or existing_avatar.avatar_group_id
+            
+            avatar = existing_avatar
+            update_avatar(avatar)
+        else:
+            # Create new avatar
+            avatar = AvatarImage(
+                name=avatar_name,
+                filename=unique_filename,
+                file_path=f"/user_avatars/{unique_filename}",
+                upload_date=str(int(time.time())),
+                file_size=len(content),
+                avatar_type=avatar_type,
+                avatar_group_id=avatar_group_id
+            )
+            add_avatar(avatar)
         
         # Broadcast refresh message to all connected clients and regenerate slot assignments
         # Import here to avoid circular imports
-        from app import hub, generate_avatar_slot_assignments, avatar_slot_assignments, avatar_assignments_generation_id, active_avatar_slots, avatar_message_queue
+        from app import hub, avatar_message_queue
+        from modules.avatars import (generate_avatar_slot_assignments, get_active_avatar_slots,
+                                     get_avatar_slot_assignments, get_avatar_assignments_generation_id)
         
         # Regenerate avatar slot assignments since available avatars changed
-        active_avatar_slots.clear()
+        get_active_avatar_slots().clear()
         avatar_message_queue.clear()
         generate_avatar_slot_assignments()
         
-        # Broadcast avatar update message (slot updates are handled by generate_avatar_slot_assignments)
+        # Broadcast avatar slots update to yappers page
+        asyncio.create_task(hub.broadcast({
+            "type": "avatar_slots_updated",
+            "slots": get_avatar_slot_assignments(),
+            "generationId": get_avatar_assignments_generation_id()
+        }))
+        
+        # Also broadcast avatar update message for settings page
         asyncio.create_task(hub.broadcast({
             "type": "avatar_updated",
             "message": f"Avatar '{avatar.name}' uploaded"
@@ -189,26 +188,25 @@ async def api_upload_avatar(file: UploadFile, avatar_name: str = Form(...), avat
 async def api_get_managed_avatars():
     """Get list of user-uploaded avatar images"""
     try:
-        with Session(engine) as session:
-            avatars = session.exec(select(AvatarImage)).all()
-            return {
-                "avatars": [
-                    {
-                        "id": avatar.id,
-                        "name": avatar.name,
-                        "filename": avatar.filename,
-                        "file_path": avatar.file_path,
-                        "file_size": avatar.file_size,
-                        "upload_date": avatar.upload_date,
-                        "avatar_type": avatar.avatar_type,
-                        "avatar_group_id": avatar.avatar_group_id,
-                        "voice_id": avatar.voice_id,
-                        "spawn_position": avatar.spawn_position,
-                        "disabled": avatar.disabled
-                    }
-                    for avatar in avatars
-                ]
-            }
+        avatars = get_all_avatars()      
+        return {
+            "avatars": [
+                {
+                    "id": avatar.id,
+                    "name": avatar.name,
+                    "filename": avatar.filename,
+                    "file_path": avatar.file_path,
+                    "file_size": avatar.file_size,
+                    "upload_date": avatar.upload_date,
+                    "avatar_type": avatar.avatar_type,
+                    "avatar_group_id": avatar.avatar_group_id,
+                    "voice_id": avatar.voice_id,
+                    "spawn_position": avatar.spawn_position,
+                    "disabled": avatar.disabled
+                }
+                for avatar in avatars
+            ]
+        }
     except Exception as e:
         return {"avatars": [], "error": str(e)}
 
@@ -216,36 +214,32 @@ async def api_get_managed_avatars():
 async def api_delete_avatar(avatar_id: int):
     """Delete an uploaded avatar image"""
     try:
-        with Session(engine) as session:
-            avatar = session.get(AvatarImage, avatar_id)
-            if not avatar:
-                return {"error": "Avatar not found", "success": False}
-            
-            # Delete file from disk (user-uploaded avatars are in persistent directory)
-            full_path = os.path.join(PERSISTENT_AVATARS_DIR, avatar.filename)
-            if os.path.exists(full_path):
-                os.remove(full_path)
-                logger.info(f"🗑️  Deleted avatar file: {full_path}")
-            
-            # Delete from database
-            session.delete(avatar)
-            session.commit()
-            
-            # Broadcast refresh message and regenerate slot assignments
-            from app import hub, generate_avatar_slot_assignments, avatar_slot_assignments, avatar_assignments_generation_id, active_avatar_slots, avatar_message_queue
-            
-            # Regenerate avatar slot assignments since available avatars changed
-            active_avatar_slots.clear()
-            avatar_message_queue.clear()
-            generate_avatar_slot_assignments()
-            
-            # Broadcast avatar update message (slot updates are handled by generate_avatar_slot_assignments)
-            asyncio.create_task(hub.broadcast({
-                "type": "avatar_updated", 
-                "message": "Avatar deleted"
-            }))
-            
-            return {"success": True}
+        delete_avatar(avatar_id)
+        
+        # Broadcast refresh message and regenerate slot assignments
+        from app import hub, avatar_message_queue
+        from modules.avatars import (generate_avatar_slot_assignments, get_active_avatar_slots,
+                                     get_avatar_slot_assignments, get_avatar_assignments_generation_id)
+        
+        # Regenerate avatar slot assignments since available avatars changed
+        get_active_avatar_slots().clear()
+        avatar_message_queue.clear()
+        generate_avatar_slot_assignments()
+        
+        # Broadcast avatar slots update to yappers page
+        asyncio.create_task(hub.broadcast({
+            "type": "avatar_slots_updated",
+            "slots": get_avatar_slot_assignments(),
+            "generationId": get_avatar_assignments_generation_id()
+        }))
+        
+        # Also broadcast avatar update message for settings page
+        asyncio.create_task(hub.broadcast({
+            "type": "avatar_updated", 
+            "message": "Avatar deleted"
+        }))
+        
+        return {"success": True}
     
     except Exception as e:
         return {"error": str(e), "success": False}
@@ -254,50 +248,25 @@ async def api_delete_avatar(avatar_id: int):
 async def api_delete_avatar_group(group_id: str):
     """Delete an entire avatar group (all avatars with the same group_id)"""
     try:
-        with Session(engine) as session:
-            # Find all avatars in the group
-            if group_id.startswith('single_'):
-                # Handle single avatars (group_id is like "single_123")
-                avatar_id = int(group_id.replace('single_', ''))
-                avatars = [session.get(AvatarImage, avatar_id)]
-                if not avatars[0]:
-                    return {"error": "Avatar not found", "success": False}
-            else:
-                # Handle grouped avatars
-                avatars = session.exec(
-                    select(AvatarImage).where(AvatarImage.avatar_group_id == group_id)
-                ).all()
-                
-                if not avatars:
-                    return {"error": "Avatar group not found", "success": False}
-            
-            # Delete files from disk and database
-            for avatar in avatars:
-                if avatar:  # Check in case of single avatar that might be None
-                    full_path = os.path.join(PERSISTENT_AVATARS_DIR, avatar.filename)
-                    if os.path.exists(full_path):
-                        os.remove(full_path)
-                        logger.info(f"🗑️  Deleted avatar file: {full_path}")
-                    session.delete(avatar)
-            
-            session.commit()
-            
-            # Broadcast refresh message and regenerate slot assignments
-            from app import hub, generate_avatar_slot_assignments, avatar_slot_assignments, avatar_assignments_generation_id, active_avatar_slots, avatar_message_queue
-            
-            # Regenerate avatar slot assignments since available avatars changed
-            active_avatar_slots.clear()
-            avatar_message_queue.clear()
-            generate_avatar_slot_assignments()
-            
-            # Broadcast avatar update message (slot updates are handled by generate_avatar_slot_assignments)
-            asyncio.create_task(hub.broadcast({
-                "type": "avatar_updated",
-                "message": "Avatar group deleted"
-            }))
-            
-            return {"success": True, "deleted_count": len([a for a in avatars if a])}
-    
+        result = delete_avatar_group(group_id)
+        from app import hub, avatar_message_queue
+        from modules.avatars import (generate_avatar_slot_assignments, get_active_avatar_slots,
+                                     get_avatar_slot_assignments, get_avatar_assignments_generation_id)
+        get_active_avatar_slots().clear()
+        avatar_message_queue.clear()
+        generate_avatar_slot_assignments()
+        # Broadcast avatar slots update to yappers page
+        asyncio.create_task(hub.broadcast({
+            "type": "avatar_slots_updated",
+            "slots": get_avatar_slot_assignments(),
+            "generationId": get_avatar_assignments_generation_id()
+        }))
+        # Also broadcast avatar update message for settings page
+        asyncio.create_task(hub.broadcast({
+            "type": "avatar_updated",
+            "message": "Avatar group deleted"
+        }))
+        return result
     except Exception as e:
         return {"error": str(e), "success": False}
 
@@ -305,89 +274,27 @@ async def api_delete_avatar_group(group_id: str):
 async def api_update_avatar_position(group_id: str, position_data: dict):
     """Update spawn position assignment for an avatar group"""
     try:
-        spawn_position = position_data.get("spawn_position")  # None means random, 1-6 means specific slot
+        spawn_position = position_data.get("spawn_position")
+        result = update_avatar_group_position(group_id, spawn_position)
         
-        with Session(engine) as session:
-            # Find all avatars in the group
-            if group_id.startswith('single_'):
-                # Handle single avatars
-                avatar_id = int(group_id.replace('single_', ''))
-                avatars = [session.get(AvatarImage, avatar_id)]
-                if not avatars[0]:
-                    return {"error": "Avatar not found", "success": False}
-            else:
-                # Handle grouped avatars
-                avatars = session.exec(
-                    select(AvatarImage).where(AvatarImage.avatar_group_id == group_id)
-                ).all()
-                
-                if not avatars:
-                    return {"error": "Avatar group not found", "success": False}
-            
-            # Update spawn_position for all avatars in the group
-            for avatar in avatars:
-                if avatar:
-                    avatar.spawn_position = spawn_position
-                    session.add(avatar)
-            
-            session.commit()
-            
-            # Broadcast refresh message and regenerate slot assignments
-            from app import hub, generate_avatar_slot_assignments, avatar_slot_assignments, avatar_assignments_generation_id, active_avatar_slots, avatar_message_queue
-            
-            # Regenerate avatar slot assignments since spawn positions changed
-            active_avatar_slots.clear()
-            avatar_message_queue.clear()
-            generate_avatar_slot_assignments()
-            
-            asyncio.create_task(hub.broadcast({
-                "type": "avatar_updated",
-                "message": "Avatar spawn position updated"
-            }))
-            
-
-            
-            return {"success": True, "updated_count": len([a for a in avatars if a])}
-    
-    except Exception as e:
-        return {"error": str(e), "success": False}
-
-@router.put("/api/avatars/{avatar_id}/toggle-disabled")
-async def api_toggle_avatar_disabled(avatar_id: int):
-    """Toggle the disabled status of an avatar"""
-    try:
-        with Session(engine) as session:
-            avatar = session.get(AvatarImage, avatar_id)
-            if not avatar:
-                return {"error": "Avatar not found", "success": False}
-            
-            # Toggle the disabled status
-            avatar.disabled = not avatar.disabled
-            session.add(avatar)
-            session.commit()
-            
-            # Broadcast refresh message and regenerate slot assignments
-            from app import hub, generate_avatar_slot_assignments, avatar_slot_assignments, avatar_assignments_generation_id, active_avatar_slots, avatar_message_queue
-            
-            # Regenerate avatar slot assignments since available avatars changed
-            active_avatar_slots.clear()
-            avatar_message_queue.clear()
-            generate_avatar_slot_assignments()
-            
-            asyncio.create_task(hub.broadcast({
-                "type": "avatar_updated",
-                "message": f"Avatar {'disabled' if avatar.disabled else 'enabled'}"
-            }))
-            
-
-            
-            return {
-                "success": True,
-                "avatar_id": avatar_id,
-                "disabled": avatar.disabled,
-                "message": f"Avatar {'disabled' if avatar.disabled else 'enabled'}"
-            }
-    
+        from app import hub, avatar_message_queue
+        from modules.avatars import (generate_avatar_slot_assignments, get_active_avatar_slots,
+                                     get_avatar_slot_assignments, get_avatar_assignments_generation_id)
+        get_active_avatar_slots().clear()
+        avatar_message_queue.clear()
+        generate_avatar_slot_assignments()
+        # Broadcast avatar slots update to yappers page
+        asyncio.create_task(hub.broadcast({
+            "type": "avatar_slots_updated",
+            "slots": get_avatar_slot_assignments(),
+            "generationId": get_avatar_assignments_generation_id()
+        }))
+        # Also broadcast avatar update message for settings page
+        asyncio.create_task(hub.broadcast({
+            "type": "avatar_updated",
+            "message": "Avatar spawn position updated"
+        }))
+        return result
     except Exception as e:
         return {"error": str(e), "success": False}
 
@@ -395,77 +302,112 @@ async def api_toggle_avatar_disabled(avatar_id: int):
 async def api_toggle_avatar_group_disabled(group_id: str):
     """Toggle the disabled status of an entire avatar group"""
     try:
-        with Session(engine) as session:
-            # Find all avatars in the group
-            if group_id.startswith('single_'):
-                # Handle single avatars (group_id is like "single_123")
-                avatar_id = int(group_id.replace('single_', ''))
-                avatars = [session.get(AvatarImage, avatar_id)]
-                if not avatars[0]:
-                    return {"error": "Avatar not found", "success": False}
-            else:
-                # Handle grouped avatars (pairs)
-                avatars = session.exec(
-                    select(AvatarImage).where(AvatarImage.avatar_group_id == group_id)
-                ).all()
-                
-                if not avatars:
-                    return {"error": "Avatar group not found", "success": False}
-            
-            # Check current disabled status - if any avatar is enabled, we disable all
-            # If all are disabled, we enable all
-            any_enabled = any(not avatar.disabled for avatar in avatars if avatar)
-            new_disabled_status = any_enabled  # If any enabled, disable all; if all disabled, enable all
-            
-            # Update disabled status for all avatars in the group
-            updated_count = 0
-            for avatar in avatars:
-                if avatar:
-                    avatar.disabled = new_disabled_status
-                    session.add(avatar)
-                    updated_count += 1
-            
-            session.commit()
-            
-            # Broadcast refresh message and regenerate slot assignments
-            from app import hub, generate_avatar_slot_assignments, avatar_slot_assignments, avatar_assignments_generation_id, active_avatar_slots, avatar_message_queue
-            
-            # Regenerate avatar slot assignments since available avatars changed
-            active_avatar_slots.clear()
-            avatar_message_queue.clear()
-            generate_avatar_slot_assignments()
-            
-            asyncio.create_task(hub.broadcast({
-                "type": "avatar_updated",
-                "message": f"Avatar group {'disabled' if new_disabled_status else 'enabled'}"
-            }))
-            
-
-            
-            return {
-                "success": True,
-                "group_id": group_id,
-                "disabled": new_disabled_status,
-                "updated_count": updated_count,
-                "message": f"Avatar group {'disabled' if new_disabled_status else 'enabled'}"
-            }
-    
+        result = toggle_avatar_group_disabled(group_id)
+        from app import hub, avatar_message_queue
+        from modules.avatars import (generate_avatar_slot_assignments, get_active_avatar_slots,
+                                     get_avatar_slot_assignments, get_avatar_assignments_generation_id)
+        get_active_avatar_slots().clear()
+        avatar_message_queue.clear()
+        generate_avatar_slot_assignments()
+        # Broadcast avatar slots update to yappers page
+        asyncio.create_task(hub.broadcast({
+            "type": "avatar_slots_updated",
+            "slots": get_avatar_slot_assignments(),
+            "generationId": get_avatar_assignments_generation_id()
+        }))
+        # Also broadcast avatar update message for settings page
+        asyncio.create_task(hub.broadcast({
+            "type": "avatar_updated",
+            "message": f"Avatar group {'disabled' if result.get('disabled') else 'enabled'}"
+        }))
+        return result
     except Exception as e:
         return {"error": str(e), "success": False}
 
 @router.post("/api/avatars/re-randomize")
-async def api_re_randomize_avatars():
-    """Trigger avatar re-randomization on the Yappers page"""
+@router.post("/api/avatar-slots/regenerate")
+async def api_regenerate_avatar_slots():
+    """Force regeneration of avatar slot assignments (re-randomize avatars)"""
     try:
-        # Broadcast a message to all WebSocket clients to re-randomize avatars
-        from app import hub
-        asyncio.create_task(hub.broadcast({
-            "type": "re_randomize_avatars",
-            "message": "Avatar assignments re-randomized"
-        }))
+        from app import hub, avatar_message_queue
+        from modules.avatars import (generate_avatar_slot_assignments, get_active_avatar_slots,
+                                     get_avatar_slot_assignments, get_avatar_assignments_generation_id)
         
-        logger.info("Avatar re-randomization triggered")
-        return {"success": True, "message": "Avatar assignments will be re-randomized"}
+        # Clear any active slots to avoid conflicts
+        get_active_avatar_slots().clear()
+        avatar_message_queue.clear()
+        
+        # Regenerate assignments
+        generate_avatar_slot_assignments()
+        
+        # Broadcast to all clients to update their assignments
+        await hub.broadcast({
+            "type": "avatar_slots_updated",
+            "slots": get_avatar_slot_assignments(),
+            "generationId": get_avatar_assignments_generation_id()
+        })
+        
+        logger.info(f"🎲 Avatar slots regenerated (generation #{get_avatar_assignments_generation_id()})")
+        
+        return {
+            "success": True,
+            "slots": get_avatar_slot_assignments(),
+            "generationId": get_avatar_assignments_generation_id(),
+            "message": "Avatar slots regenerated"
+        }
     except Exception as e:
-        logger.error(f"Avatar re-randomization failed: {e}", exc_info=True)
+        logger.error(f"Failed to regenerate avatar slots: {e}")
         return {"success": False, "error": str(e)}
+
+@router.post("/api/avatar-slots/{slot_id}/release")
+async def api_release_avatar_slot(slot_id: str):
+    """Manually release an avatar slot (for debugging/management)"""
+    try:
+        from modules.avatars import release_avatar_slot, get_active_avatar_slots
+        
+        active_avatar_slots = get_active_avatar_slots()
+        if slot_id in active_avatar_slots:
+            user = active_avatar_slots[slot_id]["user"]
+            release_avatar_slot(slot_id)
+            return {
+                "success": True,
+                "message": f"Released slot {slot_id} (was used by {user})"
+            }
+        else:
+            return {
+                "success": False,
+                "message": f"Slot {slot_id} was not active"
+            }
+    except Exception as e:
+        logger.error(f"Failed to release slot {slot_id}: {e}")
+        return {"success": False, "error": str(e)}
+
+@router.get("/api/avatar-slots/queue")
+async def api_get_avatar_queue():
+    """Get current avatar message queue status"""
+    try:
+        from app import avatar_message_queue
+        from modules.avatars import get_active_avatar_slots, get_avatar_slot_assignments
+        
+        active_avatar_slots = get_active_avatar_slots()
+        avatar_slot_assignments = get_avatar_slot_assignments()
+        
+        queue_info = []
+        for i, item in enumerate(avatar_message_queue):
+            queue_info.append({
+                "position": i + 1,
+                "user": item["message_data"].get("user", "unknown"),
+                "text": item["message_data"].get("text", "")[:50] + "..." if len(item["message_data"].get("text", "")) > 50 else item["message_data"].get("text", ""),
+                "queued_time": item["queued_time"],
+                "wait_time": time.time() - item["queued_time"]
+            })
+        
+        return {
+            "queue": queue_info,
+            "length": len(avatar_message_queue),
+            "active_slots": len(active_avatar_slots),
+            "total_slots": len(avatar_slot_assignments)
+        }
+    except Exception as e:
+        logger.error(f"Failed to get avatar queue: {e}")
+        return {"queue": [], "length": 0, "active_slots": 0, "total_slots": 0}

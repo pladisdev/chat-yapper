@@ -181,7 +181,7 @@ export default function SettingsPage() {
           </TabsContent>
 
           <TabsContent value="twitch" className="space-y-6">
-            <TwitchIntegrationTab settings={settings} updateSettings={updateSettings} allVoices={allVoices} />
+            <TwitchIntegrationTab settings={settings} updateSettings={updateSettings} allVoices={allVoices} apiUrl={apiUrl} />
           </TabsContent>
 
           <TabsContent value="filtering" className="space-y-6">

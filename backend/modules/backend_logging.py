@@ -49,6 +49,3 @@ def setup_backend_logging():
 # Initialize backend logging
 logger = setup_backend_logging()
 
-def log_important(message):
-    """Log important messages that should appear in both console and file"""
-    logger.warning(f"IMPORTANT: {message}")  # WARNING level ensures console output

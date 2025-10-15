@@ -10,7 +10,7 @@ import {
   CheckCircle2
 } from 'lucide-react'
 
-function TwitchIntegration({ settings, updateSettings }) {
+function TwitchIntegration({ settings, updateSettings, apiUrl = '' }) {
   const [twitchStatus, setTwitchStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [channelInput, setChannelInput] = useState('');
@@ -29,7 +29,7 @@ function TwitchIntegration({ settings, updateSettings }) {
 
   const checkTwitchStatus = async () => {
     try {
-      const response = await fetch('/api/twitch/status');
+      const response = await fetch(`${apiUrl}/api/twitch/status`);
       const status = await response.json();
       setTwitchStatus(status);
     } catch (error) {
@@ -39,8 +39,8 @@ function TwitchIntegration({ settings, updateSettings }) {
   };
 
   const connectToTwitch = () => {
-    // Open OAuth flow in same window
-    window.location.href = '/auth/twitch';
+    // Open OAuth flow - use backend URL for authentication
+    window.location.href = `${apiUrl}/auth/twitch`;
   };
 
   // Check for error parameter in URL
@@ -60,7 +60,7 @@ function TwitchIntegration({ settings, updateSettings }) {
     
     setLoading(true);
     try {
-      const response = await fetch('/api/twitch/disconnect', { method: 'DELETE' });
+      const response = await fetch(`${apiUrl}/api/twitch/disconnect`, { method: 'DELETE' });
       const result = await response.json();
       
       if (result.success) {
@@ -220,7 +220,7 @@ function SpecialEventVoices({ settings, updateSettings, allVoices }) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Zap className="w-5 h-5 text-yellow-500" />
-          Special Event Voices
+          Special Event Voices (Experimental)
         </CardTitle>
         <CardDescription>Assign specific voices to different Twitch events</CardDescription>
       </CardHeader>
@@ -255,10 +255,10 @@ function SpecialEventVoices({ settings, updateSettings, allVoices }) {
 // Export both components individually for flexibility, and a combined component as default
 export { TwitchIntegration, SpecialEventVoices }
 
-export default function TwitchIntegrationTab({ settings, updateSettings, allVoices }) {
+export default function TwitchIntegrationTab({ settings, updateSettings, allVoices, apiUrl }) {
   return (
     <div className="space-y-6">
-      <TwitchIntegration settings={settings} updateSettings={updateSettings} />
+      <TwitchIntegration settings={settings} updateSettings={updateSettings} apiUrl={apiUrl} />
       <SpecialEventVoices settings={settings} updateSettings={updateSettings} allVoices={allVoices} />
     </div>
   )

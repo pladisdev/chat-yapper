@@ -5,12 +5,10 @@ Supports: reverb, echo, pitch shift, speed change, and random combinations.
 import os
 import random
 import subprocess
-import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
-logger = logging.getLogger(__name__)
-
+from modules import logger
 
 class AudioFilterProcessor:
     """

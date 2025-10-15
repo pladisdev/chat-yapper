@@ -246,6 +246,8 @@ bash install-test-deps.sh
 ### Bugs
 - None lmao
 
+---
+
 **Made with ❤️ for the streaming community**
 
 For support, questions, or feature requests, please open an issue on GitHub or email Pladis at pladisdev@gmail.com.

@@ -1,12 +1,8 @@
 import asyncio
-import logging
 from typing import Callable, Dict, Any
-
+from modules import logger
 from twitchio.ext import commands
 import twitchio
-
-# Get logger for this module
-logger = logging.getLogger('ChatYapper.Twitch')
 
 def _ti_major() -> int:
     try:

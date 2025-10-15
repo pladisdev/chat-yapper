@@ -364,20 +364,25 @@ function MessageFiltering({ settings, updateSettings, apiUrl }) {
                 </Label>
               </div>
 
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="skipEmotes"
-                  checked={settings.messageFiltering?.skipEmotes ?? false}
-                  onCheckedChange={checked => updateSettings({ 
-                    messageFiltering: { 
-                      ...settings.messageFiltering, 
-                      skipEmotes: checked 
-                    } 
-                  })}
-                />
-                <Label htmlFor="skipEmotes" className="text-sm font-normal">
-                  Skip Emote-Only Messages (experimental)
-                </Label>
+              <div className="space-y-1">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="skipEmotes"
+                    checked={settings.messageFiltering?.skipEmotes ?? false}
+                    onCheckedChange={checked => updateSettings({ 
+                      messageFiltering: { 
+                        ...settings.messageFiltering, 
+                        skipEmotes: checked 
+                      } 
+                    })}
+                  />
+                  <Label htmlFor="skipEmotes" className="text-sm font-normal">
+                    Remove Emotes from Messages
+                  </Label>
+                </div>
+                <p className="text-xs text-muted-foreground ml-6">
+                  Uses Twitch emote tags to remove emotes from messages. Skips emote-only messages entirely.
+                </p>
               </div>
 
               <div className="flex items-center space-x-2">

@@ -2,14 +2,12 @@
 System, settings, stats, and debug router
 """
 import json
-from collections import defaultdict
 from typing import Dict, Any
 
 from fastapi import APIRouter, HTTPException
-from sqlmodel import Session, select
 
-from modules import logger, engine, get_settings, save_settings, DB_PATH, USER_DATA_DIR
-from modules.models import Voice, AvatarImage
+from modules import logger
+from modules.persistent_data import get_settings, Debug_Database, DB_PATH
 
 router = APIRouter()
 
@@ -28,25 +26,10 @@ async def api_set_settings(payload: Dict[str, Any]):
     if 'volume' in payload:
         logger.info(f"🔊 Volume setting changed to: {payload['volume']} ({round(payload['volume'] * 100)}%)")
     
-    save_settings(payload)
+    # Use app_save_settings which handles TTS state and Twitch bot restart
+    from app import app_save_settings
+    app_save_settings(payload)
     logger.info("Settings saved successfully")
-    
-    # Import hub and avatar functions when needed to avoid circular imports
-    from app import hub, generate_avatar_slot_assignments
-    
-    # Check if avatar-related settings changed that require slot regeneration
-    avatar_layout_settings = ['avatarRows', 'avatarRowConfig']
-    if any(setting in payload for setting in avatar_layout_settings):
-        logger.info("Avatar layout settings changed, regenerating slot assignments...")
-        generate_avatar_slot_assignments()
-        logger.info("Avatar slot assignments regenerated due to settings change")
-    
-    # Notify all WebSocket clients about settings changes
-    await hub.broadcast({
-        "type": "settings_updated",
-        "settings": payload
-    })
-    logger.info(f"Settings update broadcasted to {len(hub.clients)} WebSocket client(s)")
     
     return {"ok": True}
 
@@ -166,8 +149,10 @@ async def api_test_message_filter(test_data: dict):
         settings = get_settings()
         test_message = test_data.get("message", "")
         test_username = test_data.get("username", "")
+        # Note: Test endpoint doesn't have real Twitch tags, so emote filtering won't work in tests
+        # Real messages from Twitch will have proper tags with emote information
         
-        should_process, filtered_text = should_process_message(test_message, settings, test_username)
+        should_process, filtered_text = should_process_message(test_message, settings, test_username, None, None)
         
         return {
             "success": True,
@@ -176,7 +161,8 @@ async def api_test_message_filter(test_data: dict):
             "filtered_message": filtered_text,
             "should_process": should_process,
             "was_modified": filtered_text != test_message,
-            "filtering_settings": settings.get("messageFiltering", {})
+            "filtering_settings": settings.get("messageFiltering", {}),
+            "note": "Emote filtering uses Twitch tags which are not available in test mode"
         }
     except Exception as e:
         logger.error(f"Message filter test failed: {e}", exc_info=True)
@@ -190,16 +176,7 @@ async def api_debug_database():
         db_info = get_database_info(DB_PATH)
         
         # Also get some basic stats
-        with Session(engine) as session:
-            voice_count = session.exec(select(Voice)).all()
-            avatar_count = session.exec(select(AvatarImage)).all()
-            
-            db_info["statistics"] = {
-                "voices": len(voice_count),
-                "avatars": len(avatar_count),
-                "database_path": DB_PATH,
-                "user_data_dir": USER_DATA_DIR
-            }
+        Debug_Database()
         
         return {"success": True, "database": db_info}
     except Exception as e:

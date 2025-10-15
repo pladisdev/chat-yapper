@@ -655,7 +655,7 @@ export default function YappersPage() {
                 pointerEvents: 'none'
               }}
             >
-              <div className="w-full h-full rounded-full overflow-hidden flex items-center justify-center">
+              <div className="w-full h-full overflow-hidden flex items-center justify-center">
                 <img
                   src={(() => {
                     let imagePath = ''
@@ -701,7 +701,7 @@ export default function YappersPage() {
                     imageRendering: 'auto',
                     width: '100%',
                     height: '100%',
-                    objectFit: 'cover'
+                    objectFit: 'contain'
                   }}
                 />
               </div>

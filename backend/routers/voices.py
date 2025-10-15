@@ -2,92 +2,76 @@
 Voice management router
 """
 import datetime
-from typing import List, Dict, Any
 
 import aiohttp
-from fastapi import APIRouter, HTTPException
-from sqlmodel import Session, select
+from fastapi import APIRouter
 
-from modules import logger, engine
+from modules import logger
 from modules.models import Voice
 
+from modules.persistent_data import get_voices, check_voice_exists, add_voice, get_voice_by_id, remove_voice
 router = APIRouter()
 
 @router.get("/api/voices")
 async def api_get_voices():
     """Get all configured voices"""
-    with Session(engine) as session:
-        voices = session.exec(select(Voice)).all()
-        return {"voices": [voice.dict() for voice in voices]}
+    return get_voices()
 
 @router.post("/api/voices")
 async def api_add_voice(voice_data: dict):
     """Add a new voice"""
-    with Session(engine) as session:
-        # Check if voice already exists
-        existing = session.exec(
-            select(Voice).where(
-                Voice.voice_id == voice_data["voice_id"],
-                Voice.provider == voice_data["provider"]
-            )
-        ).first()
-        
-        if existing:
-            return {"error": "Voice already exists", "voice": existing.dict()}
-        
-        # Create new voice
-        new_voice = Voice(
-            name=voice_data["name"],
-            voice_id=voice_data["voice_id"],
-            provider=voice_data["provider"],
-            enabled=voice_data.get("enabled", True),
-            avatar_image=voice_data.get("avatar_image"),  # Keep for backward compatibility
-            avatar_default=voice_data.get("avatar_default"),
-            avatar_speaking=voice_data.get("avatar_speaking"),
-            avatar_mode=voice_data.get("avatar_mode", "single"),
-            created_at=datetime.datetime.now().isoformat()
-        )
-        
-        session.add(new_voice)
-        session.commit()
-        session.refresh(new_voice)
-        
-        return {"success": True, "voice": new_voice.dict()}
+
+    Voice.voice_id == voice_data["voice_id"],
+    Voice.provider == voice_data["provider"]
+
+
+    existing = check_voice_exists(voice_data["voice_id"], voice_data["provider"])
+
+    if existing:
+        return {"error": "Voice already exists", "voice": existing.dict()}
+    
+    new_voice = Voice(
+        name=voice_data["name"],
+        voice_id=voice_data["voice_id"],
+        provider=voice_data["provider"],
+        enabled=voice_data.get("enabled", True),
+        avatar_image=voice_data.get("avatar_image"),  # Keep for backward compatibility
+        avatar_default=voice_data.get("avatar_default"),
+        avatar_speaking=voice_data.get("avatar_speaking"),
+        avatar_mode=voice_data.get("avatar_mode", "single"),
+        created_at=datetime.datetime.now().isoformat()
+    )
+
+    add_voice(new_voice)
+    return {"success": True, "voice": new_voice.dict()}
 
 @router.put("/api/voices/{voice_id}")
 async def api_update_voice(voice_id: int, voice_data: dict):
     """Update a voice (enable/disable, change avatar, etc.)"""
-    with Session(engine) as session:
-        voice = session.get(Voice, voice_id)
-        if not voice:
-            return {"error": "Voice not found"}
+
+    voice = get_voice_by_id(voice_id)
+   
+    if not voice:
+        return {"error": "Voice not found"}
         
-        # Update fields
-        if "name" in voice_data:
-            voice.name = voice_data["name"]
-        if "enabled" in voice_data:
-            voice.enabled = voice_data["enabled"]
-        if "avatar_image" in voice_data:
-            voice.avatar_image = voice_data["avatar_image"]
-        
-        session.add(voice)
-        session.commit()
-        session.refresh(voice)
-        
-        return {"success": True, "voice": voice.dict()}
+    # Update fields
+    if "name" in voice_data:
+        voice.name = voice_data["name"]
+    if "enabled" in voice_data:
+        voice.enabled = voice_data["enabled"]
+    if "avatar_image" in voice_data:
+        voice.avatar_image = voice_data["avatar_image"]
+
+    add_voice(voice)
+
+    return {"success": True, "voice": voice.dict()}
 
 @router.delete("/api/voices/{voice_id}")
 async def api_delete_voice(voice_id: int):
     """Delete a voice"""
-    with Session(engine) as session:
-        voice = session.get(Voice, voice_id)
-        if not voice:
-            return {"error": "Voice not found"}
-        
-        session.delete(voice)
-        session.commit()
-        
-        return {"success": True}
+    remove_voice(voice_id)
+
+    return {"success": True}
 
 @router.get("/api/available-voices/{provider}")
 async def api_get_available_voices(provider: str, api_key: str = None):

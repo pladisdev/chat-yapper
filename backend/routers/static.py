@@ -6,7 +6,9 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from modules import logger, PUBLIC_DIR, PERSISTENT_AVATARS_DIR
+from modules import logger
+
+from modules.persistent_data import PUBLIC_DIR, PERSISTENT_AVATARS_DIR
 
 router = APIRouter()
 

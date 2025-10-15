@@ -1,17 +1,14 @@
 import asyncio
-import logging
 import os
 import uuid
 import time
 from dataclasses import dataclass
-from typing import Optional
 import aiohttp
-import json
 import random
 from collections import defaultdict
 
-# Get logger for this module
-logger = logging.getLogger('ChatYapper.TTS')
+from modules import logger
+from modules.persistent_data import AUDIO_DIR
 
 # Fallback voice usage tracking for distribution analysis
 fallback_voice_stats = defaultdict(int)
@@ -35,26 +32,6 @@ try:
     import edge_tts  # type: ignore
 except Exception:
     edge_tts = None
-
-def find_project_root():
-    """Find the project root by looking for characteristic files"""
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    # Look for project markers that indicate the true project root
-    # Use more specific markers to avoid stopping at backend directory
-    markers = ['package.json', 'main.py', '.git']  # Removed requirements.txt as it exists in backend too
-    
-    while current_dir != os.path.dirname(current_dir):  # Not at filesystem root
-        if any(os.path.exists(os.path.join(current_dir, marker)) for marker in markers):
-            return current_dir
-        current_dir = os.path.dirname(current_dir)
-    
-    # Fallback to going up two levels from the current file (backend/modules -> backend -> root)
-    fallback_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    return fallback_root
-
-AUDIO_DIR = os.environ.get("AUDIO_DIR", os.path.join(find_project_root(), "audio"))
-os.makedirs(AUDIO_DIR, exist_ok=True)
 
 @dataclass
 class TTSJob:
@@ -669,3 +646,39 @@ async def get_provider(api_key: str = None, voice_id: str = "9aad4a1b-f04e-43a1-
     
     # Final fallback to fake tone
     return None
+
+def get_audio_duration(file_path: str) -> float:
+    """
+    Get the duration of an audio file in seconds.
+    Returns the duration if successful, or None if it fails.
+    """
+    try:
+        # Try using mutagen library for MP3 files (most common)
+        try:
+            from mutagen.mp3 import MP3
+            audio = MP3(file_path)
+            duration = audio.info.length
+            logger.info(f"📏 Audio duration for {os.path.basename(file_path)}: {duration:.2f}s (mutagen)")
+            return duration
+        except ImportError:
+            # mutagen not installed, try alternative method
+            pass
+        except Exception as e:
+            logger.debug(f"Failed to get duration with mutagen: {e}")
+        
+        # Fallback: try to estimate from file size (very rough approximation)
+        # MP3 bitrate is typically 128-320 kbps, we'll assume 192 kbps average
+        try:
+            file_size = os.path.getsize(file_path)
+            # 192 kbps = 24 KB/s
+            estimated_duration = file_size / (24 * 1024)
+            logger.info(f"📏 Audio duration estimated for {os.path.basename(file_path)}: ~{estimated_duration:.2f}s (file size)")
+            return estimated_duration
+        except Exception as e:
+            logger.debug(f"Failed to estimate duration from file size: {e}")
+        
+        return None
+        
+    except Exception as e:
+        logger.warning(f"Failed to get audio duration: {e}")
+        return None

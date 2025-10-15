@@ -5,20 +5,18 @@ import asyncio
 import secrets
 import time
 import urllib.parse
-from datetime import datetime
 from typing import Dict, Any
 
 import aiohttp
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import RedirectResponse
-from sqlmodel import Session, select
 
-from modules import (
-    logger, engine, get_settings,
-    TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET, TWITCH_REDIRECT_URI, TWITCH_SCOPE,
-    oauth_states
+from modules import logger
+
+from modules.persistent_data import (
+    get_settings, get_auth, delete_twitch_auth, save_twitch_auth, get_twitch_token,
+    TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET, TWITCH_REDIRECT_URI, TWITCH_SCOPE, oauth_states
 )
-from modules.models import TwitchAuth
 
 router = APIRouter()
 
@@ -95,16 +93,15 @@ async def twitch_auth_callback(code: str = None, state: str = None, error: str =
 async def twitch_auth_status():
     """Get current Twitch connection status"""
     try:
-        with Session(engine) as session:
-            auth = session.exec(select(TwitchAuth)).first()
-            if auth:
-                return {
-                    "connected": True,
-                    "username": auth.username,
-                    "display_name": auth.display_name,
-                    "user_id": auth.twitch_user_id
-                }
-            return {"connected": False}
+        auth = get_auth()
+        if auth:
+            return {
+                "connected": True,
+                "username": auth.username,
+                "display_name": auth.display_name,
+                "user_id": auth.twitch_user_id
+            }
+        return {"connected": False}
     except Exception as e:
         logger.error(f"Error checking Twitch status: {e}")
         return {"connected": False, "error": str(e)}
@@ -113,14 +110,10 @@ async def twitch_auth_status():
 async def twitch_disconnect():
     """Disconnect Twitch account"""
     try:
-        with Session(engine) as session:
-            auth = session.exec(select(TwitchAuth)).first()
-            if auth:
-                session.delete(auth)
-                session.commit()
-                logger.info("Twitch account disconnected")
-                return {"success": True}
-            return {"success": False, "error": "No connection found"}
+        result = delete_twitch_auth()
+        if result["success"]:
+            logger.info("Twitch account disconnected")
+        return result
     except Exception as e:
         logger.error(f"Error disconnecting Twitch: {e}")
         return {"success": False, "error": str(e)}
@@ -208,45 +201,7 @@ async def get_twitch_user_info(access_token: str) -> Dict[str, Any]:
 async def store_twitch_auth(user_info: Dict[str, Any], token_data: Dict[str, Any]):
     """Store Twitch auth in database"""
     try:
-        with Session(engine) as session:
-            # Check if auth already exists for this user
-            existing_auth = session.exec(
-                select(TwitchAuth).where(TwitchAuth.twitch_user_id == user_info["id"])
-            ).first()
-            
-            if existing_auth:
-                # Update existing auth
-                existing_auth.access_token = token_data["access_token"]
-                existing_auth.refresh_token = token_data.get("refresh_token", "")
-                existing_auth.username = user_info["login"]
-                existing_auth.display_name = user_info["display_name"]
-                existing_auth.updated_at = datetime.now().isoformat()
-                if "expires_in" in token_data:
-                    expires_at = datetime.now().timestamp() + token_data["expires_in"]
-                    existing_auth.expires_at = datetime.fromtimestamp(expires_at).isoformat()
-            else:
-                # Create new auth
-                expires_at = None
-                if "expires_in" in token_data:
-                    expires_at = datetime.fromtimestamp(
-                        datetime.now().timestamp() + token_data["expires_in"]
-                    ).isoformat()
-                
-                new_auth = TwitchAuth(
-                    twitch_user_id=user_info["id"],
-                    username=user_info["login"],
-                    display_name=user_info["display_name"],
-                    access_token=token_data["access_token"],
-                    refresh_token=token_data.get("refresh_token", ""),
-                    expires_at=expires_at,
-                    created_at=datetime.now().isoformat(),
-                    updated_at=datetime.now().isoformat()
-                )
-                session.add(new_auth)
-            
-            session.commit()
-            logger.info(f"Stored Twitch auth for user: {user_info['login']}")
-            
+        save_twitch_auth(user_info, token_data)
     except Exception as e:
         logger.error(f"Error storing Twitch auth: {e}")
         raise
@@ -254,21 +209,7 @@ async def store_twitch_auth(user_info: Dict[str, Any], token_data: Dict[str, Any
 async def get_twitch_token_for_bot():
     """Get current Twitch token for bot connection"""
     try:
-        with Session(engine) as session:
-            auth = session.exec(select(TwitchAuth)).first()
-            if auth:
-                # Check if token needs refresh (if expires_at is set and in the past)
-                if auth.expires_at:
-                    expires_at = datetime.fromisoformat(auth.expires_at)
-                    if expires_at <= datetime.now():
-                        logger.info("Twitch token expired, attempting refresh...")
-                        # TODO: Implement token refresh
-                        
-                return {
-                    "token": auth.access_token,
-                    "username": auth.username,
-                    "user_id": auth.twitch_user_id
-                }
+        return get_twitch_token()
     except Exception as e:
         logger.error(f"Error getting Twitch token: {e}")
     

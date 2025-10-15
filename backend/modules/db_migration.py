@@ -5,13 +5,11 @@ This module handles database schema migrations when the application is updated.
 It safely adds new columns to existing tables without losing data.
 """
 
-import logging
 import sqlite3
 from pathlib import Path
 from typing import List, Dict, Any
 
-logger = logging.getLogger('ChatYapper.Migration')
-
+from modules import logger
 
 def get_table_columns(conn: sqlite3.Connection, table_name: str) -> List[str]:
     """Get list of column names for a table"""
