@@ -57,8 +57,28 @@ npm install
 cd ..
 ```
 
-### Development Workflow
+### Docker Deployment (Recommended for Linux/Mac)
 
+Chat Yapper supports Docker for easy deployment with automatic setup and persistent data storage.
+
+```bash
+# Quick start with Docker Compose
+docker-compose up -d
+
+# Access the application
+# http://localhost:8000
+```
+
+**Features:**
+- ✅ Automatic frontend build
+- ✅ Persistent database and avatars (Docker volumes)
+- ✅ Easy updates and rollbacks
+- ✅ Isolated environment
+- ✅ Cross-platform support
+
+See [DOCKER.md](DOCKER.md) for complete Docker deployment guide.
+
+### Development Workflow
 
 #### 1. Access Development Interface
 

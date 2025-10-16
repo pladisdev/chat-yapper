@@ -1,0 +1,62 @@
+services:
+  chat-yapper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: chat-yapper
+    restart: unless-stopped
+    
+    ports:
+      # Map container port 8000 to host port 8000
+      # Access at: http://localhost:8000
+      - "8000:8000"
+    
+    volumes:
+      # Persistent storage for user data
+      - chat-yapper-data:/data
+      # Optional: Mount audio directory separately if you want direct access
+      - ./audio:/app/audio
+    
+    environment:
+      # Application configuration
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DEBUG=false
+      
+      # Use persistent data directory
+      - DB_PATH=/data/app.db
+      - AUDIO_DIR=/app/audio
+      
+      # Twitch OAuth Configuration
+      # Set these in .env file or here directly
+      - TWITCH_CLIENT_ID=${TWITCH_CLIENT_ID:-}
+      - TWITCH_CLIENT_SECRET=${TWITCH_CLIENT_SECRET:-}
+      
+      # YouTube OAuth Configuration
+      - YOUTUBE_CLIENT_ID=${YOUTUBE_CLIENT_ID:-}
+      - YOUTUBE_CLIENT_SECRET=${YOUTUBE_CLIENT_SECRET:-}
+      
+      # Optional: Frontend port (for dev mode)
+      - FRONTEND_PORT=5173
+    
+    # Load environment variables from .env file
+    env_file:
+      - .env
+    
+    # Network mode for easier access
+    network_mode: bridge
+    
+    # Resource limits (optional)
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 512M
+
+volumes:
+  # Named volume for persistent data
+  chat-yapper-data:
+    driver: local
