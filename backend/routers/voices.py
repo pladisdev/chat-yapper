@@ -77,33 +77,16 @@ async def api_delete_voice(voice_id: int):
 async def api_get_available_voices(provider: str, api_key: str = None):
     """Get available voices from a specific provider"""
     if provider == "edge":
-        # Return common Edge TTS voices
-        edge_voices = [
-            {"voice_id": "en-US-AvaNeural", "name": "Ava - Female US"},
-            {"voice_id": "en-US-BrianNeural", "name": "Brian - Male US"},
-            {"voice_id": "en-US-EmmaNeural", "name": "Emma - Female US"},
-            {"voice_id": "en-US-JennyNeural", "name": "Jenny - Female US"},
-            {"voice_id": "en-US-GuyNeural", "name": "Guy - Male US"},
-            {"voice_id": "en-US-AriaNeural", "name": "Aria - Female US"},
-            {"voice_id": "en-US-DavisNeural", "name": "Davis - Male US"},
-            {"voice_id": "en-US-JaneNeural", "name": "Jane - Female US"},
-            {"voice_id": "en-US-JasonNeural", "name": "Jason - Male US"},
-            {"voice_id": "en-US-SaraNeural", "name": "Sara - Female US"},
-            {"voice_id": "en-US-TonyNeural", "name": "Tony - Male US"},
-            {"voice_id": "en-US-NancyNeural", "name": "Nancy - Female US"},
-            {"voice_id": "en-US-AmberNeural", "name": "Amber - Female US"},
-            {"voice_id": "en-US-AshleyNeural", "name": "Ashley - Female US"},
-            {"voice_id": "en-US-BrandonNeural", "name": "Brandon - Male US"},
-            {"voice_id": "en-US-ChristopherNeural", "name": "Christopher - Male US"},
-            {"voice_id": "en-US-CoraNeural", "name": "Cora - Female US"},
-            {"voice_id": "en-US-ElizabethNeural", "name": "Elizabeth - Female US"},
-            {"voice_id": "en-US-EricNeural", "name": "Eric - Male US"},
-            {"voice_id": "en-US-JacobNeural", "name": "Jacob - Male US"},
-            {"voice_id": "en-US-MichelleNeural", "name": "Michelle - Female US"},
-            {"voice_id": "en-US-MonicaNeural", "name": "Monica - Female US"},
-            {"voice_id": "en-US-RogerNeural", "name": "Roger - Male US"}
-        ]
-        return {"voices": edge_voices}
+        # Fetch Edge TTS voices dynamically (with caching enabled by default)
+        try:
+            from modules.tts import EdgeTTSProvider
+            edge_provider = EdgeTTSProvider()
+            voices = await edge_provider.list_voices(use_cache=True)
+            logger.info(f"Fetched {len(voices)} Edge TTS voices from cache or API")
+            return {"voices": voices}
+        except Exception as e:
+            logger.error(f"Error fetching Edge TTS voices: {str(e)}", exc_info=True)
+            return {"error": f"Error fetching Edge TTS voices: {str(e)}"}
     elif provider == "monstertts":
         # Fetch MonsterTTS voices from their API if API key is provided
         if not api_key:

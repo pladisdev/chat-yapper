@@ -6,7 +6,8 @@ Write-Host "Chat Yapper - Testing Setup" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
-$projectRoot = $PSScriptRoot
+# Script is in deployment/ folder, project root is parent
+$projectRoot = Split-Path -Parent $PSScriptRoot
 $backendDir = Join-Path $projectRoot "backend"
 $frontendDir = Join-Path $projectRoot "frontend"
 
@@ -47,7 +48,7 @@ Write-Host "Installing Python packages..." -ForegroundColor Yellow
 
 try {
     python -m pip install --upgrade pip
-    pip install -r requirements.txt
+    pip install -r (Join-Path $projectRoot "requirements.txt")
     Write-Host "Backend dependencies installed successfully!" -ForegroundColor Green
 }
 catch {

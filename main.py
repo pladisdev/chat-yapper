@@ -90,7 +90,7 @@ if not backend_dir.exists():
 
 sys.path.insert(0, str(backend_dir))
 
-def find_available_port(start_port=8000, max_attempts=10):
+def find_available_port(start_port=8008, max_attempts=10):
     """Find an available port starting from start_port"""
     import socket
     
@@ -202,7 +202,7 @@ def main():
     print()
     
     # Find an available port before starting threads
-    default_port = int(os.getenv('PORT', 8000))
+    default_port = int(os.getenv('PORT', 8008))
     try:
         server_port = find_available_port(default_port)
         log_important(f"Found available port: {server_port}")

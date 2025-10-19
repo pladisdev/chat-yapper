@@ -44,7 +44,7 @@ export default function SettingsPage() {
 
   // Determine the correct API URL
   const apiUrl = location.hostname === 'localhost' && (location.port === '5173' || location.port === '5174')
-    ? 'http://localhost:8000'
+    ? `http://localhost:${import.meta.env.VITE_BACKEND_PORT || 8008}`
     : ''
 
   useEffect(() => {
@@ -414,7 +414,7 @@ function AboutSection() {
                     <ol className="list-decimal list-inside text-xs text-muted-foreground space-y-1 ml-2">
                       <li>In OBS, right-click in Sources and select "Add" → "Browser"</li>
                       <li>Create new source and name it how you like</li>
-                      <li>Set the URL to: <code className="bg-muted px-1 rounded text-xs">http://localhost:8000/yappers</code></li>
+                      <li>Set the URL to: <code className="bg-muted px-1 rounded text-xs">http://localhost:{import.meta.env.VITE_BACKEND_PORT || 8008}/yappers</code></li>
                       <li>Recommend Width: 1000 and Recommend Height: 600</li>
                       <li>Check "Control audio via OBS", "Shutdown source when not visible" and "Refresh browser when scene becomes active"</li>
                       <li>Click OK - avatars will appear when chat messages are spoken</li>

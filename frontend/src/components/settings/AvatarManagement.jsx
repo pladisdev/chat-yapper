@@ -347,20 +347,22 @@ function AvatarManagement({
                           )}
                         </h4>
                         <div className="flex gap-2">
-                          <Button
-                            variant={avatars.some(avatar => avatar.disabled) ? "default" : "outline"}
-                            size="sm"
+                          <button
                             onClick={() => handleToggleAvatarGroupDisabled(groupKey, avatars[0].name, avatars.length > 1)}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-lg ${
+                              !avatars.some(avatar => avatar.disabled)
+                                ? 'bg-green-600 hover:bg-green-700 text-white hover:shadow-green-500/50'
+                                : 'bg-neutral-600 hover:bg-neutral-500 text-neutral-200 hover:shadow-neutral-500/50'
+                            }`}
                           >
-                            {avatars.some(avatar => avatar.disabled) ? 'Enable' : 'Disable'}
-                          </Button>
-                          <Button
-                            variant="destructive"
-                            size="sm"
+                            {!avatars.some(avatar => avatar.disabled) ? 'Enabled' : 'Disabled'}
+                          </button>
+                          <button
                             onClick={() => handleDeleteAvatarGroup(groupKey, avatars[0].name, avatars.length > 1)}
+                            className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 hover:bg-red-700 text-white transition-all shadow-lg hover:shadow-red-500/50"
                           >
-                            Delete {avatars.length > 1 ? 'Pair' : 'Avatar'}
-                          </Button>
+                            Delete
+                          </button>
                         </div>
                       </div>
                       

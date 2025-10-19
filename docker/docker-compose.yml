@@ -1,26 +1,26 @@
 services:
   chat-yapper:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile
     container_name: chat-yapper
     restart: unless-stopped
     
     ports:
-      # Map container port 8000 to host port 8000
-      # Access at: http://localhost:8000
-      - "8000:8000"
+      # Map container port 8069 to host port 8008
+      # Access at: http://localhost:8008
+      - "8069:8008"
     
     volumes:
       # Persistent storage for user data
       - chat-yapper-data:/data
       # Optional: Mount audio directory separately if you want direct access
-      - ./audio:/app/audio
+      - ../audio:/app/audio
     
     environment:
       # Application configuration
       - HOST=0.0.0.0
-      - PORT=8000
+      - PORT=8008
       - DEBUG=false
       
       # Use persistent data directory
@@ -41,7 +41,7 @@ services:
     
     # Load environment variables from .env file
     env_file:
-      - .env
+      - ../.env
     
     # Network mode for easier access
     network_mode: bridge

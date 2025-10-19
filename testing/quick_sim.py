@@ -183,7 +183,7 @@ async def main():
     args = parser.parse_args()
     
     print("Quick Chat Simulator for Chat Yapper")
-    print("Make sure your Chat Yapper backend is running on http://localhost:8000")
+    print("Make sure your Chat Yapper backend is running on http://localhost:8008")
     
     if args.single_user:
         print(f"Single user mode: All messages will be from '{args.single_user}'")

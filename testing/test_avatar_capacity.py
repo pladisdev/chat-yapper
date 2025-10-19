@@ -8,7 +8,7 @@ when all avatar positions are occupied.
 import requests
 import time
 
-API_URL = "http://localhost:8000"
+API_URL = "http://localhost:8"
 
 def get_debug_info():
     """Get debug information about queuing state"""

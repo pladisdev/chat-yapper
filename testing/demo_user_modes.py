@@ -56,7 +56,7 @@ async def main():
     print("Chat Yapper Test Simulator - User Mode Demo")
     print("=" * 60)
     print("This demo shows the difference between single user and random user modes")
-    print("Make sure your Chat Yapper backend is running on http://localhost:8000")
+    print("Make sure your Chat Yapper backend is running on http://localhost:8008")
     print("\nPress Ctrl+C at any time to skip to the next demo or exit")
     
     demos = [

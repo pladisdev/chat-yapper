@@ -19,7 +19,7 @@ export default function YappersPage() {
 
   // Determine the correct API URL
   const apiUrl = location.hostname === 'localhost' && (location.port === '5173' || location.port === '5174')
-    ? 'http://localhost:8000'  // Vite dev server connecting to backend
+    ? `http://localhost:${import.meta.env.VITE_BACKEND_PORT || 8008}`  // Vite dev server connecting to backend
     : '' // Production or direct backend access (relative URLs)
 
   // CRITICAL: Load settings FIRST before anything else initializes
@@ -704,7 +704,7 @@ export default function YappersPage() {
                     if (imagePath && !imagePath.startsWith('http') && !imagePath.startsWith('data:')) {
                       // In development mode, prefix with API URL
                       if (location.hostname === 'localhost' && (location.port === '5173' || location.port === '5174')) {
-                        imagePath = `http://localhost:8000${imagePath}`
+                        imagePath = `http://localhost:${import.meta.env.VITE_BACKEND_PORT || 8008}${imagePath}`
                       }
                       // In production or direct backend access, relative URLs work fine
                     }

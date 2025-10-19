@@ -15,7 +15,7 @@ router = APIRouter()
 @router.get("/favicon.ico")
 async def favicon():
     """Serve the favicon.ico file"""
-    favicon_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "icon.ico")
+    favicon_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets", "icon.ico")
     if os.path.exists(favicon_path):
         return FileResponse(favicon_path, media_type="image/x-icon")
     else:

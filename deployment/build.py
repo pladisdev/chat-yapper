@@ -10,6 +10,12 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+# Change to project root directory (parent of deployment/)
+script_dir = Path(__file__).parent
+project_root = script_dir.parent
+os.chdir(project_root)
+print(f"Working directory set to: {project_root}")
+
 # Load environment variables from .env file if available
 try:
     from dotenv import load_dotenv
@@ -217,7 +223,7 @@ def create_executable():
     
     # Check for icon file
     icon_path = None
-    for icon_file in ['icon.ico', 'logo.ico', 'app.ico']:
+    for icon_file in ['../assets/icon.ico', '../assets/logo.ico', '../assets/app.ico', 'icon.ico', 'logo.ico', 'app.ico']:
         if Path(icon_file).exists():
             icon_path = icon_file
             print(f"Found icon: {icon_file}")
@@ -588,7 +594,7 @@ def test_executable():
                 time.sleep(2)
                 
                 # Test the status endpoint
-                response = urllib.request.urlopen("http://localhost:8000/api/status", timeout=5)
+                response = urllib.request.urlopen("http://localhost:8008/api/status", timeout=5)
                 if response.getcode() == 200:
                     data = json.loads(response.read().decode())
                     if data.get("status") == "running":
@@ -620,7 +626,7 @@ def test_executable():
                 
                 data = urllib.parse.urlencode(test_data).encode()
                 req = urllib.request.Request(
-                    "http://localhost:8000/api/simulate", 
+                    "http://localhost:8008/api/simulate", 
                     data=data,
                     headers={'Content-Type': 'application/x-www-form-urlencoded'}
                 )
@@ -766,7 +772,7 @@ def main():
         print("   2. Users can run it directly - no installation needed!")
         print("   3. It will start a local server and open their browser")
         print()
-        print("TIP: Run 'python build.py --test-only' to test an existing executable")
+        print("TIP: Run 'python deployment/build.py --test-only' to test an existing executable")
         
     except Exception as e:
         logger.error(f"Build process failed: {e}", exc_info=True)
@@ -779,9 +785,9 @@ if __name__ == "__main__":
         print("=======================")
         print()
         print("Usage:")
-        print("  python build.py              Build the application and run validation tests")
-        print("  python build.py --test-only  Test an existing executable without rebuilding")
-        print("  python build.py --help       Show this help message")
+        print("  python deployment/build.py              Build the application and run validation tests")
+        print("  python deployment/build.py --test-only  Test an existing executable without rebuilding")
+        print("  python deployment/build.py --help       Show this help message")
         print()
         print("The build script will:")
         print("  1. Build the React frontend")

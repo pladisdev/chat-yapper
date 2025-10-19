@@ -1381,6 +1381,6 @@ mount_static_files(app)
 if __name__ == "__main__":
     import uvicorn
     host = os.environ.get('HOST', '0.0.0.0')
-    port = int(os.environ.get('PORT', 8000))
+    port = int(os.environ.get('PORT', 8008))
     debug_mode = os.environ.get('DEBUG', '').lower() in ('true', '1', 'yes', 'on')
     uvicorn.run("app:app", host=host, port=port, reload=debug_mode)

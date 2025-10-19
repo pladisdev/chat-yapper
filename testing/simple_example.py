@@ -68,7 +68,7 @@ async def main():
     
     except Exception as e:
         print(f"Demo error: {e}")
-        print("Make sure Chat Yapper backend is running on http://localhost:8000")
+        print("Make sure Chat Yapper backend is running on http://localhost:8008")
 
 if __name__ == "__main__":
     asyncio.run(main())

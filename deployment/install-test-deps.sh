@@ -9,7 +9,9 @@ echo "Chat Yapper - Testing Setup"
 echo "========================================"
 echo ""
 
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Script is in deployment/ folder, project root is parent
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 BACKEND_DIR="$PROJECT_ROOT/backend"
 FRONTEND_DIR="$PROJECT_ROOT/frontend"
 
@@ -50,7 +52,7 @@ echo -e "${CYAN}========================================${NC}"
 echo -e "${YELLOW}Installing Python packages...${NC}"
 
 $PYTHON_CMD -m pip install --upgrade pip
-pip install -r requirements.txt
+pip install -r "$PROJECT_ROOT/requirements.txt"
 
 echo -e "${GREEN}Backend dependencies installed successfully!${NC}"
 

@@ -7,7 +7,7 @@ import asyncio
 import aiohttp
 import json
 
-API_BASE_URL = "http://localhost:8000"
+API_BASE_URL = "http://localhost:8008"
 
 async def check_setting(session):
     """Check the current per-user queuing setting"""

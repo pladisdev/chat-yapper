@@ -7,7 +7,7 @@ Expected: 2 process immediately, 1 gets queued.
 import requests
 import time
 
-API_URL = "http://localhost:8000"
+API_URL = "http://localhost:8008"
 
 def send_message(username, text):
     response = requests.post(

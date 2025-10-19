@@ -11,7 +11,7 @@ class WebSocketManager {
   init() {
     if (!this.wsUrl) {
       this.wsUrl = location.hostname === 'localhost' && (location.port === '5173' || location.port === '5174')
-        ? 'ws://localhost:8000/ws'
+        ? `ws://localhost:${import.meta.env.VITE_BACKEND_PORT || 8008}/ws`
         : `ws://${location.host}/ws`
     }
   }

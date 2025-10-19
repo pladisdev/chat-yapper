@@ -259,21 +259,76 @@ class EdgeTTSProvider(TTSProvider):
         
         logger.info(f"Fetching Edge TTS voices from API...")
         
-        # Get all voices from edge-tts
-        all_voices = await edge_tts.list_voices()
+        try:
+            # Get all voices from edge-tts
+            all_voices = await edge_tts.list_voices()
+        except Exception as e:
+            logger.error(f"Failed to fetch voices from Edge TTS API: {e}")
+            # Return a fallback list of common voices
+            logger.info("Using fallback list of common Edge TTS voices")
+            fallback_voices = [
+                {"voice_id": "en-US-JennyNeural", "name": "Jenny - Female (en-US)", "gender": "Female", "locale": "en-US"},
+                {"voice_id": "en-US-GuyNeural", "name": "Guy - Male (en-US)", "gender": "Male", "locale": "en-US"},
+                {"voice_id": "en-US-AriaNeural", "name": "Aria - Female (en-US)", "gender": "Female", "locale": "en-US"},
+                {"voice_id": "en-US-DavisNeural", "name": "Davis - Male (en-US)", "gender": "Male", "locale": "en-US"},
+                {"voice_id": "en-GB-SoniaNeural", "name": "Sonia - Female (en-GB)", "gender": "Female", "locale": "en-GB"},
+                {"voice_id": "en-GB-RyanNeural", "name": "Ryan - Male (en-GB)", "gender": "Male", "locale": "en-GB"},
+                {"voice_id": "en-AU-NatashaNeural", "name": "Natasha - Female (en-AU)", "gender": "Female", "locale": "en-AU"},
+                {"voice_id": "en-AU-WilliamNeural", "name": "William - Male (en-AU)", "gender": "Male", "locale": "en-AU"},
+            ]
+            return fallback_voices
+        
+        # Log the structure of the first voice to debug
+        if all_voices and len(all_voices) > 0:
+            logger.debug(f"Sample voice data structure: {all_voices[0]}")
+            logger.debug(f"Available keys: {list(all_voices[0].keys())}")
         
         # Filter for English voices only (Locale starts with 'en')
-        english_voices = [v for v in all_voices if v['Locale'].startswith('en')]
+        # Handle both dict and object access patterns
+        english_voices = []
+        for v in all_voices:
+            locale = v.get('Locale') if isinstance(v, dict) else getattr(v, 'Locale', None)
+            if locale and locale.startswith('en'):
+                english_voices.append(v)
         
         # Transform to our format
         voices = []
         for voice in english_voices:
-            voices.append({
-                "voice_id": voice['ShortName'],
-                "name": f"{voice['DisplayName']} - {voice['Gender']} ({voice['Locale']})",
-                "gender": voice['Gender'],
-                "locale": voice['Locale']
-            })
+            try:
+                # Try dict access first, then attribute access
+                if isinstance(voice, dict):
+                    short_name = voice.get('ShortName', voice.get('Name', 'Unknown'))
+                    # Some versions use FriendlyName instead of DisplayName
+                    display_name = voice.get('DisplayName', voice.get('FriendlyName', voice.get('LocalName', short_name)))
+                    gender = voice.get('Gender', 'Unknown')
+                    locale = voice.get('Locale', 'en-US')
+                else:
+                    # Handle object attributes
+                    short_name = getattr(voice, 'ShortName', getattr(voice, 'Name', 'Unknown'))
+                    display_name = getattr(voice, 'DisplayName', getattr(voice, 'FriendlyName', getattr(voice, 'LocalName', short_name)))
+                    gender = getattr(voice, 'Gender', 'Unknown')
+                    locale = getattr(voice, 'Locale', 'en-US')
+                
+                # Extract just the name from DisplayName
+                # Edge TTS format: "Microsoft Jenny Online (Natural) - English (United States)"
+                # We want: "Jenny"
+                clean_name = display_name
+                if 'Microsoft' in display_name:
+                    # Extract the name between "Microsoft " and " Online"
+                    parts = display_name.replace('Microsoft ', '').split(' Online')
+                    if parts:
+                        clean_name = parts[0].strip()
+                
+                # Format: "Jenny - Female (en-US)"
+                voices.append({
+                    "voice_id": short_name,
+                    "name": f"{clean_name} - {gender} ({locale})",
+                    "gender": gender,
+                    "locale": locale
+                })
+            except Exception as e:
+                logger.warning(f"Failed to parse voice data: {e}, voice data: {voice}")
+                continue
         
         logger.info(f"Fetched {len(voices)} English Edge TTS voices from API")
         
@@ -287,9 +342,57 @@ class EdgeTTSProvider(TTSProvider):
     async def synth(self, job: TTSJob) -> str:
         if edge_tts is None:
             raise RuntimeError("edge-tts not available")
+        
+        # Validate text
+        if not job.text or not job.text.strip():
+            raise ValueError("Cannot synthesize empty text")
+        
+        # Validate voice ID
+        if not job.voice:
+            logger.warning("No voice ID provided, using default")
+            job.voice = self.voice_id
+        
+        # Validate that the voice exists (optional but recommended)
+        try:
+            # Quick validation: check if voice is in our cached list or API list
+            available_voices = await self.list_voices(use_cache=True)
+            voice_ids = [v['voice_id'] for v in available_voices]
+            
+            if job.voice not in voice_ids:
+                logger.warning(f"Voice '{job.voice}' not found in available voices list")
+                # Don't fail here, let Edge TTS try anyway (in case our list is outdated)
+        except Exception as e:
+            logger.debug(f"Could not validate voice (continuing anyway): {e}")
+        
         outpath = os.path.join(AUDIO_DIR, f"{uuid.uuid4()}.{job.audio_format}")
-        communicate = edge_tts.Communicate(job.text, job.voice)
-        await communicate.save(outpath)
+        
+        try:
+            communicate = edge_tts.Communicate(job.text, job.voice)
+            await communicate.save(outpath)
+        except edge_tts.exceptions.NoAudioReceived as e:
+            logger.error(f"Edge TTS NoAudioReceived error - Voice: {job.voice}, Text: '{job.text[:50]}...'")
+            
+            # Try to suggest valid voices
+            try:
+                available_voices = await self.list_voices(use_cache=True)
+                logger.info(f"Hint: There are {len(available_voices)} valid Edge TTS voices available. Refresh the voice list in settings.")
+            except:
+                pass
+            
+            # Try with default voice as fallback
+            if job.voice != self.voice_id:
+                logger.warning(f"Voice '{job.voice}' appears to be invalid or deprecated. Retrying with default voice: {self.voice_id}")
+                try:
+                    communicate = edge_tts.Communicate(job.text, self.voice_id)
+                    await communicate.save(outpath)
+                    logger.info(f"Successfully synthesized with fallback voice: {self.voice_id}")
+                except edge_tts.exceptions.NoAudioReceived:
+                    raise RuntimeError(f"Edge TTS failed with both '{job.voice}' and fallback '{self.voice_id}'. The voices may be invalid or Edge TTS service is unavailable. Please refresh your voice list in Settings → TTS → Edge TTS.")
+            else:
+                raise RuntimeError(f"Edge TTS failed: {str(e)}. Voice '{job.voice}' may be invalid or deprecated. Please refresh your voice list in Settings → TTS → Edge TTS and select a different voice.")
+        except Exception as e:
+            logger.error(f"Edge TTS synthesis failed: {e}")
+            raise
         
         # Schedule cleanup after 30 seconds
         asyncio.create_task(self._cleanup_file_after_delay(outpath, 30))

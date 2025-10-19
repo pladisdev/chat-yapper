@@ -10,7 +10,7 @@ import asyncio
 import aiohttp
 import time
 
-API_BASE_URL = "http://localhost:8000"
+API_BASE_URL = "http://localhost:8008"
 
 async def send_message(session, username, message, delay=0):
     """Send a message with optional delay"""

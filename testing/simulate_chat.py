@@ -15,7 +15,7 @@ from typing import List, Dict, Any
 import json
 
 # Configuration
-API_BASE_URL = "http://localhost:8000"
+API_BASE_URL = "http://localhost:8008"
 SIMULATION_DURATION = 60  # seconds
 NUM_CHATTERS = 10
 
