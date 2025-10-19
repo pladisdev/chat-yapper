@@ -5,9 +5,8 @@
 Chat Yapper is a text-to-speech application that reads Twitch or Youtube (Experimental) chat messages aloud using avatars. 
 
 ## Features
-- **Voice Avatars**: Assign different voices to different users or groups
+- **Voice Avatars**: Visually show chat as custom avatars that speak messages from Twitch and Youtube (Experimental)
 - **Multiple TTS Providers**: Support for Edge, Google, Amazon, Monster
-- **Custom Avatar Images**: Upload and manage visual avatars for each voice
 - **Audio Filters**: Apply reverb, echo, pitch shift, and speed changes to TTS audio (requires ffmpeg)
 
 ## Quick Start (End Users)
@@ -26,9 +25,9 @@ Chat Yapper is a text-to-speech application that reads Twitch or Youtube (Experi
 
 ### First-Time Setup
 
-1. **Twitch Connection**: Enter your Twitch channel name in settings
+1. **Twitch or Youtube Connection**: Enter your Twitch channel name in settings, or Youtube (Experimental)
 2. **Voice Provider**: Choose and configure at least one TTS provider
-3. **Add Voices**: Create voice profiles for different users or groups
+3. **Add an Avatar**: Upload an image for at least one Avatar
 
 ### TTS Guide
  - Edge TTS is free, and has many nice voices
@@ -64,7 +63,7 @@ npm install
 cd ..
 ```
 
-### Docker Deployment (Recommended for Linux/Mac)
+### Docker Deployment (Recommended for Linux/Mac, works with Windows Docker Desktop)
 
 Chat Yapper supports Docker for easy deployment with automatic setup and persistent data storage.
 
@@ -73,17 +72,8 @@ Chat Yapper supports Docker for easy deployment with automatic setup and persist
 docker-compose up -d
 
 # Access the application
-# http://localhost:8008
+# http://localhost:8069
 ```
-
-**Features:**
-- Automatic frontend build
-- Persistent database and avatars (Docker volumes)
-- Easy updates and rollbacks
-- Isolated environment
-- Cross-platform support
-
-See [DOCKER.md](DOCKER.md) for complete Docker deployment guide.
 
 ### Development Workflow
 
@@ -105,15 +95,9 @@ python deployment/build.py
 The build process:
 1. Builds the React frontend (`npm run build`)
 2. Copies build to `backend/public/`
-3. **Embeds Twitch credentials from .env file into executable**
+3. **Embeds credentials from .env file into executable**
 4. Creates Windows executable with PyInstaller
 5. Bundles all dependencies into single .exe file
-
-**Important**: Twitch OAuth credentials from your `.env` file are permanently embedded in the executable during build time. This means:
-- The .exe works on any PC without needing a separate .env file
-- Users don't need to configure Twitch credentials
-- Make sure your .env contains the correct credentials before building
-- The executable will contain your Twitch app credentials
 
 ## Configuration Guide
 
@@ -165,30 +149,6 @@ chat-yapper/
 │   └── vite.config.js
 └── testing/              # Development testing tools
 ```
-
-## API Reference
-
-### Settings Endpoints
-- `GET /api/settings` - Get current settings
-- `POST /api/settings` - Update settings
-
-### Voice Management
-- `GET /api/voices` - List all voices
-- `POST /api/voices` - Add new voice
-- `PUT /api/voices/{id}` - Update voice
-- `DELETE /api/voices/{id}` - Delete voice
-
-### Avatar Management
-- `GET /api/avatars` - List available avatars
-- `POST /api/avatars/upload` - Upload new avatar
-- `DELETE /api/avatars/{id}` - Delete avatar
-
-### System
-- `GET /api/status` - System status and stats
-- `POST /api/test` - Test TTS functionality
-
-### WebSocket
-- `WS /ws` - Real-time communication for chat messages
 
 ## Testing
 
@@ -267,6 +227,15 @@ bash deployment/install-test-deps.sh
 
 ### Bugs
 - None lmao
+
+## Acknowledgments
+
+This application was inspired by the work done by [shindigs](https://x.com/shindags), please check them out!
+
+### Testing & Feedback
+Special thanks these streamers that helped test the early prototype:
+- [**Inislein**](https://x.com/iniskein)
+- [**Kirana**](https://x.com/KiranaYonome)
 
 ---
 
