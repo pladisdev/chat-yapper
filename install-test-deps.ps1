@@ -43,24 +43,16 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "Installing Backend Dependencies" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 
-if (Test-Path $backendDir) {
-    Push-Location $backendDir
-    Write-Host "Installing Python packages..." -ForegroundColor Yellow
-    
-    try {
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        Write-Host "✅ Backend dependencies installed successfully!" -ForegroundColor Green
-    }
-    catch {
-        Write-Host "❌ Failed to install backend dependencies: $_" -ForegroundColor Red
-        Pop-Location
-        exit 1
-    }
-    
-    Pop-Location
-} else {
-    Write-Host "❌ Backend directory not found at: $backendDir" -ForegroundColor Red
+Write-Host "Installing Python packages..." -ForegroundColor Yellow
+
+try {
+    python -m pip install --upgrade pip
+    pip install -r requirements.txt
+    Write-Host "✅ Backend dependencies installed successfully!" -ForegroundColor Green
+}
+catch {
+    Write-Host "❌ Failed to install backend dependencies: $_" -ForegroundColor Red
+    exit 1
 }
 
 Write-Host ""

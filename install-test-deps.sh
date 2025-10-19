@@ -47,18 +47,12 @@ echo -e "${CYAN}========================================${NC}"
 echo -e "${CYAN}Installing Backend Dependencies${NC}"
 echo -e "${CYAN}========================================${NC}"
 
-if [ -d "$BACKEND_DIR" ]; then
-    cd "$BACKEND_DIR"
-    echo -e "${YELLOW}Installing Python packages...${NC}"
-    
-    $PYTHON_CMD -m pip install --upgrade pip
-    pip install -r requirements.txt
-    
-    echo -e "${GREEN}✅ Backend dependencies installed successfully!${NC}"
-    cd "$PROJECT_ROOT"
-else
-    echo -e "${RED}❌ Backend directory not found at: $BACKEND_DIR${NC}"
-fi
+echo -e "${YELLOW}Installing Python packages...${NC}"
+
+$PYTHON_CMD -m pip install --upgrade pip
+pip install -r requirements.txt
+
+echo -e "${GREEN}✅ Backend dependencies installed successfully!${NC}"
 
 echo ""
 
