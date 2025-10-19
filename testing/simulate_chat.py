@@ -110,7 +110,7 @@ class ChatSimulator:
                 "message_count": 0
             }
             self.chatters.append(chatter)
-            print(f"🎯 Single user mode: All messages will be from '{self.single_user}'")
+            print(f"Single user mode: All messages will be from '{self.single_user}'")
         else:
             # Multi-user mode - create multiple chatter profiles
             for i in range(NUM_CHATTERS):
@@ -139,16 +139,8 @@ class ChatSimulator:
                 if response.status == 200:
                     result = await response.json()
                     timestamp = time.strftime("%H:%M:%S")
-                    event_emoji = {
-                        "chat": "💬",
-                        "raid": "⚔️", 
-                        "bits": "💎",
-                        "sub": "⭐",
-                        "vip": "👑",
-                        "highlight": "✨"
-                    }.get(event_type, "💬")
                     
-                    print(f"{timestamp} {event_emoji} {username}: {message}")
+                    print(f"{timestamp} {username}: {message}")
                     self.message_history.append({
                         "timestamp": timestamp,
                         "user": username,
@@ -157,10 +149,10 @@ class ChatSimulator:
                     })
                     return True
                 else:
-                    print(f"❌ Failed to send message: {response.status}")
+                    print(f"Failed to send message: {response.status}")
                     return False
         except Exception as e:
-            print(f"❌ Error sending message: {e}")
+            print(f"Error sending message: {e}")
             return False
     
     def get_chatter_message_interval(self, chatter: Dict[str, Any]) -> float:
@@ -204,7 +196,7 @@ class ChatSimulator:
     
     async def simulate_burst_activity(self):
         """Simulate a burst of activity (like when something exciting happens)"""
-        print("\n🔥 BURST ACTIVITY! Something exciting happened on stream!")
+        print("\nBURST ACTIVITY! Something exciting happened on stream!")
         
         # 5-8 chatters react quickly
         num_reactors = random.randint(5, 8)
@@ -234,7 +226,7 @@ class ChatSimulator:
         # Use single user if specified, otherwise pick random chatter
         username = self.single_user if self.single_user else random.choice(self.chatters)["name"]
         
-        print(f"\n✨ Special Event: {event_type.upper()}")
+        print(f"\nSpecial Event: {event_type.upper()}")
         await self.send_message(username, message, event_type)
         
         # Some events trigger follow-up reactions
@@ -252,7 +244,7 @@ class ChatSimulator:
     
     async def simulate_quiet_period(self):
         """Simulate a quiet period with minimal chat"""
-        print("\n😴 Quiet period... only the most active chatters are messaging")
+        print("\nQuiet period... only the most active chatters are messaging")
         duration = random.uniform(3, 8)  # Much shorter quiet periods
         end_time = time.time() + duration
         
@@ -268,7 +260,7 @@ class ChatSimulator:
     
     async def run_simulation(self):
         """Run the main chat simulation"""
-        print(f"\n🚀 Starting Twitch Chat Simulation for {SIMULATION_DURATION} seconds!")
+        print(f"\nStarting Twitch Chat Simulation for {SIMULATION_DURATION} seconds!")
         print("=" * 60)
         
         start_time = time.time()
@@ -314,13 +306,13 @@ class ChatSimulator:
             await asyncio.sleep(0.1)
         
         print("\n" + "=" * 60)
-        print("🏁 Simulation Complete!")
+        print("Simulation Complete!")
         self.print_statistics()
     
     def print_statistics(self):
         """Print simulation statistics"""
         mode_text = f"Single user '{self.single_user}'" if self.single_user else f"{len(self.chatters)} random chatters"
-        print(f"\n📊 Simulation Statistics:")
+        print(f"\nSimulation Statistics:")
         print(f"   Mode: {mode_text}")
         print(f"   Total messages sent: {len(self.message_history)}")
         print(f"   Duration: {SIMULATION_DURATION} seconds")
@@ -332,14 +324,13 @@ class ChatSimulator:
             event_type = msg["event_type"]
             event_counts[event_type] = event_counts.get(event_type, 0) + 1
         
-        print(f"\n📈 Message Types:")
+        print(f"\nMessage Types:")
         for event_type, count in sorted(event_counts.items()):
             percentage = (count / len(self.message_history)) * 100
-            emoji = {"chat": "💬", "raid": "⚔️", "bits": "💎", "sub": "⭐", "vip": "👑", "highlight": "✨"}.get(event_type, "📝")
-            print(f"   {emoji} {event_type}: {count} ({percentage:.1f}%)")
+            print(f"  {event_type}: {count} ({percentage:.1f}%)")
         
         # Chatter activity
-        print(f"\n👥 Chatter Activity:")
+        print(f"\nChatter Activity:")
         for chatter in sorted(self.chatters, key=lambda c: c["message_count"], reverse=True):
             if chatter["message_count"] > 0:
                 if self.single_user:
@@ -372,14 +363,14 @@ async def main():
         await simulator.initialize()
         await simulator.run_simulation()
     except KeyboardInterrupt:
-        print("\n⏹️ Simulation interrupted by user")
+        print("\nSimulation interrupted by user")
     except Exception as e:
-        print(f"\n❌ Simulation error: {e}")
+        print(f"\nSimulation error: {e}")
     finally:
         await simulator.cleanup()
 
 if __name__ == "__main__":
-    print("🎮 Twitch Chat Simulator for Chat Yapper")
+    print("Twitch Chat Simulator for Chat Yapper")
     print("Make sure your Chat Yapper backend is running on http://localhost:8000")
     print("Usage:")
     print("  python simulate_chat.py                    # Multiple random chatters")
@@ -390,4 +381,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\n👋 Goodbye!")
+        print("\nGoodbye!")

@@ -144,13 +144,13 @@ export default function VoiceManager({ managedAvatars, apiUrl }) {
         edge: edgeData.voices || [],
       }
       
-      logger.info('📊 Available voices loaded:', {
+      logger.info('Available voices loaded:', {
         monstertts: newAvailableVoices.monstertts.length,
         google: newAvailableVoices.google.length,
         polly: newAvailableVoices.polly.length,
         edge: newAvailableVoices.edge.length
       })
-      logger.info('🎤 Polly voices:', newAvailableVoices.polly)
+      logger.info('Polly voices:', newAvailableVoices.polly)
       
       setAvailableVoices(newAvailableVoices)
     } catch (error) {
@@ -164,17 +164,17 @@ export default function VoiceManager({ managedAvatars, apiUrl }) {
       return
     }
 
-    console.log('🔍 Looking for voice:', selectedVoice, 'in provider:', selectedProvider)
-    console.log('📋 Available voices for provider:', availableVoices[selectedProvider])
-    
+    console.log('Looking for voice:', selectedVoice, 'in provider:', selectedProvider)
+    console.log('Available voices for provider:', availableVoices[selectedProvider])
+
     const voiceData = availableVoices[selectedProvider].find(v => v.voice_id === selectedVoice)
     
     if (!voiceData) {
-      console.error('❌ Voice not found! Selected:', selectedVoice, 'Available:', availableVoices[selectedProvider])
+      console.error('Voice not found! Selected:', selectedVoice, 'Available:', availableVoices[selectedProvider])
       return
     }
     
-    console.log('✅ Found voice data:', voiceData)
+    console.log('Found voice data:', voiceData)
 
     try {
       const voicePayload = {

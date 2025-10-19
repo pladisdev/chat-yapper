@@ -29,7 +29,7 @@ from modules.avatars import (
     get_active_avatar_slots
 )
 
-from modules import logger, log_important
+from modules import logger
 # TTS Cancellation System:
 # - Tracks active TTS jobs by username in active_tts_jobs dict
 # - Detects Twitch ban/timeout events via CLEARCHAT IRC messages
@@ -85,7 +85,7 @@ def queue_avatar_message(message_data):
         "message_data": message_data,
         "queued_time": time.time()
     })
-    logger.info(f"📥 Queued message for {message_data.get('user')} (queue length: {len(avatar_message_queue)})")
+    logger.info(f"Queued message for {message_data.get('user')} (queue length: {len(avatar_message_queue)})")
 
 def process_avatar_message_queue():
     """Process queued messages if slots become available"""
@@ -101,7 +101,7 @@ def process_avatar_message_queue():
     # Check if message is too old (ignore messages older than 60 seconds)
     if time.time() - queued_item["queued_time"] > 60:
         avatar_message_queue.pop(0)
-        logger.info(f"🗑️ Discarded old queued message for {message_data.get('user')}")
+        logger.info(f"Discarded old queued message for {message_data.get('user')}")
         # Try to process next message
         if avatar_message_queue:
             process_avatar_message_queue()
@@ -114,7 +114,7 @@ def process_avatar_message_queue():
     if available_slot:
         # Remove from queue and process
         avatar_message_queue.pop(0)
-        logger.info(f"📤 Processing queued message for {message_data.get('user')} in slot {available_slot['id']}")
+        logger.info(f"Processing queued message for {message_data.get('user')} in slot {available_slot['id']}")
         
         # Process the queued TTS message
         asyncio.create_task(process_queued_tts_message(message_data, available_slot))
@@ -151,7 +151,7 @@ async def process_queued_tts_message(message_data, target_slot):
         
         # Broadcast to clients
         await hub.broadcast(enriched_message)
-        logger.info(f"📡 Broadcasted queued TTS for {user} in slot {target_slot['id']}")
+        logger.info(f"Broadcasted queued TTS for {user} in slot {target_slot['id']}")
         
     except Exception as e:
         logger.error(f"Failed to process queued TTS message: {e}")
@@ -159,11 +159,6 @@ async def process_queued_tts_message(message_data, target_slot):
         release_avatar_slot(target_slot["id"])
         process_avatar_message_queue()
     
-
-# Voice database starts empty - users need to add voices manually
-logger.info("Voice management system initialized - users can add voices through the settings page")
-log_important("Voice management system initialized")
-
 logger.info("Initializing FastAPI application")
 app = FastAPI()
 app.add_middleware(
@@ -210,13 +205,12 @@ app.include_router(config_backup_router)
 # Serve generated audio files under /audio
 # Use AUDIO_DIR from TTS module to ensure consistency
 logger.info(f"Audio directory: {AUDIO_DIR}")
-logger.info(f"Audio directory exists: {os.path.isdir(AUDIO_DIR)}")
 app.mount("/audio", StaticFiles(directory=AUDIO_DIR), name="audio")
 
 
 # Debug: List files in the public directory
 if os.path.isdir(PUBLIC_DIR):
-    logger.info("📂 Files in static directory:")
+    logger.info("Files in static directory:")
     for root, dirs, files in os.walk(PUBLIC_DIR):
         level = root.replace(PUBLIC_DIR, '').count(os.sep)
         indent = ' ' * 2 * level
@@ -265,10 +259,8 @@ generate_avatar_slot_assignments()
 async def ws_endpoint(ws: WebSocket):
     client_info = f"{ws.client.host}:{ws.client.port}" if ws.client else "unknown"
     logger.info(f"WebSocket connection attempt from {client_info}")
-    logger.info(f"WebSocket connection attempt from {ws.client}")
     try:
         await hub.connect(ws)
-        logger.info(f"WebSocket connected successfully. Total clients: {len(hub.clients)}")
         logger.info(f"WebSocket connected successfully. Total clients: {len(hub.clients)}")
         
         # Send a welcome message to confirm connection
@@ -279,7 +271,6 @@ async def ws_endpoint(ws: WebSocket):
         }
         await ws.send_text(json.dumps(welcome_msg))
         logger.info(f"Sent welcome message to WebSocket client {client_info}")
-        logger.info(f"Sent welcome message to WebSocket client")
         
         while True:
             # Handle messages from frontend (avatar slot status updates, etc.)
@@ -301,11 +292,9 @@ async def ws_endpoint(ws: WebSocket):
                 logger.error(f"Error handling WebSocket message: {e}")
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected from {client_info}. Remaining clients: {len(hub.clients)-1}")
-        logger.info(f"WebSocket disconnected. Remaining clients: {len(hub.clients)-1}")
         hub.unregister(ws)
     except Exception as e:
         logger.error(f"WebSocket error from {client_info}: {e}")
-        logger.info(f"WebSocket error: {e}")
         hub.unregister(ws)
 
 async def handle_websocket_message(data: Dict[str, Any]):
@@ -318,7 +307,7 @@ async def handle_websocket_message(data: Dict[str, Any]):
         if slot_id:
             release_avatar_slot(slot_id)
             process_avatar_message_queue()
-            logger.info(f"🔓 Avatar slot {slot_id} released by frontend")
+            logger.info(f"Avatar slot {slot_id} released by frontend")
     
     elif message_type == "avatar_slot_error":
         # Frontend reports an error with avatar slot playback
@@ -326,12 +315,12 @@ async def handle_websocket_message(data: Dict[str, Any]):
         if slot_id:
             release_avatar_slot(slot_id)
             process_avatar_message_queue()
-            logger.info(f"❌ Avatar slot {slot_id} released due to frontend error")
+            logger.info(f"Avatar slot {slot_id} released due to frontend error")
     
     elif message_type == "request_avatar_slots":
         # Frontend requests current avatar slot assignments (for page refresh)
         slots = get_avatar_slot_assignments()
-        logger.info(f"📋 Frontend requested avatar slots - sending {len(slots)} slots")
+        logger.info(f"Frontend requested avatar slots - sending {len(slots)} slots")
         response = {
             "type": "avatar_slots_updated",
             "slots": slots,
@@ -342,7 +331,7 @@ async def handle_websocket_message(data: Dict[str, Any]):
         # Send only to the requesting client (would need to track client in real implementation)
         # For now, broadcast to all clients
         await hub.broadcast(response)
-        logger.info(f"📡 Sent avatar slots update to frontend: {len(slots)} slots (gen #{get_avatar_assignments_generation_id()})")
+        logger.info(f"Sent avatar slots update to frontend: {len(slots)} slots (gen #{get_avatar_assignments_generation_id()})")
     
     elif message_type == "ping":
         # Simple ping/pong for connection health
@@ -386,7 +375,7 @@ def app_save_settings(data: Dict[str, Any]):
             resume_all_tts()
         else:
             stop_all_tts()
-        logger.info(f"🎚️ TTS state changed via settings: {'enabled' if new_tts_enabled else 'disabled'}")
+        logger.info(f"TTS state changed via settings: {'enabled' if new_tts_enabled else 'disabled'}")
     else:
         # Just sync the flag if no change
         tts_enabled = new_tts_enabled
@@ -413,21 +402,21 @@ def app_save_settings(data: Dict[str, Any]):
             
     # Restart Twitch bot only if Twitch settings changed
     if twitch_settings_changed:
-        logger.info("🔄 Twitch settings changed, restarting bot...")
+        logger.info("Twitch settings changed, restarting bot...")
         asyncio.create_task(restart_twitch_if_needed(data))
     else:
         logger.debug("Twitch settings unchanged, skipping bot restart")
     
     # Restart YouTube bot only if YouTube settings changed
     if youtube_settings_changed:
-        logger.info("🔄 YouTube settings changed, restarting bot...")
+        logger.info("YouTube settings changed, restarting bot...")
         asyncio.create_task(restart_youtube_if_needed(data))
     else:
         logger.debug("YouTube settings unchanged, skipping bot restart")
     
     # Regenerate avatar assignments if layout changed
     if avatar_layout_changed:
-        logger.info("🎭 Avatar layout settings changed, regenerating slot assignments...")
+        logger.info("Avatar layout settings changed, regenerating slot assignments...")
         # Clear active slots and queue to avoid conflicts
         global avatar_message_queue
         get_active_avatar_slots().clear()
@@ -617,7 +606,6 @@ def cancel_user_tts(username: str):
     
     username_lower = username.lower()
     logger.info(f"Attempting to cancel TTS for user: {username}")
-    logger.info(f"🛑 Attempting to cancel TTS for user: {username}")
     
     # Cancel active TTS job if exists
     if username_lower in active_tts_jobs:
@@ -625,10 +613,9 @@ def cancel_user_tts(username: str):
         if job_info["task"] and not job_info["task"].done():
             job_info["task"].cancel()
             logger.info(f"Cancelled active TTS for user: {username} (message: {job_info['message'][:50]}...)")
-            logger.info(f"✅ Cancelled active TTS for user: {username}")
         del active_tts_jobs[username_lower]
     else:
-        logger.info(f"ℹ️  No active TTS found for user: {username}")
+        logger.info(f"No active TTS found for user: {username}")
     
     # Broadcast cancellation to clients with stop command
     asyncio.create_task(hub.broadcast({
@@ -644,8 +631,7 @@ def stop_all_tts():
     """
     global active_tts_jobs, tts_enabled
     
-    logger.info("Stopping all TTS - cancelling active jobs")
-    logger.info(f"🛑 Stopping all TTS - {len(active_tts_jobs)} active jobs")
+    logger.info(f"Stopping all TTS - {len(active_tts_jobs)} active jobs")
     
     # Cancel all active TTS jobs
     cancelled_count = 0
@@ -662,7 +648,6 @@ def stop_all_tts():
     tts_enabled = False
     
     logger.info(f"All TTS stopped - cancelled {cancelled_count} active jobs")
-    logger.info(f"✅ All TTS stopped - cancelled {cancelled_count} active jobs")
     
     # Broadcast global stop to clients with immediate stop command
     asyncio.create_task(hub.broadcast({
@@ -680,7 +665,6 @@ def resume_all_tts():
     
     tts_enabled = True
     logger.info("TTS processing resumed")
-    logger.info("▶️ TTS processing resumed")
     
     # Broadcast resume to clients
     asyncio.create_task(hub.broadcast({
@@ -862,10 +846,7 @@ def should_process_message(text: str, settings: Dict[str, Any], username: str = 
         # Check if user has any active TTS jobs
         user_has_active_tts = username_lower in active_tts_jobs
         
-        logger.info(f"🔍 User {username}: active_tts={user_has_active_tts}")
-        
         if user_has_active_tts:
-            logger.info(f"🚫 Ignoring new message from {username} - user already has active TTS (per-user queuing enabled)")
             logger.info(f"Ignored message from {username} due to active TTS: {filtered_text[:50]}...")
             return False, filtered_text
 
@@ -896,7 +877,7 @@ def should_process_message(text: str, settings: Dict[str, Any], username: str = 
 
 async def handle_test_voice_event(evt: Dict[str, Any]):
     """Handle test voice events - similar to handle_event but uses the provided test voice"""
-    logger.info(f"🎵 Handling test voice event: {evt}")
+    logger.info(f"Handling test voice event: {evt}")
     settings = app_get_settings()
     audio_format = settings.get("audioFormat", "mp3")
     
@@ -974,11 +955,11 @@ async def handle_test_voice_event(evt: Dict[str, Any]):
     asyncio.create_task(_run())
 
 async def handle_event(evt: Dict[str, Any]):
-    logger.info(f"🎵 Handling event: {evt}")
+    logger.info(f"Handling event: {evt}")
     
     # Check if TTS is globally enabled
     if not tts_enabled:
-        logger.info(f"🔇 TTS is disabled - skipping message from {evt.get('user', 'unknown')}")
+        logger.info(f"TTS is disabled - skipping message from {evt.get('user', 'unknown')}")
         return
     
     settings = app_get_settings()
@@ -1003,9 +984,9 @@ async def handle_event(evt: Dict[str, Any]):
     
     # Process immediately - no queuing
     username = evt.get('user', 'unknown')
-    logger.info(f"📬 Message received from {username}: processing immediately")
+    logger.info(f"Message received from {username}: processing immediately")
     if filtered_text != original_text:
-        logger.info(f"🔧 Text after filtering: '{filtered_text}'")
+        logger.info(f"Text after filtering: '{filtered_text}'")
     await process_tts_message(evt_filtered)
     return
 
@@ -1018,7 +999,7 @@ async def process_tts_message(evt: Dict[str, Any]):
     text = evt.get("text", "").strip()
     if not text:
         event_type = evt.get("eventType", "chat")
-        logger.info(f"⏭️ Skipping TTS for {username} - no text to speak (eventType: {event_type})")
+        logger.info(f"Skipping TTS for {username} - no text to speak (eventType: {event_type})")
         return
     
     # Track this job for cancellation
@@ -1056,20 +1037,20 @@ async def process_tts_message(evt: Dict[str, Any]):
             available_voices = [v for v in enabled_voices if v.id != last_selected_voice_id]
             if available_voices:
                 selected_voice = random.choice(available_voices)
-                logger.info(f"🎲 Random voice selected (avoiding last voice): {selected_voice.name} ({selected_voice.provider})")
+                logger.info(f"Random voice selected (avoiding last voice): {selected_voice.name} ({selected_voice.provider})")
             else:
                 # Fallback if filtering didn't work
                 selected_voice = random.choice(enabled_voices)
-                logger.info(f"🎲 Random voice selected (fallback): {selected_voice.name} ({selected_voice.provider})")
+                logger.info(f"Random voice selected (fallback): {selected_voice.name} ({selected_voice.provider})")
         else:
             # Not enough voices to avoid repetition, or no last voice tracked
             selected_voice = random.choice(enabled_voices)
-            logger.info(f"🎲 Random voice selected: {selected_voice.name} ({selected_voice.provider})")
+            logger.info(f"Random voice selected: {selected_voice.name} ({selected_voice.provider})")
         
         # Update last selected voice
         last_selected_voice_id = selected_voice.id
     else:
-        logger.info(f"🎯 Special event voice selected: {selected_voice.name} ({selected_voice.provider})")
+        logger.info(f"Special event voice selected: {selected_voice.name} ({selected_voice.provider})")
         # Don't update last_selected_voice_id for special events, so they don't affect the pattern
     
     # Track voice usage for distribution analysis
@@ -1140,9 +1121,9 @@ async def process_tts_message(evt: Dict[str, Any]):
                     logger.debug("Audio filters skipped (no individual effects enabled)")
                 else:
                     # Path changed but no duration means filter processing had an issue
-                    logger.info(f"🎚️ Audio filters applied: {path}")
+                    logger.info(f"Audio filters applied: {path}")
             else:
-                logger.info(f"🎚️ Audio filters applied: {path} (new duration: {audio_duration:.2f}s)")
+                logger.info(f"Audio filters applied: {path} (new duration: {audio_duration:.2f}s)")
         else:
             # Get audio duration for accurate slot timeout (no filters applied)
             audio_duration = get_audio_duration(path)
@@ -1186,11 +1167,11 @@ async def process_tts_message(evt: Dict[str, Any]):
                 "generationId": get_avatar_assignments_generation_id()
             })
             
-            logger.info(f"📡 Broadcasting TTS with slot {target_slot['id']} to {len(hub.clients)} clients")
+            logger.info(f"Broadcasting TTS with slot {target_slot['id']} to {len(hub.clients)} clients")
             await hub.broadcast(enhanced_payload)
         else:
             # No slots available - queue the message
-            logger.info(f"⏳ All slots busy, queuing TTS for {username}")
+            logger.info(f"All slots busy, queuing TTS for {username}")
             queue_avatar_message(base_payload)
             
             # Still broadcast a notification that the message is queued
@@ -1205,26 +1186,26 @@ async def process_tts_message(evt: Dict[str, Any]):
         # Clean up TTS job tracking
         if username_lower in active_tts_jobs:
             del active_tts_jobs[username_lower]
-        logger.info(f"✅ TTS processing complete. Active TTS jobs: {list(active_tts_jobs.keys())}")
+        logger.info(f"TTS processing complete. Active TTS jobs: {list(active_tts_jobs.keys())}")
             
     except asyncio.CancelledError:
         logger.info(f"TTS synthesis cancelled for user: {evt.get('user')}")
         if username_lower in active_tts_jobs:
             del active_tts_jobs[username_lower]
-        logger.info(f"🧹 Cleaned up cancelled job. Remaining jobs: {len(active_tts_jobs)}")
+        logger.info(f"Cleaned up cancelled job. Remaining jobs: {len(active_tts_jobs)}")
         raise  # Re-raise to properly handle cancellation
     except Exception as e:
         logger.info(f"TTS Error: {e}")
         logger.error(f"TTS synthesis error for {username_lower}: {e}", exc_info=True)
         if username_lower in active_tts_jobs:
             del active_tts_jobs[username_lower]
-        logger.info(f"🧹 Cleaned up failed job. Remaining jobs: {len(active_tts_jobs)}")
+        logger.info(f"Cleaned up failed job. Remaining jobs: {len(active_tts_jobs)}")
 
 # ---------- Simulate messages (for local testing) ----------
 
 async def handle_moderation_event(evt: Dict[str, Any]):
     """Handle Twitch moderation events (bans, timeouts)"""
-    logger.info(f"🔨 Handling moderation event: {evt}")
+    logger.info(f"Handling moderation event: {evt}")
     
     event_type = evt.get("eventType", "")
     target_user = evt.get("target_user", "")
@@ -1250,7 +1231,7 @@ async def handle_moderation_event(evt: Dict[str, Any]):
             "stop_user_audio": target_user  # Tell frontend to immediately stop this user's audio
         })
         
-        logger.info(f"✅ Processed {event_type} for user: {target_user} - TTS cancelled and audio stopped")
+        logger.info(f"Processed {event_type} for user: {target_user} - TTS cancelled and audio stopped")
     else:
         logger.info(f"Unknown moderation event type: {event_type}")
 
@@ -1261,7 +1242,7 @@ try:
     logger.info("Twitch listener imported successfully")
 except Exception as e:
     logger.error(f"Failed to import twitch_listener: {e}")
-    logger.info(f"❌ Failed to import Twitch listener: {e}")
+    logger.info(f"Failed to import Twitch listener: {e}")
     run_twitch_bot = None
 
 # ---------- YouTube integration (optional) ----------
@@ -1271,7 +1252,7 @@ try:
     logger.info("YouTube listener imported successfully")
 except Exception as e:
     logger.error(f"Failed to import youtube_listener: {e}")
-    logger.info(f"❌ Failed to import YouTube listener: {e}")
+    logger.info(f"Failed to import YouTube listener: {e}")
     run_youtube_bot = None
 
 # ---------- Avatar Slot Management API ----------
@@ -1390,7 +1371,6 @@ async def startup():
 
     except Exception as e:
         logger.error(f"Startup event failed: {e}", exc_info=True)
-        logger.info(f"❌ Startup failed: {e}")
 
 # Mount static files AFTER all API routes and WebSocket endpoints are defined
 # This ensures that /api/* and /ws routes take precedence over static file serving

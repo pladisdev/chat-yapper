@@ -111,7 +111,7 @@ def generate_avatar_slot_assignments():
     avatar_row_config = settings.get("avatarRowConfig", [6, 6])
     
     # Debug logging for settings
-    logger.info(f"🔧 Avatar settings from backend: avatarRows={avatar_rows}, avatarRowConfig={avatar_row_config}")
+    logger.info(f"Avatar settings from backend: avatarRows={avatar_rows}, avatarRowConfig={avatar_row_config}")
     
     available_avatars = get_available_avatars()
     if not available_avatars:
@@ -120,8 +120,8 @@ def generate_avatar_slot_assignments():
         return
     
     total_slots = sum(avatar_row_config[:avatar_rows])
-    logger.info(f"🎭 Generating avatar assignments for {total_slots} slots with {len(available_avatars)} avatars")
-    logger.info(f"📸 Available avatars: {[{'name': a['name'], 'defaultImage': a['defaultImage'][:50] + '...' if len(a['defaultImage']) > 50 else a['defaultImage']} for a in available_avatars]}")
+    logger.info(f"Generating avatar assignments for {total_slots} slots with {len(available_avatars)} avatars")
+    logger.info(f"Available avatars: {[{'name': a['name'], 'defaultImage': a['defaultImage'][:50] + '...' if len(a['defaultImage']) > 50 else a['defaultImage']} for a in available_avatars]}")
     
     assignments = []
     
@@ -132,7 +132,7 @@ def generate_avatar_slot_assignments():
     # Create all slots first
     for row_index in range(avatar_rows):
         avatars_in_row = avatar_row_config[row_index] if row_index < len(avatar_row_config) else 6
-        logger.debug(f"🔧 Creating row {row_index} with {avatars_in_row} avatars")
+        logger.debug(f"Creating row {row_index} with {avatars_in_row} avatars")
         for col_index in range(avatars_in_row):
             slots.append({
                 "id": f"slot_{slot_index}",
@@ -144,7 +144,7 @@ def generate_avatar_slot_assignments():
             })
             slot_index += 1
     
-    logger.info(f"🔧 Total slots created: {len(slots)}")
+    logger.info(f"Total slots created: {len(slots)}")
     
     # First pass: Handle avatars with specific spawn positions
     assigned_slots = set()
@@ -154,7 +154,7 @@ def generate_avatar_slot_assignments():
             if 0 <= spawn_pos < len(slots) and spawn_pos not in assigned_slots:
                 slots[spawn_pos]["avatarData"] = avatar.copy()
                 assigned_slots.add(spawn_pos)
-                logger.info(f"🎯 Assigned {avatar['name']} to specific position {spawn_pos + 1}")
+                logger.info(f"Assigned {avatar['name']} to specific position {spawn_pos + 1}")
     
     # Second pass: Randomly assign remaining avatars to unassigned slots
     unassigned_slots = [i for i in range(len(slots)) if i not in assigned_slots]
@@ -180,17 +180,17 @@ def generate_avatar_slot_assignments():
     for i, slot_idx in enumerate(unassigned_slots):
         if i < len(assignment_pool):
             slots[slot_idx]["avatarData"] = assignment_pool[i].copy()
-            logger.info(f"🎲 Randomly assigned {assignment_pool[i]['name']} to slot {slot_idx}")
+            logger.info(f"Randomly assigned {assignment_pool[i]['name']} to slot {slot_idx}")
     
     avatar_slot_assignments = slots
     avatar_assignments_generation_id += 1
     
-    logger.info(f"✅ Generated {len(avatar_slot_assignments)} avatar slot assignments (gen #{avatar_assignments_generation_id})")
+    logger.info(f"Generated {len(avatar_slot_assignments)} avatar slot assignments (gen #{avatar_assignments_generation_id})")
     
     # Log a sample of what will be sent to frontend for debugging
     if avatar_slot_assignments:
         sample_slot = avatar_slot_assignments[0]
-        logger.info(f"📤 Sample slot data being sent to frontend: {sample_slot}")
+        logger.info(f"Sample slot data being sent to frontend: {sample_slot}")
 
     return avatar_slot_assignments
 
@@ -213,10 +213,10 @@ def find_available_slot_for_tts(voice_id=None, user=None):
         expiry_time = audio_duration + 5  # Add 5 second buffer for network/processing delays
         if current_time - slot_info.get("start_time", 0) > expiry_time:
             expired_slots.append(slot_id)
-            logger.info(f"🕐 Slot {slot_id} expired after {expiry_time}s (audio: {audio_duration}s + 5s buffer)")
+            logger.info(f"Slot {slot_id} expired after {expiry_time}s (audio: {audio_duration}s + 5s buffer)")
     
     for slot_id in expired_slots:
-        logger.info(f"🧹 Cleaning up expired active slot: {slot_id}")
+        logger.info(f"Cleaning up expired active slot: {slot_id}")
         del active_avatar_slots[slot_id]
     
     # Find slots that match the voice_id if specified
@@ -239,17 +239,17 @@ def find_available_slot_for_tts(voice_id=None, user=None):
     # Prefer voice-matched slots if available
     if matching_slots:
         selected_slot = random.choice(matching_slots)
-        logger.info(f"🎯 Selected voice-matched slot {selected_slot['id']} for voice {voice_id}")
+        logger.info(f"Selected voice-matched slot {selected_slot['id']} for voice {voice_id}")
         return selected_slot
     
     # Use any available slot
     if available_slots:
         selected_slot = random.choice(available_slots)
-        logger.info(f"🎲 Selected random available slot {selected_slot['id']} (no voice match)")
+        logger.info(f"Selected random available slot {selected_slot['id']} (no voice match)")
         return selected_slot
     
     # No available slots
-    logger.info("⏳ All avatar slots are busy, message will be queued")
+    logger.info("All avatar slots are busy, message will be queued")
     return None
 
 def reserve_avatar_slot(slot_id, user, audio_url, audio_duration=None):
@@ -263,7 +263,7 @@ def reserve_avatar_slot(slot_id, user, audio_url, audio_duration=None):
         "audio_duration": audio_duration or 30  # Default to 30s if duration not provided
     }
     duration_info = f" (duration: {audio_duration}s)" if audio_duration else " (duration: unknown, using 30s default)"
-    logger.info(f"🔒 Reserved slot {slot_id} for user {user}{duration_info} (active slots: {len(active_avatar_slots)})")
+    logger.info(f"Reserved slot {slot_id} for user {user}{duration_info} (active slots: {len(active_avatar_slots)})")
 
 def release_avatar_slot(slot_id):
     """Release an avatar slot when TTS playback ends"""
@@ -272,7 +272,7 @@ def release_avatar_slot(slot_id):
     if slot_id in active_avatar_slots:
         user = active_avatar_slots[slot_id]["user"]
         del active_avatar_slots[slot_id]
-        logger.info(f"🔓 Released slot {slot_id} for user {user} (active slots: {len(active_avatar_slots)})")
+        logger.info(f"Released slot {slot_id} for user {user} (active slots: {len(active_avatar_slots)})")
     else:
         logger.warning(f"Attempted to release slot {slot_id} that wasn't reserved")
 

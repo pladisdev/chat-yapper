@@ -41,7 +41,7 @@ def main():
     print("=" * 70)
     
     # Get initial state
-    print("\n📊 Initial State:")
+    print("\nInitial State:")
     debug_info = get_debug_info()
     if debug_info:
         capacity = debug_info.get("avatarCapacity", {})
@@ -52,13 +52,13 @@ def main():
         print(f"   Active jobs: {debug_info.get('activeJobs', [])}")
         max_positions = capacity.get('maxPositions', 12)
     else:
-        print("   ⚠️ Could not retrieve debug info")
+        print("   Could not retrieve debug info")
         max_positions = 12  # Default assumption
     
     # Send messages to fill all avatar positions + queue some
     num_messages = max_positions + 5  # Fill all positions and queue 5 more
     
-    print(f"\n📨 Sending {num_messages} messages rapidly...")
+    print(f"\nSending {num_messages} messages rapidly...")
     print(f"   This should fill all {max_positions} avatar positions and queue {5} messages")
     print()
     
@@ -71,15 +71,15 @@ def main():
         
         if result:
             if result.get("ok"):
-                print(f"      ✅ Message accepted")
+                print(f"      Message accepted")
             else:
-                print(f"      ❌ Message rejected: {result.get('reason', 'unknown')}")
+                print(f"      Message rejected: {result.get('reason', 'unknown')}")
         
         # Small delay to allow messages to be processed
         time.sleep(0.1)
     
     # Check state after sending all messages
-    print(f"\n📊 State after sending {num_messages} messages:")
+    print(f"\nState after sending {num_messages} messages:")
     time.sleep(0.5)  # Give backend time to process
     
     debug_info = get_debug_info()
@@ -94,27 +94,27 @@ def main():
         active = capacity.get('activePositions', 0)
         queued = capacity.get('queueSize', 0)
         
-        print(f"\n📈 Results:")
+        print(f"\nResults:")
         print(f"   Expected: {max_positions} active, ~5 queued")
         print(f"   Actual: {active} active, {queued} queued")
         
         if active == max_positions:
-            print(f"   ✅ All avatar positions filled correctly!")
+            print(f"   All avatar positions filled correctly!")
         else:
-            print(f"   ⚠️ Avatar positions not fully filled (expected {max_positions}, got {active})")
+            print(f"   Avatar positions not fully filled (expected {max_positions}, got {active})")
         
         if queued > 0:
-            print(f"   ✅ Messages queued when capacity reached!")
+            print(f"   Messages queued when capacity reached!")
         else:
-            print(f"   ⚠️ No messages queued (expected some queued messages)")
+            print(f"   No messages queued (expected some queued messages)")
     else:
-        print("   ⚠️ Could not retrieve debug info")
+        print("   Could not retrieve debug info")
     
     # Wait and check again to see queue processing
-    print(f"\n⏳ Waiting 5 seconds to observe queue processing...")
+    print(f"\nWaiting 5 seconds to observe queue processing...")
     time.sleep(5)
     
-    print(f"\n📊 Final State:")
+    print(f"\nFinal State:")
     debug_info = get_debug_info()
     if debug_info:
         capacity = debug_info.get("avatarCapacity", {})
@@ -122,9 +122,9 @@ def main():
         print(f"   Queue size: {capacity.get('queueSize', 0)}")
         
         if capacity.get('queueSize', 0) < queued:
-            print(f"   ✅ Queue is being processed (was {queued}, now {capacity.get('queueSize', 0)})")
+            print(f"   Queue is being processed (was {queued}, now {capacity.get('queueSize', 0)})")
         else:
-            print(f"   ℹ️ Queue size unchanged or still processing")
+            print(f"   Queue size unchanged or still processing")
     
     print("\n" + "=" * 70)
     print("Test Complete!")

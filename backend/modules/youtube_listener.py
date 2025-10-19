@@ -1,6 +1,5 @@
 import asyncio
 from typing import Callable, Dict, Any, Optional, TYPE_CHECKING
-from datetime import datetime, timedelta
 from modules import logger
 
 if TYPE_CHECKING:
@@ -63,7 +62,7 @@ class YouTubeListener:
                 if live_chat_id:
                     self.live_chat_id = live_chat_id
                     title = broadcast['snippet'].get('title', 'Unknown')
-                    logger.info(f"✅ Found active stream: '{title}' (ID: {self.video_id})")
+                    logger.info(f"Found active stream: '{title}' (ID: {self.video_id})")
                     return True
                 else:
                     logger.warning("Active stream found but no live chat ID available")
@@ -99,7 +98,7 @@ class YouTubeListener:
                 live_details = response['items'][0].get('liveStreamingDetails', {})
                 self.live_chat_id = live_details.get('activeLiveChatId')
                 if self.live_chat_id:
-                    logger.info(f"✅ Got live chat ID: {self.live_chat_id}")
+                    logger.info(f"Got live chat ID: {self.live_chat_id}")
                     return self.live_chat_id
                 else:
                     logger.error(f"Video {self.video_id} is not currently live or has no active chat")
@@ -263,7 +262,7 @@ class YouTubeListener:
                 logger.error(f"Error in YouTube listener: {e}", exc_info=True)
                 await asyncio.sleep(5)  # Wait before retrying
         
-        logger.info("🛑 YouTube chat listener stopped")
+        logger.info("YouTube chat listener stopped")
     
     def _determine_event_type(self, snippet: Dict[str, Any], author: Dict[str, Any]) -> str:
         """Determine the event type based on message details"""

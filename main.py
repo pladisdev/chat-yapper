@@ -8,12 +8,9 @@ import os
 import threading
 import time
 import webbrowser
-import subprocess
 import logging
 from pathlib import Path
 from datetime import datetime
-
-import socket
 
 # Load environment variables from .env file if available
 try:

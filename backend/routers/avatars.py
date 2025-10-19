@@ -351,7 +351,7 @@ async def api_regenerate_avatar_slots():
             "generationId": get_avatar_assignments_generation_id()
         })
         
-        logger.info(f"🎲 Avatar slots regenerated (generation #{get_avatar_assignments_generation_id()})")
+        logger.info(f"Avatar slots regenerated (generation #{get_avatar_assignments_generation_id()})")
         
         return {
             "success": True,

@@ -49,10 +49,10 @@ def add_column_if_missing(conn: sqlite3.Connection, table_name: str, column_name
     try:
         conn.execute(alter_sql)
         conn.commit()
-        logger.info(f"✅ Added column '{column_name}' to table '{table_name}'")
+        logger.info(f"Added column '{column_name}' to table '{table_name}'")
         return True
     except Exception as e:
-        logger.error(f"❌ Failed to add column '{column_name}' to table '{table_name}': {e}")
+        logger.error(f"Failed to add column '{column_name}' to table '{table_name}': {e}")
         conn.rollback()
         return False
 
@@ -136,10 +136,10 @@ def run_all_migrations(db_path: str) -> None:
             logger.info("AvatarImage table doesn't exist yet - will be created")
         
         conn.close()
-        logger.info("✅ Database migration check completed successfully")
+        logger.info("Database migration check completed successfully")
         
     except Exception as e:
-        logger.error(f"❌ Error during database migration: {e}")
+        logger.error(f"Error during database migration: {e}")
         raise
 
 

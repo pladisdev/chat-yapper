@@ -28,13 +28,13 @@ async def send_message(session, username, message, delay=0):
             timestamp = time.strftime("%H:%M:%S")
             
             if response.status == 200 and result.get("ok", True):
-                print(f"{timestamp} ✅ {username}: {message}")
+                print(f"{timestamp} {username}: {message}")
             else:
                 reason = result.get("reason", "Unknown")
-                print(f"{timestamp} 🚫 {username}: {message} - IGNORED ({reason})")
+                print(f"{timestamp} {username}: {message} - IGNORED ({reason})")
                 
     except Exception as e:
-        print(f"❌ Error sending message: {e}")
+        print(f"Error sending message: {e}")
 
 async def get_setting(session, setting_path):
     """Get current setting value"""
@@ -47,7 +47,7 @@ async def get_setting(session, setting_path):
                 value = value.get(key, {})
             return value
     except Exception as e:
-        print(f"❌ Error getting setting: {e}")
+        print(f"Error getting setting: {e}")
         return None
 
 async def set_setting(session, setting_path, new_value):
@@ -71,14 +71,14 @@ async def set_setting(session, setting_path, new_value):
                                json=settings,
                                headers={'Content-Type': 'application/json'}) as response:
             if response.status == 200:
-                print(f"✅ Updated {setting_path} = {new_value}")
+                print(f"Updated {setting_path} = {new_value}")
                 return True
             else:
-                print(f"❌ Failed to update setting: {response.status}")
+                print(f"Failed to update setting: {response.status}")
                 return False
                 
     except Exception as e:
-        print(f"❌ Error updating setting: {e}")
+        print(f"Error updating setting: {e}")
         return False
 
 async def demo_with_setting(session, enabled):
@@ -94,7 +94,7 @@ async def demo_with_setting(session, enabled):
     await asyncio.sleep(0.5)  # Let setting take effect
     
     # Test scenario: Same user sends multiple messages quickly
-    print(f"\n📝 Scenario: 'TestUser' sends 3 messages rapidly")
+    print(f"\nScenario: 'TestUser' sends 3 messages rapidly")
     print(f"Expected behavior: {'Only first message should play, others ignored' if enabled else 'All messages should play'}")
     print("-" * 40)
     
@@ -104,11 +104,11 @@ async def demo_with_setting(session, enabled):
     await send_message(session, "TestUser", "This is my third message!", 1.0)
     
     # Wait a bit for TTS to process
-    print("\n⏳ Waiting for TTS to process...")
+    print("\nWaiting for TTS to process...")
     await asyncio.sleep(3)
     
     # Test with different user to show it doesn't affect other users
-    print(f"\n📝 Testing different user (should always work):")
+    print(f"\nTesting different user (should always work):")
     print("-" * 40)
     await send_message(session, "DifferentUser", "I'm a different user, this should always work!")
     
@@ -116,7 +116,7 @@ async def demo_with_setting(session, enabled):
 
 async def main():
     """Run the per-user queuing demonstration"""
-    print("🎮 Per-User Queuing Demo for Chat Yapper")
+    print("Per-User Queuing Demo for Chat Yapper")
     print("Make sure your Chat Yapper backend is running on http://localhost:8000\n")
     
     async with aiohttp.ClientSession() as session:
@@ -129,22 +129,22 @@ async def main():
             await demo_with_setting(session, True)
             
             # Wait between demos
-            print(f"\n⏳ Waiting 5 seconds before next demo...")
+            print(f"\nWaiting 5 seconds before next demo...")
             await asyncio.sleep(5)
             
             # Demo with setting disabled
             await demo_with_setting(session, False)
             
             # Restore original setting
-            print(f"\n🔄 Restoring original setting...")
+            print(f"\nRestoring original setting...")
             await set_setting(session, "messageFiltering.ignoreIfUserSpeaking", current_value)
             
         except KeyboardInterrupt:
-            print("\n⏹️ Demo interrupted by user")
+            print("\nDemo interrupted by user")
             # Still restore original setting
             await set_setting(session, "messageFiltering.ignoreIfUserSpeaking", current_value)
         
-        print(f"\n🎉 Demo complete!")
+        print(f"\nDemo complete!")
         print("=" * 60)
         print("SUMMARY:")
         print("• When ENABLED: Same user's rapid messages are ignored while speaking")

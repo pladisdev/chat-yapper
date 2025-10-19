@@ -15,7 +15,7 @@ import time
 
 async def run_command_demo(description: str, command: list, duration: int = 15):
     """Run a command and show its output"""
-    print(f"\n🎯 {description}")
+    print(f"\n{description}")
     print("=" * 60)
     print(f"Running: {' '.join(command)}")
     print("-" * 60)
@@ -42,18 +42,18 @@ async def run_command_demo(description: str, command: list, duration: int = 15):
         if process.poll() is None:
             process.terminate()
             process.wait()
-            print("\n⏹️ Demo stopped after time limit")
+            print("\nDemo stopped after time limit")
         
     except KeyboardInterrupt:
-        print("\n⏹️ Demo interrupted")
+        print("\nDemo interrupted")
         if 'process' in locals():
             process.terminate()
     except Exception as e:
-        print(f"❌ Error running demo: {e}")
+        print(f"Error running demo: {e}")
 
 async def main():
     """Run the demo scenarios"""
-    print("🎮 Chat Yapper Test Simulator - User Mode Demo")
+    print("Chat Yapper Test Simulator - User Mode Demo")
     print("=" * 60)
     print("This demo shows the difference between single user and random user modes")
     print("Make sure your Chat Yapper backend is running on http://localhost:8000")
@@ -94,14 +94,14 @@ async def main():
     
     try:
         for i, demo in enumerate(demos, 1):
-            print(f"\n\n🚀 Starting Demo {i}/{len(demos)}")
+            print(f"\n\nStarting Demo {i}/{len(demos)}")
             await run_command_demo(demo["description"], demo["command"], demo["duration"])
             
             if i < len(demos):
-                print(f"\n⏳ Waiting 3 seconds before next demo...")
+                print(f"\nWaiting 3 seconds before next demo...")
                 await asyncio.sleep(3)
         
-        print("\n\n🎉 All demos completed!")
+        print("\n\nAll demos completed!")
         print("=" * 60)
         print("Summary of what you just saw:")
         print("• Single user mode: All messages from one consistent user")
@@ -111,16 +111,16 @@ async def main():
         print("• Great for testing per-user queuing logic (same user won't interrupt themselves)")
         
     except KeyboardInterrupt:
-        print("\n\n⏹️ Demo session ended by user")
+        print("\n\nDemo session ended by user")
     except Exception as e:
-        print(f"\n\n❌ Demo error: {e}")
+        print(f"\n\nDemo error: {e}")
 
 if __name__ == "__main__":
-    print("🎯 Starting Chat Yapper User Mode Demos...")
+    print("Starting Chat Yapper User Mode Demos...")
     print("Tip: Use --single-user for testing per-user TTS queuing")
     print("Tip: Use random mode for testing multiple concurrent voices\n")
     
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\n👋 Demo session ended!")
+        print("\nDemo session ended!")

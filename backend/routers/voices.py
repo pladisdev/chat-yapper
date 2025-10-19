@@ -183,7 +183,7 @@ async def api_get_polly_voices(credentials: dict):
         )
         
         if refresh:
-            logger.info("🔄 Force refresh requested for Polly voices")
+            logger.info("Force refresh requested for Polly voices")
         
         voices = await polly_provider.list_voices(use_cache=use_cache)
         
@@ -224,7 +224,7 @@ async def api_get_google_voices(credentials: dict):
         google_provider = GoogleTTSProvider(api_key)
         
         if refresh:
-            logger.info("🔄 Force refresh requested for Google TTS voices")
+            logger.info("Force refresh requested for Google TTS voices")
         
         voices = await google_provider.list_voices(use_cache=use_cache)
         
@@ -265,7 +265,7 @@ async def api_get_monstertts_voices(credentials: dict):
         monster_provider = MonsterTTSProvider(api_key)
         
         if refresh:
-            logger.info("🔄 Force refresh requested for MonsterTTS voices")
+            logger.info("Force refresh requested for MonsterTTS voices")
         
         voices = await monster_provider.list_voices(use_cache=use_cache)
         
@@ -306,7 +306,7 @@ async def api_get_edge_voices(request: dict = None):
         edge_provider = EdgeTTSProvider()
         
         if refresh:
-            logger.info("🔄 Force refresh requested for Edge TTS voices")
+            logger.info("Force refresh requested for Edge TTS voices")
         
         voices = await edge_provider.list_voices(use_cache=use_cache)
         

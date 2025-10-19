@@ -49,7 +49,7 @@ function YouTubeIntegration({ settings, updateSettings, apiUrl = '' }) {
     const error = urlParams.get('error');
     
     if (error === 'youtube_not_configured') {
-      alert('⚠️ YouTube integration not configured!\n\nThe developer needs to set up YouTube OAuth credentials.\nSee YouTube API setup documentation for instructions.');
+      alert('YouTube integration not configured!\n\nThe developer needs to set up YouTube OAuth credentials.\nSee YouTube API setup documentation for instructions.');
       // Clear error from URL
       window.history.replaceState({}, document.title, window.location.pathname);
     }

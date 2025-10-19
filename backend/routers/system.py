@@ -24,7 +24,7 @@ async def api_set_settings(payload: Dict[str, Any]):
     
     # Log volume changes specifically for debugging
     if 'volume' in payload:
-        logger.info(f"🔊 Volume setting changed to: {payload['volume']} ({round(payload['volume'] * 100)}%)")
+        logger.info(f"Volume setting changed to: {payload['volume']} ({round(payload['volume'] * 100)}%)")
     
     # Use app_save_settings which handles TTS state and Twitch bot restart
     from app import app_save_settings
@@ -233,7 +233,7 @@ async def api_replay_message(payload: Dict[str, Any]):
         # Process the message
         asyncio.create_task(handle_event(event))
         
-        logger.info(f"🔁 Replaying message from {username}: {text[:50]}...")
+        logger.info(f"Replaying message from {username}: {text[:50]}...")
         
         return {"success": True, "message": "Message sent for processing"}
     except Exception as e:

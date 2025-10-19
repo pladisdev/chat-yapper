@@ -7,8 +7,6 @@ import sys
 import shutil
 import subprocess
 import logging
-import urllib.request
-import urllib.parse
 from datetime import datetime
 from pathlib import Path
 

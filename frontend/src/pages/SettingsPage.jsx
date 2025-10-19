@@ -3,9 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import logger from '../utils/logger'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
-import { Switch } from '../components/ui/switch'
 import { Button } from '../components/ui/button'
-import { Checkbox } from '../components/ui/checkbox'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Separator } from '../components/ui/separator'
 import { useWebSocket } from '../WebSocketContext'
@@ -76,7 +74,7 @@ export default function SettingsPage() {
   }
 
   const simulate = async (user, text, eventType='chat') => {
-    logger.info('🧪 Sending test message:', { user, text, eventType })
+    logger.info('Sending test message:', { user, text, eventType })
     const fd = new FormData()
     fd.set('user', user)
     fd.set('text', text)
@@ -85,9 +83,9 @@ export default function SettingsPage() {
     try {
       const response = await fetch(`${apiUrl}/api/simulate`, { method: 'POST', body: fd })
       const result = await response.json()
-      logger.info('✅ Simulate response:', result)
+      logger.info('Simulate response:', result)
     } catch (error) {
-      console.error('❌ Simulate error:', error)
+      console.error('Simulate error:', error)
     }
   }
 
@@ -361,7 +359,6 @@ function Simulator({ onSend }) {
                 eventType
               )}
             >
-              <span className="text-lg">🚀</span>
               Send Test Message
             </Button>
           </div>

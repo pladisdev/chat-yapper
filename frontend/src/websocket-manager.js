@@ -19,12 +19,12 @@ class WebSocketManager {
   connect() {
     // Prevent multiple connections
     if (this.ws && (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN)) {
-      console.log('⚠️ WebSocket already connecting/connected, skipping')
+      console.log('WebSocket already connecting/connected, skipping')
       return
     }
 
     if (this.listeners.size === 0) {
-      console.log('⚠️ No listeners, skipping connection')
+      console.log('No listeners, skipping connection')
       return
     }
 
@@ -40,11 +40,11 @@ class WebSocketManager {
     }
 
     try {
-      console.log('🔗 Connecting WebSocket to', this.wsUrl, '(', this.listeners.size, 'listeners)')
+      console.log('Connecting WebSocket to', this.wsUrl, '(', this.listeners.size, 'listeners)')
       this.ws = new WebSocket(this.wsUrl)
 
       this.ws.onopen = () => {
-        console.log('🟢 Global WebSocket connected, listeners:', this.listeners.size)
+        console.log('Global WebSocket connected, listeners:', this.listeners.size)
         this.connected = true
         this.ws.send('hello')
         
@@ -57,7 +57,7 @@ class WebSocketManager {
       this.ws.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data)
-          console.log('📨 Global WebSocket broadcasting to', this.listeners.size, 'listeners:', data.type)
+          console.log('Global WebSocket broadcasting to', this.listeners.size, 'listeners:', data.type)
           
           // Create array to avoid Set modification during iteration
           const listenerArray = Array.from(this.listeners)
@@ -65,11 +65,11 @@ class WebSocketManager {
             try {
               listener(data)
             } catch (error) {
-              console.error('❌ Listener error:', error)
+              console.error('Listener error:', error)
             }
           })
         } catch (error) {
-          console.error('❌ Failed to parse WebSocket message:', error)
+          console.error('Failed to parse WebSocket message:', error)
         }
       }
 
@@ -84,21 +84,21 @@ class WebSocketManager {
         const hasListeners = this.listeners.size > 0
         
         if (isCleanClose) {
-          console.log('🔴 WebSocket closed cleanly (code 1000)')
+          console.log('WebSocket closed cleanly (code 1000)')
         } else if (isAbnormalClose) {
           // Only log if we have listeners (otherwise it's expected cleanup)
           if (hasListeners) {
-            console.log('⚠️ WebSocket closed abnormally (code 1006) - server may have restarted')
+            console.log('WebSocket closed abnormally (code 1006) - server may have restarted')
           } else {
-            console.log('🔴 WebSocket closed (cleanup)')
+            console.log('WebSocket closed (cleanup)')
           }
         } else {
-          console.log('🔴 WebSocket disconnected with code:', event.code)
+          console.log('WebSocket disconnected with code:', event.code)
         }
         
         // Only reconnect if we have listeners and it wasn't a clean close
         if (!isCleanClose && hasListeners && !this.reconnectTimer) {
-          console.log('🔄 Reconnecting in 3 seconds...')
+          console.log('Reconnecting in 3 seconds...')
           this.reconnectTimer = setTimeout(() => {
             if (this.listeners.size > 0) { // Double-check we still have listeners
               this.connect()
@@ -112,21 +112,21 @@ class WebSocketManager {
         
         // Only log errors if we're not in the process of disconnecting
         if (this.ws && this.ws.readyState !== WebSocket.CLOSING && this.ws.readyState !== WebSocket.CLOSED) {
-          console.error('❌ WebSocket error during connection')
+          console.error('WebSocket error during connection')
         } else if (this.listeners.size > 0) {
           // Only log if we still have active listeners (not during cleanup)
-          console.log('⚠️ WebSocket error during disconnect (expected)')
+          console.log('WebSocket error during disconnect (expected)')
         }
         // Suppress error logging during cleanup when no listeners remain
       }
     } catch (error) {
-      console.error('❌ Global WebSocket connection failed:', error)
+      console.error('Global WebSocket connection failed:', error)
       this.connected = false
     }
   }
 
   addListener(listener) {
-    console.log('➕ Adding global listener. Total:', this.listeners.size + 1)
+    console.log('Adding global listener. Total:', this.listeners.size + 1)
     this.listeners.add(listener)
     
     // Start connection if this is the first listener
@@ -136,7 +136,7 @@ class WebSocketManager {
     }
     
     return () => {
-      console.log('➖ Removing global listener. Remaining:', this.listeners.size - 1)
+      console.log('Removing global listener. Remaining:', this.listeners.size - 1)
       this.listeners.delete(listener)
       
       // Close connection if no listeners remain
@@ -147,7 +147,7 @@ class WebSocketManager {
   }
 
   disconnect() {
-    console.log('🔌 Disconnecting WebSocket (no listeners)...')
+    console.log('Disconnecting WebSocket (no listeners)...')
     
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
@@ -163,7 +163,7 @@ class WebSocketManager {
           this.ws.close(1000, 'No listeners')
         } catch (error) {
           // Suppress expected errors during cleanup
-          console.log('⚠️ WebSocket close error (expected):', error.message)
+          console.log('WebSocket close error (expected):', error.message)
         }
       }
       this.ws = null

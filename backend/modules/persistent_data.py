@@ -166,7 +166,7 @@ def delete_avatar(avatar_id: int):
         full_path = os.path.join(PERSISTENT_AVATARS_DIR, avatar.filename)
         if os.path.exists(full_path):
             os.remove(full_path)
-            logger.info(f"🗑️  Deleted avatar file: {full_path}")
+            logger.info(f"Deleted avatar file: {full_path}")
         session.delete(avatar)
         session.commit()
         return {"success": True}
@@ -188,7 +188,7 @@ def delete_avatar_group(group_id: str):
                 full_path = os.path.join(PERSISTENT_AVATARS_DIR, avatar.filename)
                 if os.path.exists(full_path):
                     os.remove(full_path)
-                    logger.info(f"🗑️  Deleted avatar file: {full_path}")
+                    logger.info(f"Deleted avatar file: {full_path}")
                 session.delete(avatar)
                 deleted_count += 1
         session.commit()
@@ -522,7 +522,7 @@ def get_cached_voices(provider: str, credentials_hash: str = None):
             
             try:
                 voices = json.loads(cache.voices_json)
-                logger.info(f"📦 Loaded {len(voices)} cached voices for {provider} (last updated: {cache.last_updated})")
+                logger.info(f"Loaded {len(voices)} cached voices for {provider} (last updated: {cache.last_updated})")
                 return voices
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse cached voices for {provider}: {e}")
@@ -558,7 +558,7 @@ def save_cached_voices(provider: str, voices: list, credentials_hash: str = None
             session.add(cache)
         
         session.commit()
-        logger.info(f"💾 Saved {len(voices)} voices to cache for {provider}")
+        logger.info(f"Saved {len(voices)} voices to cache for {provider}")
 
 
 def clear_voice_cache(provider: str = None):
@@ -569,14 +569,14 @@ def clear_voice_cache(provider: str = None):
             if cache:
                 session.delete(cache)
                 session.commit()
-                logger.info(f"🗑️ Cleared voice cache for {provider}")
+                logger.info(f"Cleared voice cache for {provider}")
         else:
             # Clear all caches
             caches = session.exec(select(ProviderVoiceCache)).all()
             for cache in caches:
                 session.delete(cache)
             session.commit()
-            logger.info("🗑️ Cleared all voice caches")
+            logger.info("Cleared all voice caches")
 
 
 def hash_credentials(*credentials: str) -> str:

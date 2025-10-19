@@ -19,7 +19,7 @@ export default function MessageHistory({ apiUrl }) {
       
       if (data.success) {
         setMessages(data.messages)
-        logger.info(`📜 Loaded ${data.messages.length} messages from history`)
+        logger.info(`Loaded ${data.messages.length} messages from history`)
       } else {
         setError(data.error || 'Failed to load message history')
       }
@@ -36,8 +36,7 @@ export default function MessageHistory({ apiUrl }) {
     setReplayingId(messageId)
     
     try {
-      logger.info(`🔁 Replaying message from ${message.username}: ${message.original_text}`)
-      
+      logger.info(`Replaying message from ${message.username}: ${message.original_text}`)
       const response = await fetch(`${apiUrl}/api/test/replay-message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -51,7 +50,7 @@ export default function MessageHistory({ apiUrl }) {
       const data = await response.json()
       
       if (data.success) {
-        logger.info('✅ Message replayed successfully')
+        logger.info('Message replayed successfully')
       } else {
         logger.error('Failed to replay message:', data.error)
       }

@@ -92,11 +92,11 @@ class AudioFilterProcessor:
         
         if random_filters:
             filters = self._build_random_filters(filter_settings)
-            logger.info(f"🎲 Applying random filters: {', '.join(filters)}")
+            logger.info(f"Applying random filters: {', '.join(filters)}")
         else:
             filters = self._build_filters(filter_settings)
             if filters:
-                logger.info(f"🎚️ Applying filters: {', '.join(filters)}")
+                logger.info(f"Applying filters: {', '.join(filters)}")
         
         if not filters:
             return input_path, None
@@ -129,7 +129,7 @@ class AudioFilterProcessor:
             # Get duration of filtered audio
             duration = self._get_audio_duration(output_path)
             
-            logger.info(f"✅ Audio filtered successfully: {output_path} (duration: {duration:.2f}s)")
+            logger.info(f"Audio filtered successfully: {output_path} (duration: {duration:.2f}s)")
             
             # Delete original file to save space
             try:

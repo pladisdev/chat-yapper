@@ -186,10 +186,10 @@ class MonsterTTSProvider(TTSProvider):
             credentials_hash = hash_credentials(self.api_key)
             cached_voices = get_cached_voices("monstertts", credentials_hash)
             if cached_voices:
-                logger.info(f"✓ Using cached MonsterTTS voices ({len(cached_voices)} voices)")
+                logger.info(f"Using cached MonsterTTS voices ({len(cached_voices)} voices)")
                 return cached_voices
         
-        logger.info(f"🔄 Fetching MonsterTTS voices from API...")
+        logger.info(f"Fetching MonsterTTS voices from API...")
         
         headers = {
             "Authorization": self.api_key
@@ -226,13 +226,13 @@ class MonsterTTSProvider(TTSProvider):
                                 "name": voice.get("name", voice.get("display_name", f"Voice {voice.get('id', 'Unknown')[:8]}"))
                             })
                 
-                logger.info(f"✓ Fetched {len(voices)} MonsterTTS voices from API")
+                logger.info(f"Fetched {len(voices)} MonsterTTS voices from API")
                 
                 # Save to cache
                 from modules.persistent_data import save_cached_voices, hash_credentials
                 credentials_hash = hash_credentials(self.api_key)
                 save_cached_voices("monstertts", voices, credentials_hash)
-                logger.info(f"💾 Cached {len(voices)} MonsterTTS voices")
+                logger.info(f"Cached {len(voices)} MonsterTTS voices")
                 
                 return voices
 
@@ -254,10 +254,10 @@ class EdgeTTSProvider(TTSProvider):
             from modules.persistent_data import get_cached_voices
             cached_voices = get_cached_voices("edge", "")
             if cached_voices:
-                logger.info(f"✓ Using cached Edge TTS voices ({len(cached_voices)} voices)")
+                logger.info(f"Using cached Edge TTS voices ({len(cached_voices)} voices)")
                 return cached_voices
         
-        logger.info(f"🔄 Fetching Edge TTS voices from API...")
+        logger.info(f"Fetching Edge TTS voices from API...")
         
         # Get all voices from edge-tts
         all_voices = await edge_tts.list_voices()
@@ -275,12 +275,12 @@ class EdgeTTSProvider(TTSProvider):
                 "locale": voice['Locale']
             })
         
-        logger.info(f"✓ Fetched {len(voices)} English Edge TTS voices from API")
+        logger.info(f"Fetched {len(voices)} English Edge TTS voices from API")
         
         # Save to cache (no credential hash for free service)
         from modules.persistent_data import save_cached_voices
         save_cached_voices("edge", voices, "")
-        logger.info(f"💾 Cached {len(voices)} Edge TTS voices")
+        logger.info(f"Cached {len(voices)} Edge TTS voices")
         
         return voices
     
@@ -335,7 +335,7 @@ class GoogleTTSProvider(TTSProvider):
             credentials_hash = hash_credentials(self.api_key)
             cached_voices = get_cached_voices("google", credentials_hash)
             if cached_voices:
-                logger.info(f"✓ Using cached Google TTS voices ({len(cached_voices)} voices)")
+                logger.info(f"Using cached Google TTS voices ({len(cached_voices)} voices)")
                 return cached_voices
         
         list_voices_url = "https://texttospeech.googleapis.com/v1/voices"
@@ -344,7 +344,7 @@ class GoogleTTSProvider(TTSProvider):
             "Content-Type": "application/json"
         }
         
-        logger.info(f"🔄 Fetching Google TTS voices from API...")
+        logger.info(f"Fetching Google TTS voices from API...")
         
         async with aiohttp.ClientSession() as session:
             async with session.get(list_voices_url, headers=headers) as response:
@@ -407,13 +407,13 @@ class GoogleTTSProvider(TTSProvider):
                 
                 if skipped_voices:
                     logger.info(f"Skipped {len(skipped_voices)} non-English/unsupported Google TTS voices: {', '.join(skipped_voices[:5])}{' and more...' if len(skipped_voices) > 5 else ''}")
-                logger.info(f"✓ Fetched {len(voices)} English Google TTS voices from API")
+                logger.info(f"Fetched {len(voices)} English Google TTS voices from API")
                 
                 # Save to cache
                 from modules.persistent_data import save_cached_voices, hash_credentials
                 credentials_hash = hash_credentials(self.api_key)
                 save_cached_voices("google", voices, credentials_hash)
-                logger.info(f"💾 Cached {len(voices)} Google TTS voices")
+                logger.info(f"Cached {len(voices)} Google TTS voices")
                 
                 return voices
 
@@ -515,11 +515,11 @@ class AmazonPollyProvider(TTSProvider):
                 # Check if cache has old format (using 'id' instead of 'voice_id')
                 needs_migration = any('id' in voice and 'voice_id' not in voice for voice in cached_voices)
                 if needs_migration:
-                    logger.info("🔄 Old Polly cache format detected, clearing cache to refresh...")
+                    logger.info("Old Polly cache format detected, clearing cache to refresh...")
                     clear_voice_cache("polly")
                     cached_voices = None  # Force refresh
                 else:
-                    logger.info(f"✓ Using cached Polly voices ({len(cached_voices)} voices)")
+                    logger.info(f"Using cached Polly voices ({len(cached_voices)} voices)")
                     return cached_voices
         
         try:
@@ -531,7 +531,7 @@ class AmazonPollyProvider(TTSProvider):
                 region_name=self.aws_region
             )
             
-            logger.info(f"🔄 Fetching voices from Amazon Polly API (region: {self.aws_region})...")
+            logger.info(f"Fetching voices from Amazon Polly API (region: {self.aws_region})...")
             
             # Get all voices
             response = polly_client.describe_voices()
@@ -549,7 +549,7 @@ class AmazonPollyProvider(TTSProvider):
                     'provider': 'polly'
                 })
             
-            logger.info(f"✅ Fetched {len(polly_voices)} voices from Amazon Polly")
+            logger.info(f"Fetched {len(polly_voices)} voices from Amazon Polly")
             
             # Save to cache
             from modules.persistent_data import save_cached_voices, hash_credentials
@@ -851,7 +851,7 @@ def get_audio_duration(file_path: str) -> float:
             from mutagen.mp3 import MP3
             audio = MP3(file_path)
             duration = audio.info.length
-            logger.info(f"📏 Audio duration for {os.path.basename(file_path)}: {duration:.2f}s (mutagen)")
+            logger.info(f"Audio duration for {os.path.basename(file_path)}: {duration:.2f}s (mutagen)")
             return duration
         except ImportError:
             # mutagen not installed, try alternative method
@@ -865,7 +865,7 @@ def get_audio_duration(file_path: str) -> float:
             file_size = os.path.getsize(file_path)
             # 192 kbps = 24 KB/s
             estimated_duration = file_size / (24 * 1024)
-            logger.info(f"📏 Audio duration estimated for {os.path.basename(file_path)}: ~{estimated_duration:.2f}s (file size)")
+            logger.info(f"Audio duration estimated for {os.path.basename(file_path)}: ~{estimated_duration:.2f}s (file size)")
             return estimated_duration
         except Exception as e:
             logger.debug(f"Failed to estimate duration from file size: {e}")

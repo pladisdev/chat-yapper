@@ -251,13 +251,11 @@ function AvatarManagement({
                   </div>
                 ) : !avatarName.trim() ? (
                   <>
-                    <div className="text-2xl mb-2">⚠️</div>
                     <div className="text-sm font-medium text-yellow-600 dark:text-yellow-400">Enter avatar name first</div>
                     <div className="text-xs text-muted-foreground mt-1">Name is required before uploading</div>
                   </>
                 ) : (
                   <>
-                    <div className="text-2xl mb-2">📁</div>
                     <div className="text-sm font-medium">Click to upload single avatar image</div>
                     <div className="text-xs text-muted-foreground mt-1">PNG, JPG, GIF, WebP up to 5MB</div>
                   </>

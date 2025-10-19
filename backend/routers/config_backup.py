@@ -35,7 +35,7 @@ async def export_config():
     Includes settings, voices, avatar metadata, and avatar image files.
     """
     try:
-        logger.info("🔽 Starting configuration export...")
+        logger.info("Starting configuration export...")
         
         # Gather all configuration data
         settings = get_settings()
@@ -105,7 +105,7 @@ async def export_config():
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         filename = f"chatyapper_config_{timestamp}.zip"
         
-        logger.info(f"✅ Export complete: {filename} ({len(zip_buffer.getvalue())} bytes)")
+        logger.info(f"Export complete: {filename} ({len(zip_buffer.getvalue())} bytes)")
         
         return StreamingResponse(
             zip_buffer,
@@ -116,7 +116,7 @@ async def export_config():
         )
         
     except Exception as e:
-        logger.error(f"❌ Export failed: {e}", exc_info=True)
+        logger.error(f"Export failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
 
 
@@ -133,7 +133,7 @@ async def import_config(
         merge_mode: "replace" (clear existing) or "merge" (add to existing)
     """
     try:
-        logger.info(f"🔼 Starting configuration import (mode: {merge_mode})...")
+        logger.info(f"Starting configuration import (mode: {merge_mode})...")
         
         # Validate file type
         if not file.filename or not file.filename.endswith('.zip'):
@@ -147,7 +147,7 @@ async def import_config(
             with open(zip_path, "wb") as f:
                 f.write(content)
             
-            logger.info(f"📦 Uploaded file size: {len(content)} bytes")
+            logger.info(f"Uploaded file size: {len(content)} bytes")
             
             # Extract ZIP
             extract_dir = os.path.join(temp_dir, "extracted")
@@ -169,7 +169,7 @@ async def import_config(
             # Backup current database before import
             backup_path = f"{DB_PATH}.backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             shutil.copy2(DB_PATH, backup_path)
-            logger.info(f"💾 Created backup: {backup_path}")
+            logger.info(f"Created backup: {backup_path}")
             
             stats = {
                 "settings_imported": False,
@@ -184,7 +184,7 @@ async def import_config(
                 if "settings" in import_data:
                     save_settings(import_data["settings"])
                     stats["settings_imported"] = True
-                    logger.info("✓ Settings imported")
+                    logger.info("Settings imported")
                 
                 # Import voices
                 if "voices" in import_data and merge_mode == "replace":
@@ -217,7 +217,7 @@ async def import_config(
                             stats["errors"].append(error_msg)
                             logger.warning(error_msg)
                     
-                    logger.info(f"✓ Imported {stats['voices_imported']} voices")
+                    logger.info(f"Imported {stats['voices_imported']} voices")
                 
                 # Import avatars and their image files
                 avatars_dir = os.path.join(extract_dir, "avatars")
@@ -263,7 +263,7 @@ async def import_config(
                             stats["errors"].append(error_msg)
                             logger.warning(error_msg)
                     
-                    logger.info(f"✓ Imported {stats['avatars_imported']} avatars, copied {stats['images_copied']} images")
+                    logger.info(f"Imported {stats['avatars_imported']} avatars, copied {stats['images_copied']} images")
                 
                 # Regenerate avatar slot assignments
                 from app import hub, avatar_message_queue
@@ -288,7 +288,7 @@ async def import_config(
                     "generationId": get_avatar_assignments_generation_id()
                 }))
                 
-                logger.info(f"✅ Import complete: {stats}")
+                logger.info(f"Import complete: {stats}")
                 
                 return {
                     "success": True,
@@ -306,7 +306,7 @@ async def import_config(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Import failed: {e}", exc_info=True)
+        logger.error(f"Import failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Import failed: {str(e)}")
 
 

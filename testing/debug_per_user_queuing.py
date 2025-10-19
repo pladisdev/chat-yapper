@@ -16,22 +16,22 @@ async def check_setting(session):
         async with session.get(f"{API_BASE_URL}/api/debug/per-user-queuing") as response:
             if response.status == 200:
                 data = await response.json()
-                print("🔍 Current Per-User Queuing Debug Info:")
+                print("Current Per-User Queuing Debug Info:")
                 print(f"   ignoreIfUserSpeaking: {data.get('ignoreIfUserSpeaking')}")
                 print(f"   Active TTS jobs: {data.get('activeJobs', [])}")
                 print(f"   Queued TTS jobs: {data.get('queuedJobs', [])}")
                 print(f"   Full messageFiltering config: {json.dumps(data.get('messageFiltering', {}), indent=2)}")
                 return data.get('ignoreIfUserSpeaking')
             else:
-                print(f"❌ Failed to get debug info: {response.status}")
+                print(f"Failed to get debug info: {response.status}")
                 return None
     except Exception as e:
-        print(f"❌ Error checking setting: {e}")
+        print(f"Error checking setting: {e}")
         return None
 
 async def send_test_messages(session, username="TestUser"):
     """Send test messages from the same user"""
-    print(f"\n🧪 Testing with user: {username}")
+    print(f"\nTesting with user: {username}")
     
     messages = [
         "First message - this should always work",
@@ -40,7 +40,7 @@ async def send_test_messages(session, username="TestUser"):
     ]
     
     for i, message in enumerate(messages, 1):
-        print(f"\n📤 Sending message {i}: {message}")
+        print(f"\nSending message {i}: {message}")
         
         data = aiohttp.FormData()
         data.add_field('user', username)
@@ -52,13 +52,13 @@ async def send_test_messages(session, username="TestUser"):
                 result = await response.json()
                 
                 if response.status == 200 and result.get("ok", True):
-                    print(f"   ✅ Message accepted")
+                    print(f"   Message accepted")
                 else:
                     reason = result.get("reason", "Unknown")
-                    print(f"   🚫 Message rejected: {reason}")
+                    print(f"   Message rejected: {reason}")
                     
         except Exception as e:
-            print(f"   ❌ Error: {e}")
+            print(f"   Error: {e}")
         
         # Small delay between messages
         await asyncio.sleep(0.5)
@@ -80,19 +80,19 @@ async def toggle_setting(session, new_value):
                                json=settings,
                                headers={'Content-Type': 'application/json'}) as response:
             if response.status == 200:
-                print(f"✅ Set ignoreIfUserSpeaking = {new_value}")
+                print(f"Set ignoreIfUserSpeaking = {new_value}")
                 return True
             else:
-                print(f"❌ Failed to update setting: {response.status}")
+                print(f"Failed to update setting: {response.status}")
                 return False
                 
     except Exception as e:
-        print(f"❌ Error updating setting: {e}")
+        print(f"Error updating setting: {e}")
         return False
 
 async def main():
     """Run the debug test"""
-    print("🔧 Per-User Queuing Debug Tool")
+    print("Per-User Queuing Debug Tool")
     print("=" * 50)
     
     async with aiohttp.ClientSession() as session:
@@ -101,7 +101,7 @@ async def main():
         current_setting = await check_setting(session)
         
         if current_setting is None:
-            print("❌ Could not determine current setting. Is the backend running?")
+            print("Could not determine current setting. Is the backend running?")
             return
         
         print(f"\n2. Current setting: ignoreIfUserSpeaking = {current_setting}")
@@ -111,7 +111,7 @@ async def main():
         await send_test_messages(session, "DebugUser")
         
         # Wait for TTS to clear
-        print(f"\n⏳ Waiting 3 seconds for TTS to clear...")
+        print(f"\nWaiting 3 seconds for TTS to clear...")
         await asyncio.sleep(3)
         
         # Toggle setting and test again
