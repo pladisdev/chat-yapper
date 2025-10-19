@@ -67,71 +67,19 @@ class TestAudioFilterProcessor:
         """Test checking for enabled filters when some are enabled"""
         settings = {
             'reverb': {'enabled': True, 'roomSize': 0.5},
-            'echo': {'enabled': False},
             'pitch': {'enabled': False},
             'speed': {'enabled': False}
         }
         result = audio_processor._has_enabled_filters(settings)
         assert result is True
     
-    def test_build_reverb_filter(self, audio_processor):
-        """Test building reverb filter string"""
-        settings = {'roomSize': 0.5, 'wetness': 0.3}
-        filter_str = audio_processor._build_reverb_filter(settings)
-        assert 'aecho=' in filter_str
-        # Check delay is calculated based on room size
-        assert 'in_gain' in filter_str
-        assert 'out_gain' in filter_str
-    
-    def test_build_echo_filter(self, audio_processor):
-        """Test building echo filter string"""
-        settings = {'delay': 500, 'decay': 0.5}
-        filter_str = audio_processor._build_echo_filter(settings)
-        assert 'aecho=' in filter_str
-        assert '500' in filter_str
-        assert '0.5' in filter_str
-    
-    def test_build_pitch_filter_up(self, audio_processor):
-        """Test building pitch shift filter (higher pitch)"""
-        settings = {'shift': 2}  # 2 semitones up
-        filter_str = audio_processor._build_pitch_filter(settings)
-        assert 'asetrate=' in filter_str
-        # Pitch up means higher sample rate
-        assert '48000*' in filter_str or 'r=' in filter_str
-    
-    def test_build_pitch_filter_down(self, audio_processor):
-        """Test building pitch shift filter (lower pitch)"""
-        settings = {'shift': -2}  # 2 semitones down
-        filter_str = audio_processor._build_pitch_filter(settings)
-        assert 'asetrate=' in filter_str
-    
-    def test_build_speed_filter_faster(self, audio_processor):
-        """Test building speed change filter (faster)"""
-        settings = {'rate': 1.2}  # 20% faster
-        filter_str = audio_processor._build_speed_filter(settings)
-        assert 'atempo=' in filter_str
-        assert '1.2' in filter_str
-    
-    def test_build_speed_filter_slower(self, audio_processor):
-        """Test building speed change filter (slower)"""
-        settings = {'rate': 0.8}  # 20% slower
-        filter_str = audio_processor._build_speed_filter(settings)
-        assert 'atempo=' in filter_str
-        assert '0.8' in filter_str
-    
-    def test_build_speed_filter_extreme(self, audio_processor):
-        """Test building speed filter with extreme values (should clamp)"""
-        # ffmpeg atempo has limits, processor should handle this
-        settings = {'rate': 3.0}  # Very fast
-        filter_str = audio_processor._build_speed_filter(settings)
-        assert 'atempo=' in filter_str
-        # Should split into multiple tempo filters if > 2.0
+    # Note: Individual _build_*_filter methods were refactored into _build_filters
+    # These tests are removed as they test private implementation details
     
     def test_build_filters_single(self, audio_processor):
         """Test building filter chain with single filter"""
         settings = {
-            'reverb': {'enabled': True, 'roomSize': 0.5, 'wetness': 0.3},
-            'echo': {'enabled': False},
+            'reverb': {'enabled': True, 'amount': 50},
             'pitch': {'enabled': False},
             'speed': {'enabled': False}
         }
@@ -142,19 +90,23 @@ class TestAudioFilterProcessor:
     def test_build_filters_multiple(self, audio_processor):
         """Test building filter chain with multiple filters"""
         settings = {
-            'reverb': {'enabled': True, 'roomSize': 0.5, 'wetness': 0.3},
-            'echo': {'enabled': True, 'delay': 500, 'decay': 0.5},
-            'pitch': {'enabled': True, 'shift': 2},
-            'speed': {'enabled': False}
+            'reverb': {'enabled': True, 'amount': 50},
+            'pitch': {'enabled': True, 'semitones': 2},
+            'speed': {'enabled': True, 'multiplier': 1.2}
         }
         filters = audio_processor._build_filters(settings)
-        assert len(filters) >= 3
+        # Should have 3 separate filters (reverb, pitch, speed)
+        assert len(filters) == 3
+        # Check that different filter types are present
+        filter_str = ','.join(filters)
+        assert 'aecho=' in filter_str  # reverb
+        assert 'asetrate=' in filter_str  # pitch
+        assert 'atempo=' in filter_str  # speed
     
     def test_build_filters_none_enabled(self, audio_processor):
         """Test building filter chain when none are enabled"""
         settings = {
             'reverb': {'enabled': False},
-            'echo': {'enabled': False},
             'pitch': {'enabled': False},
             'speed': {'enabled': False}
         }
@@ -164,33 +116,32 @@ class TestAudioFilterProcessor:
     def test_build_random_filters(self, audio_processor):
         """Test building random filter combinations"""
         settings = {
-            'randomFilters': {
-                'chance': 1.0,  # 100% chance to ensure filters are applied
-                'maxFilters': 3,
-                'filterOptions': {
-                    'reverb': {'enabled': True, 'roomSize': [0.3, 0.7], 'wetness': [0.2, 0.5]},
-                    'echo': {'enabled': True, 'delay': [300, 700], 'decay': [0.3, 0.7]},
-                    'pitch': {'enabled': True, 'shift': [-3, 3]},
-                    'speed': {'enabled': True, 'rate': [0.9, 1.1]}
-                }
+            'reverb': {
+                'randomEnabled': True,
+                'randomRange': {'min': 30, 'max': 70}
+            },
+            'pitch': {
+                'randomEnabled': True,
+                'randomRange': {'min': -3, 'max': 3}
+            },
+            'speed': {
+                'randomEnabled': True,
+                'randomRange': {'min': 0.9, 'max': 1.1}
             }
         }
         
         filters = audio_processor._build_random_filters(settings)
-        # Should return some filters (0 to maxFilters)
+        # Should return some filters (1 to 3)
         assert isinstance(filters, list)
+        assert len(filters) >= 1
         assert len(filters) <= 3
     
     def test_build_random_filters_no_chance(self, audio_processor):
-        """Test random filters with 0% chance"""
+        """Test random filters when all are disabled"""
         settings = {
-            'randomFilters': {
-                'chance': 0.0,  # 0% chance
-                'maxFilters': 3,
-                'filterOptions': {
-                    'reverb': {'enabled': True}
-                }
-            }
+            'reverb': {'randomEnabled': False},
+            'pitch': {'randomEnabled': False},
+            'speed': {'randomEnabled': False}
         }
         
         filters = audio_processor._build_random_filters(settings)
@@ -202,7 +153,7 @@ class TestAudioFilterProcessor:
         audio_processor.ffmpeg_available = False
         
         settings = {
-            'reverb': {'enabled': True, 'roomSize': 0.5, 'wetness': 0.3}
+            'reverb': {'enabled': True, 'amount': 50}
         }
         
         output_path, duration = audio_processor.apply_filters(
@@ -282,44 +233,48 @@ class TestAudioFilterConfiguration:
     def test_default_filter_settings(self, audio_processor):
         """Test that default filter settings are reasonable"""
         settings = {
-            'reverb': {'enabled': True, 'roomSize': 0.5, 'wetness': 0.5},
-            'echo': {'enabled': True, 'delay': 500, 'decay': 0.5},
-            'pitch': {'enabled': True, 'shift': 0},
-            'speed': {'enabled': True, 'rate': 1.0}
+            'reverb': {'enabled': True, 'amount': 50},
+            'pitch': {'enabled': True, 'semitones': 2},
+            'speed': {'enabled': True, 'multiplier': 1.2}
         }
         
         # Should build filters without errors
         filters = audio_processor._build_filters(settings)
-        # At least reverb, echo, and speed should be included (pitch=0 might be skipped)
-        assert len(filters) >= 2
+        # All three filters should be included
+        assert len(filters) == 3
     
     def test_filter_settings_validation(self, audio_processor):
         """Test that extreme filter settings are handled gracefully"""
         settings = {
-            'reverb': {'enabled': True, 'roomSize': 10.0, 'wetness': 2.0},  # Extreme values
-            'pitch': {'enabled': True, 'shift': 50},  # Very high pitch
-            'speed': {'enabled': True, 'rate': 10.0}  # Very fast
+            'reverb': {'enabled': True, 'amount': 100},  # Max value
+            'pitch': {'enabled': True, 'semitones': 12},  # High pitch (1 octave)
+            'speed': {'enabled': True, 'multiplier': 2.5}  # Very fast (needs chaining)
         }
         
         # Should not crash with extreme values
         try:
             filters = audio_processor._build_filters(settings)
             assert isinstance(filters, list)
+            # Speed > 2.0 should result in chained atempo filters
+            speed_filters = [f for f in filters if 'atempo=' in f]
+            assert len(speed_filters) > 0
         except Exception as e:
             pytest.fail(f"Filter building should handle extreme values: {e}")
     
     def test_random_filter_distribution(self, audio_processor):
         """Test that random filters have good distribution"""
         settings = {
-            'randomFilters': {
-                'chance': 1.0,
-                'maxFilters': 2,
-                'filterOptions': {
-                    'reverb': {'enabled': True, 'roomSize': [0.3, 0.7]},
-                    'echo': {'enabled': True, 'delay': [300, 700]},
-                    'pitch': {'enabled': True, 'shift': [-3, 3]},
-                    'speed': {'enabled': True, 'rate': [0.9, 1.1]}
-                }
+            'reverb': {
+                'randomEnabled': True,
+                'randomRange': {'min': 30, 'max': 70}
+            },
+            'pitch': {
+                'randomEnabled': True,
+                'randomRange': {'min': -3, 'max': 3}
+            },
+            'speed': {
+                'randomEnabled': True,
+                'randomRange': {'min': 0.9, 'max': 1.1}
             }
         }
         
@@ -329,9 +284,9 @@ class TestAudioFilterConfiguration:
             filters = audio_processor._build_random_filters(settings)
             filter_sets.append(len(filters))
         
-        # Should have variation in number of filters
-        assert min(filter_sets) >= 0
-        assert max(filter_sets) <= 2
+        # Should have variation in number of filters (1-3 since all are enabled)
+        assert min(filter_sets) >= 1  # At least 1 filter
+        assert max(filter_sets) <= 3  # At most 3 filters (all available)
 
 
 @pytest.mark.integration

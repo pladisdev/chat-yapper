@@ -50,15 +50,15 @@ async def export_config():
             "settings": settings,
             "voices": [
                 {
-                    "name": v.name,
-                    "voice_id": v.voice_id,
-                    "provider": v.provider,
-                    "enabled": v.enabled,
-                    "avatar_image": v.avatar_image,
-                    "avatar_default": v.avatar_default,
-                    "avatar_speaking": v.avatar_speaking,
-                    "avatar_mode": v.avatar_mode,
-                    "created_at": v.created_at
+                    "name": v.get("name"),
+                    "voice_id": v.get("voice_id"),
+                    "provider": v.get("provider"),
+                    "enabled": v.get("enabled"),
+                    "avatar_image": v.get("avatar_image"),
+                    "avatar_default": v.get("avatar_default"),
+                    "avatar_speaking": v.get("avatar_speaking"),
+                    "avatar_mode": v.get("avatar_mode"),
+                    "created_at": v.get("created_at")
                 }
                 for v in voices_data.get("voices", []) if isinstance(v, dict)
             ] if voices_data else [],

@@ -25,10 +25,10 @@ async def api_add_voice(voice_data: dict):
     Voice.provider == voice_data["provider"]
 
 
-    existing = check_voice_exists(voice_data["voice_id"], voice_data["provider"])
+    voice_exists = check_voice_exists(voice_data["voice_id"], voice_data["provider"])
 
-    if existing:
-        return {"error": "Voice already exists", "voice": existing.dict()}
+    if voice_exists:
+        return {"error": "Voice already exists"}
     
     new_voice = Voice(
         name=voice_data["name"],
@@ -48,23 +48,34 @@ async def api_add_voice(voice_data: dict):
 @router.put("/api/voices/{voice_id}")
 async def api_update_voice(voice_id: int, voice_data: dict):
     """Update a voice (enable/disable, change avatar, etc.)"""
-
-    voice = get_voice_by_id(voice_id)
-   
-    if not voice:
-        return {"error": "Voice not found"}
+    from sqlmodel import Session, select
+    from modules.persistent_data import engine
+    
+    with Session(engine) as session:
+        voice = session.get(Voice, voice_id)
         
-    # Update fields
-    if "name" in voice_data:
-        voice.name = voice_data["name"]
-    if "enabled" in voice_data:
-        voice.enabled = voice_data["enabled"]
-    if "avatar_image" in voice_data:
-        voice.avatar_image = voice_data["avatar_image"]
+        if not voice:
+            return {"error": "Voice not found"}
+            
+        # Update fields
+        if "name" in voice_data:
+            voice.name = voice_data["name"]
+        if "enabled" in voice_data:
+            voice.enabled = voice_data["enabled"]
+        if "avatar_image" in voice_data:
+            voice.avatar_image = voice_data["avatar_image"]
+        if "avatar_default" in voice_data:
+            voice.avatar_default = voice_data["avatar_default"]
+        if "avatar_speaking" in voice_data:
+            voice.avatar_speaking = voice_data["avatar_speaking"]
+        if "avatar_mode" in voice_data:
+            voice.avatar_mode = voice_data["avatar_mode"]
 
-    add_voice(voice)
+        session.add(voice)
+        session.commit()
+        session.refresh(voice)
 
-    return {"success": True, "voice": voice.dict()}
+        return {"success": True, "voice": voice.dict()}
 
 @router.delete("/api/voices/{voice_id}")
 async def api_delete_voice(voice_id: int):
