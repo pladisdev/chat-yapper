@@ -136,6 +136,12 @@ class TwitchBot(commands.Bot):
             "bitsbadgetier": "bits",
         }.get(msgid, "chat")
         
+        # Filter out watch streak notifications - these are automated system messages
+        # that shouldn't trigger TTS (e.g., "User watched 5 consecutive streams")
+        if msgid in ["viewcount", "watchstreak"]:
+            # Don't send these messages to TTS at all
+            return
+        
         # For subscription events, check if there's an actual user message attached
         # If not, send empty text so TTS doesn't read the system notification
         if etype == "sub":

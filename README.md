@@ -4,6 +4,11 @@
 
 Chat Yapper is a text-to-speech application that reads Twitch or Youtube (Experimental) chat messages aloud using avatars. 
 
+<p align="center">
+  <img src="assets/avatars.png" alt="Frontend - Avatars" width="45%" />
+  <img src="assets/settings.png" alt="Frontend - Settings" width="48.5%" />
+</p>
+
 ## Features
 - **Voice Avatars**: Visually show chat as custom avatars that speak messages from Twitch and Youtube (Experimental)
 - **Multiple TTS Providers**: Support for Edge, Google, Amazon, Monster

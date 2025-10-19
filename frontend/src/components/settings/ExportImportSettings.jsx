@@ -9,13 +9,17 @@ import {
   AlertCircle, 
   CheckCircle2,
   Info,
-  HardDrive
+  HardDrive,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react'
 
 export default function ExportImportSettings({ apiUrl = '' }) {
   const [configInfo, setConfigInfo] = useState(null)
   const [loading, setLoading] = useState(false)
   const [importing, setImporting] = useState(false)
+  const [resetting, setResetting] = useState(false)
+  const [showResetConfirm, setShowResetConfirm] = useState(false)
   const [result, setResult] = useState(null)
   const [error, setError] = useState(null)
 
@@ -142,6 +146,51 @@ export default function ExportImportSettings({ apiUrl = '' }) {
     }
   }
 
+  const handleFactoryReset = async () => {
+    setResetting(true)
+    setError(null)
+    setResult(null)
+    setShowResetConfirm(false)
+
+    try {
+      const response = await fetch(`${apiUrl}/api/config/reset`, {
+        method: 'POST'
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Factory reset failed')
+      }
+
+      if (data.success) {
+        setResult({
+          type: 'success',
+          message: 'Factory reset completed successfully!',
+          details: `Settings: ${data.stats.settings_deleted} | ` +
+                  `Voices: ${data.stats.voices_deleted} | ` +
+                  `Avatars: ${data.stats.avatars_deleted} | ` +
+                  `Files: ${data.stats.files_deleted}`,
+        })
+        
+        // Clear config info
+        setConfigInfo(null)
+        
+        // Show reload prompt
+        setTimeout(() => {
+          if (confirm('Factory reset complete! The page will now reload to apply changes.')) {
+            window.location.reload()
+          }
+        }, 2000)
+      }
+    } catch (err) {
+      console.error('Factory reset error:', err)
+      setError(`Factory reset failed: ${err.message}`)
+    } finally {
+      setResetting(false)
+    }
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -244,6 +293,81 @@ export default function ExportImportSettings({ apiUrl = '' }) {
               )}
             </label>
           </div>
+        </div>
+
+        {/* Divider */}
+        <div className="border-t border-border"></div>
+
+        {/* Factory Reset Section */}
+        <div className="space-y-3">
+          <div>
+            <Label className="text-base font-medium text-red-600 dark:text-red-400">Factory Reset</Label>
+            <p className="text-sm text-muted-foreground mt-1">
+              Delete all settings, voices, avatars, and data. This will reset the application to its default state.
+            </p>
+          </div>
+
+          {!showResetConfirm ? (
+            <Button
+              onClick={() => setShowResetConfirm(true)}
+              disabled={resetting}
+              className="w-full"
+              variant="destructive"
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Factory Reset
+            </Button>
+          ) : (
+            <div className="space-y-3 p-4 border-2 border-red-500 rounded-lg bg-red-500/5">
+              <div className="flex gap-3">
+                <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+                <div className="text-sm flex-1">
+                  <p className="font-bold text-red-600 dark:text-red-400 mb-2">⚠️ WARNING: This action cannot be undone!</p>
+                  <p className="text-muted-foreground mb-2">
+                    This will permanently delete:
+                  </p>
+                  <ul className="list-disc list-inside text-muted-foreground space-y-1 mb-3">
+                    <li>All settings and preferences</li>
+                    <li>All configured TTS voices</li>
+                    <li>All avatar configurations</li>
+                    <li>All uploaded avatar images</li>
+                    <li>All authentication tokens</li>
+                  </ul>
+                  <p className="text-muted-foreground text-xs">
+                    A backup will be created automatically before resetting.
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleFactoryReset}
+                  disabled={resetting}
+                  className="flex-1"
+                  variant="destructive"
+                >
+                  {resetting ? (
+                    <>
+                      <div className="animate-spin w-4 h-4 border-2 border-current border-t-transparent rounded-full mr-2"></div>
+                      Resetting...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Yes, Delete Everything
+                    </>
+                  )}
+                </Button>
+                <Button
+                  onClick={() => setShowResetConfirm(false)}
+                  disabled={resetting}
+                  className="flex-1"
+                  variant="outline"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Warning */}
