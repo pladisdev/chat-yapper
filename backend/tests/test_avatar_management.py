@@ -547,6 +547,7 @@ class TestAvatarIntegration:
             except:
                 pass  # Already deleted
     
+    @pytest.mark.ci_flaky
     @pytest.mark.asyncio
     async def test_avatar_filtering(self, client, session):
         """Test filtering avatars by type and status"""

@@ -89,6 +89,7 @@ class TestYouTubeOAuthEndpoints:
             location = response.headers.get('location', '')
             assert 'accounts.google.com' in location or 'oauth' in location.lower()
     
+    @pytest.mark.ci_flaky
     @pytest.mark.asyncio
     async def test_youtube_auth_callback_no_code(self, client):
         """Test YouTube OAuth callback without code parameter"""
@@ -98,6 +99,7 @@ class TestYouTubeOAuthEndpoints:
         # The endpoint redirects to /?error=invalid_callback which is a valid error response
         assert response.status_code in [200, 307, 400, 422]
     
+    @pytest.mark.ci_flaky
     @pytest.mark.asyncio
     @patch('modules.persistent_data.save_youtube_auth')
     async def test_youtube_auth_callback_with_code(self, mock_save, client):

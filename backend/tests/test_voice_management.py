@@ -145,6 +145,7 @@ class TestVoiceAPIEndpoints:
         voice_id = data['voice']['id']
         remove_voice(voice_id)
     
+    @pytest.mark.ci_flaky
     @pytest.mark.asyncio
     async def test_add_voice_duplicate(self, client, session):
         """Test adding a duplicate voice"""

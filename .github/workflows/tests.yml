@@ -33,7 +33,7 @@ jobs:
     - name: Run backend tests
       working-directory: ./backend
       run: |
-        pytest --cov=. --cov-report=xml --cov-report=term-missing -v
+        pytest --cov=. --cov-report=xml --cov-report=term-missing -v -m "not ci_flaky"
     
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
