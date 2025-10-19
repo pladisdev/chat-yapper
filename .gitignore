@@ -118,6 +118,7 @@ Thumbs.db
 **/api_key*
 **/*secret*
 **/*token*
+embedded_config.py
 
 # Backup files
 *.bak
