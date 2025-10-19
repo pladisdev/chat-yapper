@@ -5,20 +5,21 @@ import asyncio
 import secrets
 import time
 import urllib.parse
-from datetime import datetime
 from typing import Dict, Any
 
 import aiohttp
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import RedirectResponse
-from sqlmodel import Session, select
 
-from modules import (
-    logger, engine, get_settings,
+from modules import logger
+
+from modules.persistent_data import (
+    get_settings, get_auth, delete_twitch_auth, save_twitch_auth, get_twitch_token,
     TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET, TWITCH_REDIRECT_URI, TWITCH_SCOPE,
+    get_youtube_auth, delete_youtube_auth, save_youtube_auth, get_youtube_token,
+    YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, YOUTUBE_REDIRECT_URI, YOUTUBE_SCOPE,
     oauth_states
 )
-from modules.models import TwitchAuth
 
 router = APIRouter()
 
@@ -95,16 +96,15 @@ async def twitch_auth_callback(code: str = None, state: str = None, error: str =
 async def twitch_auth_status():
     """Get current Twitch connection status"""
     try:
-        with Session(engine) as session:
-            auth = session.exec(select(TwitchAuth)).first()
-            if auth:
-                return {
-                    "connected": True,
-                    "username": auth.username,
-                    "display_name": auth.display_name,
-                    "user_id": auth.twitch_user_id
-                }
-            return {"connected": False}
+        auth = get_auth()
+        if auth:
+            return {
+                "connected": True,
+                "username": auth.username,
+                "display_name": auth.display_name,
+                "user_id": auth.twitch_user_id
+            }
+        return {"connected": False}
     except Exception as e:
         logger.error(f"Error checking Twitch status: {e}")
         return {"connected": False, "error": str(e)}
@@ -113,14 +113,10 @@ async def twitch_auth_status():
 async def twitch_disconnect():
     """Disconnect Twitch account"""
     try:
-        with Session(engine) as session:
-            auth = session.exec(select(TwitchAuth)).first()
-            if auth:
-                session.delete(auth)
-                session.commit()
-                logger.info("Twitch account disconnected")
-                return {"success": True}
-            return {"success": False, "error": "No connection found"}
+        result = delete_twitch_auth()
+        if result["success"]:
+            logger.info("Twitch account disconnected")
+        return result
     except Exception as e:
         logger.error(f"Error disconnecting Twitch: {e}")
         return {"success": False, "error": str(e)}
@@ -208,45 +204,7 @@ async def get_twitch_user_info(access_token: str) -> Dict[str, Any]:
 async def store_twitch_auth(user_info: Dict[str, Any], token_data: Dict[str, Any]):
     """Store Twitch auth in database"""
     try:
-        with Session(engine) as session:
-            # Check if auth already exists for this user
-            existing_auth = session.exec(
-                select(TwitchAuth).where(TwitchAuth.twitch_user_id == user_info["id"])
-            ).first()
-            
-            if existing_auth:
-                # Update existing auth
-                existing_auth.access_token = token_data["access_token"]
-                existing_auth.refresh_token = token_data.get("refresh_token", "")
-                existing_auth.username = user_info["login"]
-                existing_auth.display_name = user_info["display_name"]
-                existing_auth.updated_at = datetime.now().isoformat()
-                if "expires_in" in token_data:
-                    expires_at = datetime.now().timestamp() + token_data["expires_in"]
-                    existing_auth.expires_at = datetime.fromtimestamp(expires_at).isoformat()
-            else:
-                # Create new auth
-                expires_at = None
-                if "expires_in" in token_data:
-                    expires_at = datetime.fromtimestamp(
-                        datetime.now().timestamp() + token_data["expires_in"]
-                    ).isoformat()
-                
-                new_auth = TwitchAuth(
-                    twitch_user_id=user_info["id"],
-                    username=user_info["login"],
-                    display_name=user_info["display_name"],
-                    access_token=token_data["access_token"],
-                    refresh_token=token_data.get("refresh_token", ""),
-                    expires_at=expires_at,
-                    created_at=datetime.now().isoformat(),
-                    updated_at=datetime.now().isoformat()
-                )
-                session.add(new_auth)
-            
-            session.commit()
-            logger.info(f"Stored Twitch auth for user: {user_info['login']}")
-            
+        save_twitch_auth(user_info, token_data)
     except Exception as e:
         logger.error(f"Error storing Twitch auth: {e}")
         raise
@@ -254,22 +212,182 @@ async def store_twitch_auth(user_info: Dict[str, Any], token_data: Dict[str, Any
 async def get_twitch_token_for_bot():
     """Get current Twitch token for bot connection"""
     try:
-        with Session(engine) as session:
-            auth = session.exec(select(TwitchAuth)).first()
-            if auth:
-                # Check if token needs refresh (if expires_at is set and in the past)
-                if auth.expires_at:
-                    expires_at = datetime.fromisoformat(auth.expires_at)
-                    if expires_at <= datetime.now():
-                        logger.info("Twitch token expired, attempting refresh...")
-                        # TODO: Implement token refresh
-                        
-                return {
-                    "token": auth.access_token,
-                    "username": auth.username,
-                    "user_id": auth.twitch_user_id
-                }
+        return get_twitch_token()
     except Exception as e:
         logger.error(f"Error getting Twitch token: {e}")
+    
+    return None
+
+
+# YouTube OAuth Endpoints
+
+@router.get("/auth/youtube")
+async def youtube_auth_start():
+    """Start YouTube OAuth flow"""
+    # Check if YouTube credentials are configured
+    if not YOUTUBE_CLIENT_ID or not YOUTUBE_CLIENT_SECRET:
+        logger.warning("YouTube OAuth attempted but credentials not configured")
+        return RedirectResponse(url="/settings?error=youtube_not_configured")
+    
+    # Generate a random state to prevent CSRF attacks
+    state = secrets.token_urlsafe(32)
+    oauth_states[state] = {"timestamp": time.time()}
+    
+    # Build YouTube OAuth URL
+    params = {
+        "client_id": YOUTUBE_CLIENT_ID,
+        "redirect_uri": YOUTUBE_REDIRECT_URI,
+        "response_type": "code",
+        "scope": YOUTUBE_SCOPE,
+        "state": state,
+        "access_type": "offline",  # Request refresh token
+        "prompt": "consent"  # Force consent screen to get refresh token
+    }
+    
+    auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(params)
+    logger.info(f"Starting YouTube OAuth flow with state: {state}")
+    
+    return RedirectResponse(url=auth_url)
+
+@router.get("/auth/youtube/callback")
+async def youtube_auth_callback(code: str = None, state: str = None, error: str = None):
+    """Handle YouTube OAuth callback"""
+    try:
+        # Check for OAuth errors
+        if error:
+            logger.error(f"YouTube OAuth error: {error}")
+            return RedirectResponse(url="/?error=oauth_denied")
+        
+        if not code or not state:
+            logger.error("Missing code or state in OAuth callback")
+            return RedirectResponse(url="/?error=invalid_callback")
+        
+        # Verify state to prevent CSRF
+        if state not in oauth_states:
+            logger.error(f"Invalid OAuth state: {state}")
+            return RedirectResponse(url="/?error=invalid_state")
+        
+        # Clean up used state
+        del oauth_states[state]
+        
+        # Exchange code for access token
+        token_data = await exchange_youtube_code_for_token(code)
+        if not token_data:
+            return RedirectResponse(url="/?error=token_exchange_failed")
+        
+        # Get channel information
+        channel_info = await get_youtube_channel_info(token_data["access_token"])
+        if not channel_info:
+            return RedirectResponse(url="/?error=channel_info_failed")
+        
+        # Store auth in database
+        await store_youtube_auth(channel_info, token_data)
+        
+        logger.info(f"Successfully connected YouTube channel: {channel_info.get('snippet', {}).get('title', 'Unknown')}")
+        return RedirectResponse(url="/settings?youtube=connected")
+        
+    except Exception as e:
+        logger.error(f"Error in YouTube OAuth callback: {e}", exc_info=True)
+        return RedirectResponse(url="/?error=callback_error")
+
+@router.get("/api/youtube/status")
+async def youtube_auth_status():
+    """Get current YouTube connection status"""
+    try:
+        auth = get_youtube_auth()
+        if auth:
+            return {
+                "connected": True,
+                "channel_id": auth.channel_id,
+                "channel_name": auth.channel_name
+            }
+        return {"connected": False}
+    except Exception as e:
+        logger.error(f"Error checking YouTube status: {e}")
+        return {"connected": False, "error": str(e)}
+
+@router.delete("/api/youtube/disconnect")
+async def youtube_disconnect():
+    """Disconnect YouTube account"""
+    try:
+        result = delete_youtube_auth()
+        if result["success"]:
+            logger.info("YouTube account disconnected")
+        return result
+    except Exception as e:
+        logger.error(f"Error disconnecting YouTube: {e}")
+        return {"success": False, "error": str(e)}
+
+
+# Helper functions for YouTube OAuth
+
+async def exchange_youtube_code_for_token(code: str) -> Dict[str, Any]:
+    """Exchange OAuth code for access token"""
+    try:
+        data = {
+            "client_id": YOUTUBE_CLIENT_ID,
+            "client_secret": YOUTUBE_CLIENT_SECRET,
+            "code": code,
+            "grant_type": "authorization_code",
+            "redirect_uri": YOUTUBE_REDIRECT_URI
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post("https://oauth2.googleapis.com/token", data=data) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    logger.info("Successfully exchanged code for YouTube token")
+                    return result
+                else:
+                    error_text = await response.text()
+                    logger.error(f"YouTube token exchange failed: {response.status} - {error_text}")
+                    return None
+    except Exception as e:
+        logger.error(f"Error exchanging code for YouTube token: {e}")
+        return None
+
+async def get_youtube_channel_info(access_token: str) -> Dict[str, Any]:
+    """Get channel info from YouTube API"""
+    try:
+        headers = {
+            "Authorization": f"Bearer {access_token}"
+        }
+        
+        # Get the user's channel
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                "https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true",
+                headers=headers
+            ) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    channels = result.get("items", [])
+                    if channels:
+                        logger.info(f"Got YouTube channel info: {channels[0].get('snippet', {}).get('title', 'Unknown')}")
+                        return channels[0]
+                    logger.error("No channel data returned from YouTube API")
+                    return None
+                else:
+                    error_text = await response.text()
+                    logger.error(f"YouTube channel info request failed: {response.status} - {error_text}")
+                    return None
+    except Exception as e:
+        logger.error(f"Error getting YouTube channel info: {e}")
+        return None
+
+async def store_youtube_auth(channel_info: Dict[str, Any], token_data: Dict[str, Any]):
+    """Store YouTube auth in database"""
+    try:
+        save_youtube_auth(channel_info, token_data)
+    except Exception as e:
+        logger.error(f"Error storing YouTube auth: {e}")
+        raise
+
+async def get_youtube_token_for_bot():
+    """Get current YouTube token for bot connection"""
+    try:
+        return get_youtube_token()
+    except Exception as e:
+        logger.error(f"Error getting YouTube token: {e}")
     
     return None

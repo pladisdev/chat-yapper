@@ -35,18 +35,18 @@ function GeneralSettings({ settings, setSettings, updateSettings, apiUrl }) {
                   const settingsResponse = await fetch(`${apiUrl}/api/settings`)
                   const settingsData = await settingsResponse.json()
                   setSettings(settingsData)
-                  logger.info(`✅ TTS ${result.tts_enabled ? 'enabled' : 'disabled'}`)
+                  logger.info(`TTS ${result.tts_enabled ? 'enabled' : 'disabled'}`)
                 } else {
-                  console.error('❌ TTS toggle failed:', result.error)
+                  console.error('TTS toggle failed:', result.error)
                 }
               } catch (error) {
-                console.error('❌ Failed to toggle TTS:', error)
+                console.error('Failed to toggle TTS:', error)
               }
             }}
             variant={settings.ttsControl?.enabled !== false ? "destructive" : "default"}
             size="sm"
           >
-            {settings.ttsControl?.enabled !== false ? '🔇 Stop TTS' : '🔊 Resume TTS'}
+            {settings.ttsControl?.enabled !== false ? 'Stop TTS' : 'Resume TTS'}
           </Button>
         </div>
 
@@ -68,19 +68,19 @@ function GeneralSettings({ settings, setSettings, updateSettings, apiUrl }) {
               }}
               onMouseUp={e => {
                 const newVolume = parseInt(e.target.value) / 100
-                logger.info(`🎚️ Volume slider changed to ${Math.round(newVolume * 100)}% (mouse)`)
+                logger.info(`Volume slider changed to ${Math.round(newVolume * 100)}% (mouse)`)
                 updateSettings({ volume: newVolume })
               }}
               onTouchEnd={e => {
                 const newVolume = tempVolume / 100
-                logger.info(`🎚️ Volume slider changed to ${Math.round(newVolume * 100)}% (touch)`)
+                logger.info(`Volume slider changed to ${Math.round(newVolume * 100)}% (touch)`)
                 updateSettings({ volume: newVolume })
               }}
               onKeyUp={e => {
                 // Handle keyboard input (arrow keys, page up/down, etc.)
                 if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(e.key)) {
                   const newVolume = tempVolume / 100
-                  logger.info(`🎚️ Volume slider changed to ${Math.round(newVolume * 100)}% (keyboard: ${e.key})`)
+                  logger.info(`Volume slider changed to ${Math.round(newVolume * 100)}% (keyboard: ${e.key})`)
                   updateSettings({ volume: newVolume })
                 }
               }}
@@ -192,18 +192,18 @@ function GeneralSettings({ settings, setSettings, updateSettings, apiUrl }) {
                   const response = await fetch(`${apiUrl}/api/avatars/re-randomize`, { method: 'POST' })
                   const result = await response.json()
                   if (result.success) {
-                    logger.info('✅ Avatar re-randomization triggered')
+                    logger.info('Avatar re-randomization triggered')
                   } else {
-                    console.error('❌ Avatar re-randomization failed:', result.error)
+                    console.error('Avatar re-randomization failed:', result.error)
                   }
                 } catch (error) {
-                  console.error('❌ Failed to trigger avatar re-randomization:', error)
+                  console.error('Failed to trigger avatar re-randomization:', error)
                 }
               }}
               variant="outline"
               size="sm"
             >
-              🎲 Re-randomize Avatars
+              Re-randomize Avatars
             </Button>
           </div>
         </div>

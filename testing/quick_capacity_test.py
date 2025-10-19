@@ -7,7 +7,7 @@ Expected: 2 process immediately, 1 gets queued.
 import requests
 import time
 
-API_URL = "http://localhost:8000"
+API_URL = "http://localhost:8008"
 
 def send_message(username, text):
     response = requests.post(
@@ -26,13 +26,13 @@ print("=" * 70)
 
 # Get initial state
 debug = get_debug_info()
-print(f"\n📊 Initial State:")
+print(f"\nInitial State:")
 print(f"   Max positions: {debug['avatarCapacity']['maxPositions']}")
 print(f"   Active: {debug['avatarCapacity']['activePositions']}")
 print(f"   Queue: {debug['avatarCapacity']['queueSize']}")
 
 # Send 3 messages rapidly (should queue the 3rd one if max is 2)
-print(f"\n📨 Sending 3 messages rapidly...")
+print(f"\nSending 3 messages rapidly...")
 for i in range(3):
     print(f"   Sending message {i+1}...")
     result = send_message(f"User{i+1}", f"Test message {i+1}")
@@ -41,22 +41,22 @@ for i in range(3):
 # Check state immediately after
 time.sleep(0.3)  # Small delay for processing
 debug = get_debug_info()
-print(f"\n📊 After sending messages:")
+print(f"\nAfter sending messages:")
 print(f"   Active: {debug['avatarCapacity']['activePositions']}")
 print(f"   Queue: {debug['avatarCapacity']['queueSize']}")
 print(f"   Active jobs: {debug['activeJobs']}")
 
 if debug['avatarCapacity']['maxPositions'] == 2:
     if debug['avatarCapacity']['activePositions'] <= 2:
-        print(f"\n✅ SUCCESS: Capacity respected! (≤2 active)")
+        print(f"\nSUCCESS: Capacity respected! (≤2 active)")
     else:
-        print(f"\n❌ FAIL: Too many active ({debug['avatarCapacity']['activePositions']}) - race condition not fixed")
+        print(f"\nFAIL: Too many active ({debug['avatarCapacity']['activePositions']}) - race condition not fixed")
     
     if debug['avatarCapacity']['queueSize'] > 0:
-        print(f"✅ SUCCESS: Messages queued when at capacity!")
+        print(f"SUCCESS: Messages queued when at capacity!")
     elif debug['avatarCapacity']['activePositions'] < 2:
-        print(f"ℹ️ Messages already completed")
+        print(f"Messages already completed")
 else:
-    print(f"ℹ️ Testing with {debug['avatarCapacity']['maxPositions']} positions")
+    print(f"Testing with {debug['avatarCapacity']['maxPositions']} positions")
 
 print("\n" + "=" * 70)

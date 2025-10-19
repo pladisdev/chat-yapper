@@ -7,7 +7,7 @@ import time
 def send_message(user, text):
     data = {'user': user, 'text': text, 'eventType': 'chat'}
     try:
-        response = requests.post('http://localhost:8000/api/simulate', data=data)
+        response = requests.post('http://localhost:8008/api/simulate', data=data)
         print(f"Sent: {user} - {text} | Status: {response.status_code}")
         if response.status_code != 200:
             print(f"Response: {response.text}")

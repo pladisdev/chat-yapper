@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 import path from 'path'
 
 // Load environment variables
-const backendPort = process.env.PORT || 8000
+const backendPort = process.env.PORT || 8008
 const frontendPort = process.env.FRONTEND_PORT || 5173
 
 export default defineConfig({
@@ -12,6 +12,10 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+  },
+  build: {
+    outDir: path.resolve(__dirname, '../backend/public'),
+    emptyOutDir: true,
   },
   server: {
     port: parseInt(frontendPort),

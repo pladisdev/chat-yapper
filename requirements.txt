@@ -1,12 +1,33 @@
-fastapi
-uvicorn[standard]
-sqlmodel
-pydantic
-pydantic-settings
+# Core dependencies
+fastapi>=0.68.0
+uvicorn[standard]>=0.15.0
+sqlmodel>=0.0.8
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
 python-multipart>=0.0.6
-edge-tts==7.2.3
+python-dotenv>=1.0.0
+
+# TTS and audio
+edge-tts==7.0.2
+mutagen>=1.45.0
+
+# Streaming platforms
+twitchio>=2.0.0
 aiohttp>=3.8.0
-twitchio>=2.5.0
-Pillow
-boto3
-mutagen
+
+# Image processing
+Pillow>=9.0.0
+
+# Cloud services
+boto3>=1.26.0
+
+# Google APIs (YouTube)
+google-auth>=2.23.0
+google-auth-oauthlib>=1.1.0
+google-api-python-client>=2.100.0
+
+# Testing dependencies (optional)
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+httpx>=0.24.0

@@ -32,7 +32,7 @@ if __name__ == "__main__":
     
     # Get configuration from environment variables
     host = os.getenv('HOST', '0.0.0.0')
-    port = int(os.getenv('PORT', 8000))
+    port = int(os.getenv('PORT', 8008))
     debug_mode = os.getenv('DEBUG', '').lower() in ('true', '1', 'yes', 'on')
     log_level = "debug" if debug_mode else "info"
     

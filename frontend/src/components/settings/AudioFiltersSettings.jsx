@@ -26,7 +26,7 @@ export default function AudioFiltersSettings({ settings, updateSettings }) {
       }
     }
     updateSettings({ audioFilters: newFilters })
-    logger.info(`🎚️ Updated ${filterType} filter:`, updates)
+    logger.info(`Updated ${filterType} filter:`, updates)
   }
 
   const updateGlobalSetting = (key, value) => {
@@ -35,7 +35,7 @@ export default function AudioFiltersSettings({ settings, updateSettings }) {
       [key]: value
     }
     updateSettings({ audioFilters: newFilters })
-    logger.info(`🎚️ Updated audio filter setting ${key}:`, value)
+    logger.info(`Updated audio filter setting ${key}:`, value)
   }
 
   return (
@@ -392,7 +392,7 @@ export default function AudioFiltersSettings({ settings, updateSettings }) {
 
             <div className="p-4 border border-yellow-500/20 rounded-lg bg-yellow-500/5 space-y-2">
               <p className="text-sm font-medium text-yellow-600 dark:text-yellow-400">
-                ⚠️ Requirements
+                Requirements
               </p>
               <p className="text-xs text-muted-foreground">
                 Audio effects require <code className="bg-muted px-1 py-0.5 rounded">ffmpeg</code> to be installed on your system.

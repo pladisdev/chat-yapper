@@ -6,7 +6,8 @@ Write-Host "Chat Yapper - Testing Setup" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
-$projectRoot = $PSScriptRoot
+# Script is in deployment/ folder, project root is parent
+$projectRoot = Split-Path -Parent $PSScriptRoot
 $backendDir = Join-Path $projectRoot "backend"
 $frontendDir = Join-Path $projectRoot "frontend"
 
@@ -21,19 +22,19 @@ function Test-Command {
 Write-Host "Checking prerequisites..." -ForegroundColor Yellow
 
 if (-not (Test-Command "python")) {
-    Write-Host "❌ Python not found. Please install Python 3.9 or higher." -ForegroundColor Red
+    Write-Host "Python not found. Please install Python 3.9 or higher." -ForegroundColor Red
     exit 1
 } else {
     $pythonVersion = python --version
-    Write-Host "✅ $pythonVersion found" -ForegroundColor Green
+    Write-Host "$pythonVersion found" -ForegroundColor Green
 }
 
 if (-not (Test-Command "npm")) {
-    Write-Host "❌ npm not found. Please install Node.js 16 or higher." -ForegroundColor Red
+    Write-Host "npm not found. Please install Node.js 16 or higher." -ForegroundColor Red
     exit 1
 } else {
     $npmVersion = npm --version
-    Write-Host "✅ npm v$npmVersion found" -ForegroundColor Green
+    Write-Host "npm v$npmVersion found" -ForegroundColor Green
 }
 
 Write-Host ""
@@ -43,24 +44,16 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "Installing Backend Dependencies" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 
-if (Test-Path $backendDir) {
-    Push-Location $backendDir
-    Write-Host "Installing Python packages..." -ForegroundColor Yellow
-    
-    try {
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        Write-Host "✅ Backend dependencies installed successfully!" -ForegroundColor Green
-    }
-    catch {
-        Write-Host "❌ Failed to install backend dependencies: $_" -ForegroundColor Red
-        Pop-Location
-        exit 1
-    }
-    
-    Pop-Location
-} else {
-    Write-Host "❌ Backend directory not found at: $backendDir" -ForegroundColor Red
+Write-Host "Installing Python packages..." -ForegroundColor Yellow
+
+try {
+    python -m pip install --upgrade pip
+    pip install -r (Join-Path $projectRoot "requirements.txt")
+    Write-Host "Backend dependencies installed successfully!" -ForegroundColor Green
+}
+catch {
+    Write-Host "Failed to install backend dependencies: $_" -ForegroundColor Red
+    exit 1
 }
 
 Write-Host ""
@@ -76,17 +69,17 @@ if (Test-Path $frontendDir) {
     
     try {
         npm install
-        Write-Host "✅ Frontend dependencies installed successfully!" -ForegroundColor Green
+        Write-Host "Frontend dependencies installed successfully!" -ForegroundColor Green
     }
     catch {
-        Write-Host "❌ Failed to install frontend dependencies: $_" -ForegroundColor Red
+        Write-Host "Failed to install frontend dependencies: $_" -ForegroundColor Red
         Pop-Location
         exit 1
     }
     
     Pop-Location
 } else {
-    Write-Host "❌ Frontend directory not found at: $frontendDir" -ForegroundColor Red
+    Write-Host "Frontend directory not found at: $frontendDir" -ForegroundColor Red
 }
 
 Write-Host ""

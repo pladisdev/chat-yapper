@@ -1,12 +1,8 @@
 import asyncio
-import logging
 from typing import Callable, Dict, Any
-
+from modules import logger
 from twitchio.ext import commands
 import twitchio
-
-# Get logger for this module
-logger = logging.getLogger('ChatYapper.Twitch')
 
 def _ti_major() -> int:
     try:
@@ -129,8 +125,7 @@ class TwitchBot(commands.Bot):
         tags = _normalize_tags(tags_in)
         msgid = (tags.get("msg-id") or "").lower()
         user = tags.get("display-name") or tags.get("login") or "unknown"
-        text = tags.get("system-msg") or ""
-
+        
         etype = {
             "sub": "sub",
             "resub": "sub",
@@ -140,6 +135,15 @@ class TwitchBot(commands.Bot):
             "raid": "raid",
             "bitsbadgetier": "bits",
         }.get(msgid, "chat")
+        
+        # For subscription events, check if there's an actual user message attached
+        # If not, send empty text so TTS doesn't read the system notification
+        if etype == "sub":
+            # User messages in sub events are in the 'message' tag, not 'system-msg'
+            text = tags.get("message") or ""
+        else:
+            # For other events (raids, bits), system-msg is appropriate
+            text = tags.get("system-msg") or ""
 
         self.on_event_cb({
             "type": "notice",
@@ -228,16 +232,27 @@ async def run_twitch_bot(token: str, nick: str, channel: str, on_event: Callable
         # else last-resort run() via a thread to avoid blocking an async caller.
         started = False
 
-        start_coro = getattr(bot, "start", None)
-        if start_coro and asyncio.iscoroutinefunction(start_coro):
-            await bot.start()
-            started = True
+        try:
+            start_coro = getattr(bot, "start", None)
+            if start_coro and asyncio.iscoroutinefunction(start_coro):
+                await bot.start()
+                started = True
+        except AttributeError as attr_err:
+            # Handle twitchio internal errors during startup
+            if bot_logger:
+                bot_logger.warning(f"Twitchio startup error (may be due to cancellation): {attr_err}")
+            raise asyncio.CancelledError() from attr_err
 
         if not started:
-            connect_coro = getattr(bot, "connect", None)
-            if connect_coro and asyncio.iscoroutinefunction(connect_coro):
-                await bot.connect()
-                started = True
+            try:
+                connect_coro = getattr(bot, "connect", None)
+                if connect_coro and asyncio.iscoroutinefunction(connect_coro):
+                    await bot.connect()
+                    started = True
+            except AttributeError as attr_err:
+                if bot_logger:
+                    bot_logger.warning(f"Twitchio connect error (may be due to cancellation): {attr_err}")
+                raise asyncio.CancelledError() from attr_err
 
         if not started:
             # Blocking fallback (older 1.x) — run in executor so our async
@@ -258,8 +273,12 @@ async def run_twitch_bot(token: str, nick: str, channel: str, on_event: Callable
                         await close_method()
                     else:
                         close_method()
+            except AttributeError as attr_err:
+                # Twitchio internal cleanup error (e.g., NoneType has no attribute 'cancel')
+                if bot_logger:
+                    bot_logger.debug(f"Twitchio internal cleanup error (safe to ignore): {attr_err}")
             except Exception as close_err:
-                # Ignore cleanup errors during cancellation
+                # Ignore other cleanup errors during cancellation
                 if bot_logger:
                     bot_logger.debug(f"Error during bot cleanup: {close_err}")
         raise  # Re-raise CancelledError so the task properly terminates

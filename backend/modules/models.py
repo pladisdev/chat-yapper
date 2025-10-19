@@ -46,3 +46,22 @@ class TwitchAuth(SQLModel, table=True):
     expires_at: Optional[str] = Field(default=None)  # When the access token expires
     created_at: Optional[str] = Field(default=None)  # When this auth was created
     updated_at: Optional[str] = Field(default=None)  # Last time tokens were refreshed
+
+
+class YouTubeAuth(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    channel_id: str  # YouTube channel ID
+    channel_name: str  # YouTube channel name
+    access_token: str  # OAuth access token
+    refresh_token: str  # OAuth refresh token for renewals
+    expires_at: Optional[str] = Field(default=None)  # When the access token expires
+    created_at: Optional[str] = Field(default=None)  # When this auth was created
+    updated_at: Optional[str] = Field(default=None)  # Last time tokens were refreshed
+
+
+class ProviderVoiceCache(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    provider: str  # Provider name (e.g., "polly", "monstertts", "google")
+    voices_json: str  # JSON string of voice list
+    last_updated: str  # ISO timestamp of when this was last fetched
+    credentials_hash: Optional[str] = Field(default=None)  # Hash of credentials to detect changes

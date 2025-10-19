@@ -2,11 +2,11 @@
 TTS (Text-to-Speech) control and simulation router
 """
 import json
-from typing import Dict, Any
 
 from fastapi import APIRouter, Form, HTTPException
 
-from modules import logger, get_settings
+from modules import logger
+from modules.persistent_data import get_settings
 
 router = APIRouter()
 

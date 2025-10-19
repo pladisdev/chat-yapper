@@ -251,15 +251,13 @@ function AvatarManagement({
                   </div>
                 ) : !avatarName.trim() ? (
                   <>
-                    <div className="text-2xl mb-2">⚠️</div>
                     <div className="text-sm font-medium text-yellow-600 dark:text-yellow-400">Enter avatar name first</div>
                     <div className="text-xs text-muted-foreground mt-1">Name is required before uploading</div>
                   </>
                 ) : (
                   <>
-                    <div className="text-2xl mb-2">📁</div>
                     <div className="text-sm font-medium">Click to upload single avatar image</div>
-                    <div className="text-xs text-muted-foreground mt-1">PNG, JPG, GIF up to 5MB</div>
+                    <div className="text-xs text-muted-foreground mt-1">PNG, JPG, GIF, WebP up to 5MB</div>
                   </>
                 )}
               </div>
@@ -287,7 +285,6 @@ function AvatarManagement({
                     <div className="text-xs text-yellow-600 dark:text-yellow-400">Enter name first</div>
                   ) : (
                     <>
-                      <div className="text-lg mb-1">😴</div>
                       <div className="text-xs font-medium">Upload default image</div>
                     </>
                   )}
@@ -315,7 +312,6 @@ function AvatarManagement({
                     <div className="text-xs text-yellow-600 dark:text-yellow-400">Enter name first</div>
                   ) : (
                     <>
-                      <div className="text-lg mb-1">🗣️</div>
                       <div className="text-xs font-medium">Upload speaking image</div>
                     </>
                   )}
@@ -351,20 +347,22 @@ function AvatarManagement({
                           )}
                         </h4>
                         <div className="flex gap-2">
-                          <Button
-                            variant={avatars.some(avatar => avatar.disabled) ? "default" : "outline"}
-                            size="sm"
+                          <button
                             onClick={() => handleToggleAvatarGroupDisabled(groupKey, avatars[0].name, avatars.length > 1)}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-lg ${
+                              !avatars.some(avatar => avatar.disabled)
+                                ? 'bg-green-600 hover:bg-green-700 text-white hover:shadow-green-500/50'
+                                : 'bg-neutral-600 hover:bg-neutral-500 text-neutral-200 hover:shadow-neutral-500/50'
+                            }`}
                           >
-                            {avatars.some(avatar => avatar.disabled) ? 'Enable' : 'Disable'}
-                          </Button>
-                          <Button
-                            variant="destructive"
-                            size="sm"
+                            {!avatars.some(avatar => avatar.disabled) ? 'Enabled' : 'Disabled'}
+                          </button>
+                          <button
                             onClick={() => handleDeleteAvatarGroup(groupKey, avatars[0].name, avatars.length > 1)}
+                            className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 hover:bg-red-700 text-white transition-all shadow-lg hover:shadow-red-500/50"
                           >
-                            Delete {avatars.length > 1 ? 'Pair' : 'Avatar'}
-                          </Button>
+                            Delete
+                          </button>
                         </div>
                       </div>
                       
@@ -408,7 +406,7 @@ function AvatarManagement({
                                 )}
                               </div>
                               <div className={`text-xs font-medium ${avatar.disabled ? 'text-muted-foreground' : ''}`}>
-                                {avatar.avatar_type === 'default' ? '😴 Default' : '🗣️ Speaking'}
+                                {avatar.avatar_type === 'default' ? 'Default' : 'Speaking'}
                                 {avatar.disabled && ' (Disabled)'}
                               </div>
                               <div className="text-xs text-muted-foreground mt-1">

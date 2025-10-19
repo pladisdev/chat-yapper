@@ -118,6 +118,16 @@ Thumbs.db
 **/api_key*
 **/*secret*
 **/*token*
+embedded_config.py
+
+# Code signing certificates and passwords (NEVER commit these!)
+*.pfx
+*.p12
+*.cer
+*-password.txt
+ChatYapper.pfx
+ChatYapper.cer
+ChatYapper-password.txt
 
 # Backup files
 *.bak

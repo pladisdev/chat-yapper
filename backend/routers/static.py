@@ -6,14 +6,16 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from modules import logger, PUBLIC_DIR, PERSISTENT_AVATARS_DIR
+from modules import logger
+
+from modules.persistent_data import PUBLIC_DIR, PERSISTENT_AVATARS_DIR
 
 router = APIRouter()
 
 @router.get("/favicon.ico")
 async def favicon():
     """Serve the favicon.ico file"""
-    favicon_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "icon.ico")
+    favicon_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets", "icon.ico")
     if os.path.exists(favicon_path):
         return FileResponse(favicon_path, media_type="image/x-icon")
     else:

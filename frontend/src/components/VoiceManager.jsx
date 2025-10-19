@@ -144,13 +144,13 @@ export default function VoiceManager({ managedAvatars, apiUrl }) {
         edge: edgeData.voices || [],
       }
       
-      logger.info('📊 Available voices loaded:', {
+      logger.info('Available voices loaded:', {
         monstertts: newAvailableVoices.monstertts.length,
         google: newAvailableVoices.google.length,
         polly: newAvailableVoices.polly.length,
         edge: newAvailableVoices.edge.length
       })
-      logger.info('🎤 Polly voices:', newAvailableVoices.polly)
+      logger.info('Polly voices:', newAvailableVoices.polly)
       
       setAvailableVoices(newAvailableVoices)
     } catch (error) {
@@ -159,10 +159,22 @@ export default function VoiceManager({ managedAvatars, apiUrl }) {
   }
 
   const addVoice = async () => {
-    if (!selectedVoice) return
+    if (!selectedVoice) {
+      console.warn('No voice selected')
+      return
+    }
+
+    console.log('Looking for voice:', selectedVoice, 'in provider:', selectedProvider)
+    console.log('Available voices for provider:', availableVoices[selectedProvider])
 
     const voiceData = availableVoices[selectedProvider].find(v => v.voice_id === selectedVoice)
-    if (!voiceData) return
+    
+    if (!voiceData) {
+      console.error('Voice not found! Selected:', selectedVoice, 'Available:', availableVoices[selectedProvider])
+      return
+    }
+    
+    console.log('Found voice data:', voiceData)
 
     try {
       const voicePayload = {
@@ -396,11 +408,11 @@ export default function VoiceManager({ managedAvatars, apiUrl }) {
                         voice.provider === 'polly' ? 'text-purple-400' :
                         voice.provider === 'edge' ? 'text-green-400' : 'text-gray-400'
                       }>
-                        {voice.provider === 'monstertts' ? '🤖 MonsterTTS' :
-                         voice.provider === 'google' ? '🔊 Google TTS' :
-                         voice.provider === 'polly' ? '🗣️ Amazon Polly' :
-                         voice.provider === 'edge' ? '🌐 Edge TTS' :
-                         `📢 ${voice.provider}`}
+                        {voice.provider === 'monstertts' ? 'MonsterTTS' :
+                         voice.provider === 'google' ? 'Google TTS' :
+                         voice.provider === 'polly' ? 'Amazon Polly' :
+                         voice.provider === 'edge' ? 'Edge TTS' :
+                         `${voice.provider}`}
                       </span>
                       <span>•</span>
                       <span className="text-purple-400">{voice.voice_id}</span>

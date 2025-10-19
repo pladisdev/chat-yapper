@@ -7,7 +7,7 @@ This repository is configured to automatically build Windows executables and cre
 ### For Pull Requests to `main`:
 1. **Automatic Build**: When you create or update a PR to merge `develop` → `main`, the workflow will:
    - Build the frontend (React/Vite)
-   - Build the Windows executable using `build.py`
+   - Build the Windows executable using `deployment/build.py`
    - Run validation tests
    - Upload the executable as an artifact
    - Comment on the PR with build status
@@ -131,7 +131,7 @@ You can also trigger builds manually:
 
 ### Build fails with "Executable not found"
 - Check the build logs for Python/Node errors
-- Ensure `build.py` completes successfully
+- Ensure `deployment/build.py` completes successfully
 - Verify frontend builds correctly
 
 ### Cannot merge PR

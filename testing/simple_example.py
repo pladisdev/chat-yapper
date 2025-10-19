@@ -17,13 +17,13 @@ try:
     import aiohttp
     import random
 except ImportError as e:
-    print(f"❌ Import error: {e}")
+    print(f"Import error: {e}")
     print("Make sure you're running this from the testing directory")
     sys.exit(1)
 
 async def demo_single_user():
     """Demo single user mode"""
-    print("🎯 SINGLE USER MODE DEMO")
+    print("SINGLE USER MODE DEMO")
     print("All messages will be from 'DemoUser'")
     print("-" * 40)
     
@@ -35,7 +35,7 @@ async def demo_single_user():
 
 async def demo_random_users():
     """Demo random user mode"""
-    print("\n🎲 RANDOM USER MODE DEMO")
+    print("\nRANDOM USER MODE DEMO")
     print("Each message will be from a different user")
     print("-" * 40)
     
@@ -50,7 +50,7 @@ async def demo_random_users():
 
 async def main():
     """Run both demos"""
-    print("🎮 Chat Yapper User Mode Comparison")
+    print("Chat Yapper User Mode Comparison")
     print("=" * 50)
     print("This demonstrates the difference between single user and random user modes")
     print("Perfect for testing per-user TTS queuing vs parallel audio!")
@@ -61,14 +61,14 @@ async def main():
         await asyncio.sleep(2)  # Pause between demos
         await demo_random_users()
         
-        print("\n✅ Demo complete!")
+        print("\nDemo complete!")
         print("\nKey differences:")
         print("• Single user: Great for testing per-user queuing (same user won't interrupt)")
         print("• Random users: Great for testing parallel audio (multiple voices at once)")
     
     except Exception as e:
-        print(f"❌ Demo error: {e}")
-        print("Make sure Chat Yapper backend is running on http://localhost:8000")
+        print(f"Demo error: {e}")
+        print("Make sure Chat Yapper backend is running on http://localhost:8008")
 
 if __name__ == "__main__":
     asyncio.run(main())

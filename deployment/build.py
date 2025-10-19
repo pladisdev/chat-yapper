@@ -7,10 +7,14 @@ import sys
 import shutil
 import subprocess
 import logging
-import urllib.request
-import urllib.parse
 from datetime import datetime
 from pathlib import Path
+
+# Change to project root directory (parent of deployment/)
+script_dir = Path(__file__).parent
+project_root = script_dir.parent
+os.chdir(project_root)
+print(f"Working directory set to: {project_root}")
 
 # Load environment variables from .env file if available
 try:
@@ -104,19 +108,19 @@ def build_frontend():
         sys.exit(1)
     
     # Install dependencies and build
+    # Note: vite.config.js is configured to build directly to backend/public
     run_command("npm install", cwd=frontend_dir)
     run_command("npm run build", cwd=frontend_dir)
     
-    # Copy build to backend/public
+    # Verify the build output exists
     backend_public = Path("backend/public")
-    if backend_public.exists():
-        logger.info("Removing existing backend/public directory")
-        shutil.rmtree(backend_public)
+    if not backend_public.exists() or not (backend_public / "index.html").exists():
+        logger.error(f"Frontend build failed - {backend_public / 'index.html'} not found")
+        print("Frontend build failed - output not found in backend/public")
+        sys.exit(1)
     
-    logger.info(f"Copying frontend build from {frontend_dir / 'dist'} to {backend_public}")
-    shutil.copytree(frontend_dir / "dist", backend_public)
-    logger.info("Frontend built and copied successfully")
-    log_important("Frontend built and copied to backend/public")
+    logger.info("Frontend built successfully")
+    log_important("Frontend built to backend/public")
 
 def create_embedded_env_config():
     """Create embedded environment configuration for the executable"""
@@ -126,8 +130,14 @@ def create_embedded_env_config():
     twitch_client_id = os.environ.get("TWITCH_CLIENT_ID", "")
     twitch_client_secret = os.environ.get("TWITCH_CLIENT_SECRET", "")
     
+    # Read YouTube environment variables from .env
+    youtube_client_id = os.environ.get("YOUTUBE_CLIENT_ID", "")
+    youtube_client_secret = os.environ.get("YOUTUBE_CLIENT_SECRET", "")
+    
     logger.info(f"Found Twitch Client ID: {'Yes' if twitch_client_id else 'No'}")
     logger.info(f"Found Twitch Client Secret: {'Yes' if twitch_client_secret else 'No'}")
+    logger.info(f"Found YouTube Client ID: {'Yes' if youtube_client_id else 'No'}")
+    logger.info(f"Found YouTube Client Secret: {'Yes' if youtube_client_secret else 'No'}")
     
     # Create embedded config Python file
     config_content = f'''"""
@@ -139,11 +149,17 @@ Generated during build process from .env file.
 EMBEDDED_TWITCH_CLIENT_ID = "{twitch_client_id}"
 EMBEDDED_TWITCH_CLIENT_SECRET = "{twitch_client_secret}"
 
+# YouTube OAuth Configuration embedded from build-time .env file
+EMBEDDED_YOUTUBE_CLIENT_ID = "{youtube_client_id}"
+EMBEDDED_YOUTUBE_CLIENT_SECRET = "{youtube_client_secret}"
+
 def get_embedded_env(key, default=""):
     """Get embedded environment variable by key"""
     embedded_vars = {{
         "TWITCH_CLIENT_ID": EMBEDDED_TWITCH_CLIENT_ID,
         "TWITCH_CLIENT_SECRET": EMBEDDED_TWITCH_CLIENT_SECRET,
+        "YOUTUBE_CLIENT_ID": EMBEDDED_YOUTUBE_CLIENT_ID,
+        "YOUTUBE_CLIENT_SECRET": EMBEDDED_YOUTUBE_CLIENT_SECRET,
     }}
     return embedded_vars.get(key, default)
 '''
@@ -155,6 +171,7 @@ def get_embedded_env(key, default=""):
     
     logger.info(f"Created embedded config: {config_path}")
     log_important(f"Embedded Twitch config {'with' if twitch_client_id else 'without'} credentials")
+    log_important(f"Embedded YouTube config {'with' if youtube_client_id else 'without'} credentials")
     
     return config_path
 
@@ -206,7 +223,7 @@ def create_executable():
     
     # Check for icon file
     icon_path = None
-    for icon_file in ['icon.ico', 'logo.ico', 'app.ico']:
+    for icon_file in ['../assets/icon.ico', '../assets/logo.ico', '../assets/app.ico', 'icon.ico', 'logo.ico', 'app.ico']:
         if Path(icon_file).exists():
             icon_path = icon_file
             print(f"Found icon: {icon_file}")
@@ -232,11 +249,11 @@ backend_dir = Path('backend')
 backend_py_files = glob.glob('backend/*.py')
 backend_py_data = [(f, 'backend') for f in backend_py_files]
 
-# Collect all modules directory files
+# Collect all modules directory files (Python and JSON)
 modules_files = []
 for root, dirs, files in os.walk('backend/modules'):
     for file in files:
-        if file.endswith('.py'):
+        if file.endswith('.py') or file.endswith('.json'):
             src_path = os.path.join(root, file)
             # Convert to relative path for destination
             rel_path = os.path.relpath(src_path, 'backend')
@@ -277,7 +294,7 @@ for root, dirs, files in os.walk('backend/public'):
         public_files.append((src_path, dest_path))
 
 data_files = backend_py_data + modules_files + routers_files + public_files + [
-    ('backend/settings_defaults.json', 'backend'),
+    # settings_defaults.json is now collected automatically via modules_files
     ('backend/embedded_config.py', 'backend'),
 ]
 
@@ -380,6 +397,19 @@ a = Analysis(
         'botocore.exceptions',
         'botocore.exceptions.BotoCoreError',
         'botocore.exceptions.ClientError',
+        # Google API for YouTube integration
+        'google',
+        'google.auth',
+        'google.auth.transport',
+        'google.auth.transport.requests',
+        'google.oauth2',
+        'google.oauth2.credentials',
+        'google_auth_oauthlib',
+        'google_auth_oauthlib.flow',
+        'googleapiclient',
+        'googleapiclient.discovery',
+        'googleapiclient.errors',
+        'googleapiclient.http',
         # Fix for jaraco.text missing dependency
         'jaraco',
         'jaraco.text',
@@ -424,6 +454,8 @@ a = Analysis(
         'unittest',
         'test',
         'tests',
+        # Exclude railroad (used by pyparsing for diagram generation, not needed at runtime)
+        'railroad',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -562,7 +594,7 @@ def test_executable():
                 time.sleep(2)
                 
                 # Test the status endpoint
-                response = urllib.request.urlopen("http://localhost:8000/api/status", timeout=5)
+                response = urllib.request.urlopen("http://localhost:8008/api/status", timeout=5)
                 if response.getcode() == 200:
                     data = json.loads(response.read().decode())
                     if data.get("status") == "running":
@@ -594,7 +626,7 @@ def test_executable():
                 
                 data = urllib.parse.urlencode(test_data).encode()
                 req = urllib.request.Request(
-                    "http://localhost:8000/api/simulate", 
+                    "http://localhost:8008/api/simulate", 
                     data=data,
                     headers={'Content-Type': 'application/x-www-form-urlencoded'}
                 )
@@ -740,7 +772,7 @@ def main():
         print("   2. Users can run it directly - no installation needed!")
         print("   3. It will start a local server and open their browser")
         print()
-        print("TIP: Run 'python build.py --test-only' to test an existing executable")
+        print("TIP: Run 'python deployment/build.py --test-only' to test an existing executable")
         
     except Exception as e:
         logger.error(f"Build process failed: {e}", exc_info=True)
@@ -753,9 +785,9 @@ if __name__ == "__main__":
         print("=======================")
         print()
         print("Usage:")
-        print("  python build.py              Build the application and run validation tests")
-        print("  python build.py --test-only  Test an existing executable without rebuilding")
-        print("  python build.py --help       Show this help message")
+        print("  python deployment/build.py              Build the application and run validation tests")
+        print("  python deployment/build.py --test-only  Test an existing executable without rebuilding")
+        print("  python deployment/build.py --help       Show this help message")
         print()
         print("The build script will:")
         print("  1. Build the React frontend")

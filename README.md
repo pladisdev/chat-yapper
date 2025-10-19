@@ -2,12 +2,11 @@
 
 **Voice Avatar TTS System for Twitch Chat**
 
-Chat Yapper is a text-to-speech application that reads Twitch chat messages aloud using avatars. 
+Chat Yapper is a text-to-speech application that reads Twitch or Youtube (Experimental) chat messages aloud using avatars. 
 
 ## Features
-- **Voice Avatars**: Assign different voices to different users or groups
+- **Voice Avatars**: Visually show chat as custom avatars that speak messages from Twitch and Youtube (Experimental)
 - **Multiple TTS Providers**: Support for Edge, Google, Amazon, Monster
-- **Custom Avatar Images**: Upload and manage visual avatars for each voice
 - **Audio Filters**: Apply reverb, echo, pitch shift, and speed changes to TTS audio (requires ffmpeg)
 
 ## Quick Start (End Users)
@@ -19,17 +18,24 @@ Chat Yapper is a text-to-speech application that reads Twitch chat messages alou
    - Start a local web server
    - Automatically open your browser to the settings page
    - Create necessary directories and files
-3. **Configure** your settings (see Configuration section below)
+3. **Configure** your settings
 4. **Connect** to Twitch and start using!
 
 > **Important**: Keep the console window open while using Chat Yapper. Closing it will stop the application.
 
 ### First-Time Setup
 
-1. **Twitch Connection**: Enter your Twitch channel name in settings
+1. **Twitch or Youtube Connection**: Enter your Twitch channel name in settings, or Youtube (Experimental)
 2. **Voice Provider**: Choose and configure at least one TTS provider
-3. **Add Voices**: Create voice profiles for different users or groups
+3. **Add an Avatar**: Upload an image for at least one Avatar
 
+### TTS Guide
+ - Edge TTS is free, and has many nice voices
+ - Google TTS requires a [Google Cloud Account](https://console.cloud.google.com). You will need to create an API key and enable it.
+ - Polly TTS requires an [AWS Account](https://aws.amazon.com/) from Amazon. You will need an Access Key ID and a Secret Access Key. AWS Region you can leave default. Brian from Polly is the Default TTS you hear in most streams!
+ - Monster TTS requires a [TTS Mounter Account](https://tts.monster/). You will need an API key.
+
+ > **Note**: Most of the rated TTS above are free for X amount of messages. And its quite a bit for most of them. Please read the terms carefully.
 ## Development Setup
 
 ### Prerequisites
@@ -57,20 +63,31 @@ npm install
 cd ..
 ```
 
-### Development Workflow
+### Docker Deployment (Recommended for Linux/Mac, works with Windows Docker Desktop)
 
+Chat Yapper supports Docker for easy deployment with automatic setup and persistent data storage.
+
+```bash
+# Quick start with Docker Compose
+docker-compose up -d
+
+# Access the application
+# http://localhost:8069
+```
+
+### Development Workflow
 
 #### 1. Access Development Interface
 
 - **Frontend Dev Server**: http://localhost:5173 (with hot reload)
-- **Backend API**: http://localhost:8000 (with auto-reload)
-- **Backend Docs**: http://localhost:8000/docs (FastAPI Swagger UI)
+- **Backend API**: http://localhost:8008 (with auto-reload)
+- **Backend Docs**: http://localhost:8008/docs (FastAPI Swagger UI)
 
 ### Building for Distribution
 
 ```bash
 # Build everything (frontend + executable)
-python build.py
+python deployment/build.py
 
 # Output: dist/ChatYapper.exe
 ```
@@ -78,15 +95,9 @@ python build.py
 The build process:
 1. Builds the React frontend (`npm run build`)
 2. Copies build to `backend/public/`
-3. **Embeds Twitch credentials from .env file into executable**
+3. **Embeds credentials from .env file into executable**
 4. Creates Windows executable with PyInstaller
 5. Bundles all dependencies into single .exe file
-
-**Important**: Twitch OAuth credentials from your `.env` file are permanently embedded in the executable during build time. This means:
-- ✅ The .exe works on any PC without needing a separate .env file
-- ✅ Users don't need to configure Twitch credentials
-- ⚠️  Make sure your .env contains the correct credentials before building
-- ⚠️  The executable will contain your Twitch app credentials
 
 ## Configuration Guide
 
@@ -96,7 +107,6 @@ Chat Yapper supports server-side audio filtering to enhance TTS audio:
 
 **Available Filters:**
 - **Reverb**: Adds room ambiance (0-100% wetness)
-- **Echo**: Creates delayed repetitions (100-1000ms delay, 0-100% decay)
 - **Pitch Shift**: Changes voice pitch (-12 to +12 semitones)
 - **Speed Change**: Adjusts playback speed (0.5x to 2.0x)
 - **Random Mode**: Applies 1-3 random filters with random intensities
@@ -106,48 +116,24 @@ Chat Yapper supports server-side audio filtering to enhance TTS audio:
 - Audio filters are applied server-side after TTS synthesis
 - Filtered audio duration is automatically detected for accurate timing
 
-**Setup:**
-1. Install FFmpeg (see Prerequisites section)
-2. Enable audio filters in Settings > Audio Filters tab
-3. Configure individual filters or use random mode
-4. Test with a message to hear the results
-
 > **Note**: If FFmpeg is not installed, audio filters will be skipped and original TTS audio will be used.
 
-### Environment Variables (.env file)
-
-Chat Yapper supports configuration through environment variables. Create a `.env` file in the root directory to customize:
-
-```bash
-# Twitch OAuth Configuration (recommended for OAuth setup)
-TWITCH_CLIENT_ID=your_client_id_here
-TWITCH_CLIENT_SECRET=your_client_secret_here
-
-# Server Configuration (optional)
-PORT=8000                    # Backend server port
-HOST=0.0.0.0                 # Backend server host
-DEBUG=false                  # Enable debug logging
-FRONTEND_PORT=5173           # Frontend development server port
-
-# Database Configuration (optional)
-DB_PATH=custom_database.db   # Custom database file path
-```
-
-**Setting up Twitch OAuth (.env method):**
-1. Copy `.env.example` to `.env`
-2. Create a Twitch app at [dev.twitch.tv/console/apps](https://dev.twitch.tv/console/apps)
-3. Set redirect URL to: `http://localhost:8000/auth/twitch/callback` (or use your PORT value)
-4. Fill in your `TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET` in `.env`
-5. Restart Chat Yapper and use the "Connect to Twitch" button in settings
-
-## 📁 Project Structure
+## Project Structure
 
 ```
 chat-yapper/
 ├── main.py                 # Application launcher
-├── build.py               # Build script for executable
 ├── requirements.txt       # Python dependencies
 ├── logs/                  # Application logs
+├── assets/                # Application assets (icon, etc.)
+├── deployment/            # Build and deployment scripts
+│   ├── build.py          # Build script for executable
+│   ├── requirements-build.txt # Build dependencies
+│   ├── install-test-deps.ps1  # Windows test setup
+│   └── install-test-deps.sh   # Unix test setup
+├── docker/                # Docker configuration
+│   ├── Dockerfile
+│   └── docker-compose.yml
 ├── backend/               # FastAPI backend
 │   ├── app.py            # Main API server
 │   ├── models.py         # Database models
@@ -164,31 +150,7 @@ chat-yapper/
 └── testing/              # Development testing tools
 ```
 
-## 🔧 API Reference
-
-### Settings Endpoints
-- `GET /api/settings` - Get current settings
-- `POST /api/settings` - Update settings
-
-### Voice Management
-- `GET /api/voices` - List all voices
-- `POST /api/voices` - Add new voice
-- `PUT /api/voices/{id}` - Update voice
-- `DELETE /api/voices/{id}` - Delete voice
-
-### Avatar Management
-- `GET /api/avatars` - List available avatars
-- `POST /api/avatars/upload` - Upload new avatar
-- `DELETE /api/avatars/{id}` - Delete avatar
-
-### System
-- `GET /api/status` - System status and stats
-- `POST /api/test` - Test TTS functionality
-
-### WebSocket
-- `WS /ws` - Real-time communication for chat messages
-
-## 🧪 Testing
+## Testing
 
 Chat Yapper includes comprehensive automated testing for both backend and frontend.
 
@@ -212,24 +174,71 @@ npm run test:coverage              # Frontend
 
 ```bash
 # Windows PowerShell
-.\install-test-deps.ps1
+.\deployment\install-test-deps.ps1
 
 # Linux/Mac
-bash install-test-deps.sh
+bash deployment/install-test-deps.sh
 ```
 
-## 📊 Changelog
+## Changelog
 
 ### v1.0.0 (Latest)
-- ✅ Initial release with full TTS functionality
-- ✅ Multi-provider TTS support
-- ✅ Voice avatar system
-- ✅ Web-based configuration interface
-- ✅ Windows executable distribution
-- ✅ Comprehensive logging system
+- GIF and WebP support for animated avatars
+- Customizable speaking glow effects (color, opacity, size, enable/disable)
+- Message history and replay system (stores 100 recent messages)
+- Export/Import configuration system (backup/restore settings, voices, and avatars)
+- Persistent voice caching for all TTS providers (MonsterTTS, Google Cloud, Amazon Polly, Edge TTS)
+- Audio filters
+- Docker Support
+
+### v0.1.0
+- Avatars page
+- Settings page
+- TTS Selection
+- Avatar positioning
+- Basic Twitch Integration
 
 ---
 
-**Made with ❤️ for the streaming community**
+## TODO
+
+### In Testing
+- gif/webp support
+- glow effect mamangement
+- import/export feature
+- Youtube Integration
+
+### Features
+- Discord integration
+- Better placement of avatars in UI
+- Allow mapping of voices to avatars
+- Allow users to upload an avatar and preferred voice, with streamer allowing user to be added
+- More audio effects
+- Built in sound alert system
+- Sprite sheet support
+- auth token refresh
+- Statistics
+- More TTS options
+- Select scenes
+- Factory Reset
+- Waveform visualization in settings UI
+- Better error recovery for TTS provider failure, network issues, and db corruption
+- Memory Management
+
+### Bugs
+- None lmao
+
+## Acknowledgments
+
+This application was inspired by the work done by [shindigs](https://x.com/shindags), please check them out!
+
+### Testing & Feedback
+Special thanks these streamers that helped test the early prototype:
+- [**Inislein**](https://x.com/iniskein)
+- [**Kirana**](https://x.com/KiranaYonome)
+
+---
+
+**Made for the streaming community**
 
 For support, questions, or feature requests, please open an issue on GitHub or email Pladis at pladisdev@gmail.com.

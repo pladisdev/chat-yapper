@@ -1,17 +1,14 @@
 import asyncio
-import logging
 import os
 import uuid
 import time
 from dataclasses import dataclass
-from typing import Optional
 import aiohttp
-import json
 import random
 from collections import defaultdict
 
-# Get logger for this module
-logger = logging.getLogger('ChatYapper.TTS')
+from modules import logger
+from modules.persistent_data import AUDIO_DIR
 
 # Fallback voice usage tracking for distribution analysis
 fallback_voice_stats = defaultdict(int)
@@ -35,26 +32,6 @@ try:
     import edge_tts  # type: ignore
 except Exception:
     edge_tts = None
-
-def find_project_root():
-    """Find the project root by looking for characteristic files"""
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    # Look for project markers that indicate the true project root
-    # Use more specific markers to avoid stopping at backend directory
-    markers = ['package.json', 'main.py', '.git']  # Removed requirements.txt as it exists in backend too
-    
-    while current_dir != os.path.dirname(current_dir):  # Not at filesystem root
-        if any(os.path.exists(os.path.join(current_dir, marker)) for marker in markers):
-            return current_dir
-        current_dir = os.path.dirname(current_dir)
-    
-    # Fallback to going up two levels from the current file (backend/modules -> backend -> root)
-    fallback_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    return fallback_root
-
-AUDIO_DIR = os.environ.get("AUDIO_DIR", os.path.join(find_project_root(), "audio"))
-os.makedirs(AUDIO_DIR, exist_ok=True)
 
 @dataclass
 class TTSJob:
@@ -189,14 +166,233 @@ class MonsterTTSProvider(TTSProvider):
                 asyncio.create_task(self._cleanup_file_after_delay(outpath, 30))  # 30 seconds
                 
                 return outpath
+    
+    async def list_voices(self, use_cache: bool = True) -> list:
+        """Fetch available voices from MonsterTTS API with caching support
+        
+        Args:
+            use_cache: If True, return cached voices if available and credentials haven't changed.
+                      If False, force refresh from MonsterTTS API.
+        """
+        if not AIOHTTP_AVAILABLE:
+            raise RuntimeError("aiohttp not available for MonsterTTS")
+        
+        if not self.api_key:
+            raise RuntimeError("MonsterTTS API key not configured")
+        
+        # Check cache first if requested
+        if use_cache:
+            from modules.persistent_data import get_cached_voices, hash_credentials
+            credentials_hash = hash_credentials(self.api_key)
+            cached_voices = get_cached_voices("monstertts", credentials_hash)
+            if cached_voices:
+                logger.info(f"Using cached MonsterTTS voices ({len(cached_voices)} voices)")
+                return cached_voices
+        
+        logger.info(f"Fetching MonsterTTS voices from API...")
+        
+        headers = {
+            "Authorization": self.api_key
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post("https://api.console.tts.monster/voices", headers=headers) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    raise RuntimeError(f"MonsterTTS list voices error ({response.status}): {error_text}")
+                
+                voices_data = await response.json()
+                logger.info(f"MonsterTTS API Response: {voices_data}")
+                
+                # Transform the API response to our format
+                voices = []
+                
+                # Handle different response formats
+                if isinstance(voices_data, list):
+                    # Response is a list of voices
+                    for voice in voices_data:
+                        if isinstance(voice, dict):
+                            voices.append({
+                                "voice_id": voice.get("id", voice.get("voice_id", voice.get("uuid", "unknown"))),
+                                "name": voice.get("name", voice.get("display_name", f"Voice {voice.get('id', 'Unknown')[:8]}"))
+                            })
+                elif isinstance(voices_data, dict):
+                    # Response might be wrapped in an object
+                    voices_list = voices_data.get("voices", voices_data.get("data", [voices_data]))
+                    for voice in voices_list:
+                        if isinstance(voice, dict):
+                            voices.append({
+                                "voice_id": voice.get("id", voice.get("voice_id", voice.get("uuid", "unknown"))),
+                                "name": voice.get("name", voice.get("display_name", f"Voice {voice.get('id', 'Unknown')[:8]}"))
+                            })
+                
+                logger.info(f"Fetched {len(voices)} MonsterTTS voices from API")
+                
+                # Save to cache
+                from modules.persistent_data import save_cached_voices, hash_credentials
+                credentials_hash = hash_credentials(self.api_key)
+                save_cached_voices("monstertts", voices, credentials_hash)
+                logger.info(f"Cached {len(voices)} MonsterTTS voices")
+                
+                return voices
 
 class EdgeTTSProvider(TTSProvider):
+    async def list_voices(self, use_cache: bool = True) -> list:
+        """Fetch available voices from Edge TTS with caching support
+        
+        Args:
+            use_cache: If True, return cached voices if available.
+                      If False, force refresh from Edge TTS.
+        
+        Note: Edge TTS is free and doesn't require credentials.
+        """
+        if edge_tts is None:
+            raise RuntimeError("edge-tts not available")
+        
+        # Check cache first if requested (no credential hash needed for free service)
+        if use_cache:
+            from modules.persistent_data import get_cached_voices
+            cached_voices = get_cached_voices("edge", "")
+            if cached_voices:
+                logger.info(f"Using cached Edge TTS voices ({len(cached_voices)} voices)")
+                return cached_voices
+        
+        logger.info(f"Fetching Edge TTS voices from API...")
+        
+        try:
+            # Get all voices from edge-tts
+            all_voices = await edge_tts.list_voices()
+        except Exception as e:
+            logger.error(f"Failed to fetch voices from Edge TTS API: {e}")
+            # Return a fallback list of common voices
+            logger.info("Using fallback list of common Edge TTS voices")
+            fallback_voices = [
+                {"voice_id": "en-US-JennyNeural", "name": "Jenny - Female (en-US)", "gender": "Female", "locale": "en-US"},
+                {"voice_id": "en-US-GuyNeural", "name": "Guy - Male (en-US)", "gender": "Male", "locale": "en-US"},
+                {"voice_id": "en-US-AriaNeural", "name": "Aria - Female (en-US)", "gender": "Female", "locale": "en-US"},
+                {"voice_id": "en-US-DavisNeural", "name": "Davis - Male (en-US)", "gender": "Male", "locale": "en-US"},
+                {"voice_id": "en-GB-SoniaNeural", "name": "Sonia - Female (en-GB)", "gender": "Female", "locale": "en-GB"},
+                {"voice_id": "en-GB-RyanNeural", "name": "Ryan - Male (en-GB)", "gender": "Male", "locale": "en-GB"},
+                {"voice_id": "en-AU-NatashaNeural", "name": "Natasha - Female (en-AU)", "gender": "Female", "locale": "en-AU"},
+                {"voice_id": "en-AU-WilliamNeural", "name": "William - Male (en-AU)", "gender": "Male", "locale": "en-AU"},
+            ]
+            return fallback_voices
+        
+        # Log the structure of the first voice to debug
+        if all_voices and len(all_voices) > 0:
+            logger.debug(f"Sample voice data structure: {all_voices[0]}")
+            logger.debug(f"Available keys: {list(all_voices[0].keys())}")
+        
+        # Filter for English voices only (Locale starts with 'en')
+        # Handle both dict and object access patterns
+        english_voices = []
+        for v in all_voices:
+            locale = v.get('Locale') if isinstance(v, dict) else getattr(v, 'Locale', None)
+            if locale and locale.startswith('en'):
+                english_voices.append(v)
+        
+        # Transform to our format
+        voices = []
+        for voice in english_voices:
+            try:
+                # Try dict access first, then attribute access
+                if isinstance(voice, dict):
+                    short_name = voice.get('ShortName', voice.get('Name', 'Unknown'))
+                    # Some versions use FriendlyName instead of DisplayName
+                    display_name = voice.get('DisplayName', voice.get('FriendlyName', voice.get('LocalName', short_name)))
+                    gender = voice.get('Gender', 'Unknown')
+                    locale = voice.get('Locale', 'en-US')
+                else:
+                    # Handle object attributes
+                    short_name = getattr(voice, 'ShortName', getattr(voice, 'Name', 'Unknown'))
+                    display_name = getattr(voice, 'DisplayName', getattr(voice, 'FriendlyName', getattr(voice, 'LocalName', short_name)))
+                    gender = getattr(voice, 'Gender', 'Unknown')
+                    locale = getattr(voice, 'Locale', 'en-US')
+                
+                # Extract just the name from DisplayName
+                # Edge TTS format: "Microsoft Jenny Online (Natural) - English (United States)"
+                # We want: "Jenny"
+                clean_name = display_name
+                if 'Microsoft' in display_name:
+                    # Extract the name between "Microsoft " and " Online"
+                    parts = display_name.replace('Microsoft ', '').split(' Online')
+                    if parts:
+                        clean_name = parts[0].strip()
+                
+                # Format: "Jenny - Female (en-US)"
+                voices.append({
+                    "voice_id": short_name,
+                    "name": f"{clean_name} - {gender} ({locale})",
+                    "gender": gender,
+                    "locale": locale
+                })
+            except Exception as e:
+                logger.warning(f"Failed to parse voice data: {e}, voice data: {voice}")
+                continue
+        
+        logger.info(f"Fetched {len(voices)} English Edge TTS voices from API")
+        
+        # Save to cache (no credential hash for free service)
+        from modules.persistent_data import save_cached_voices
+        save_cached_voices("edge", voices, "")
+        logger.info(f"Cached {len(voices)} Edge TTS voices")
+        
+        return voices
+    
     async def synth(self, job: TTSJob) -> str:
         if edge_tts is None:
             raise RuntimeError("edge-tts not available")
+        
+        # Validate text
+        if not job.text or not job.text.strip():
+            raise ValueError("Cannot synthesize empty text")
+        
+        # Validate voice ID
+        if not job.voice:
+            logger.warning("No voice ID provided, using default")
+            job.voice = self.voice_id
+        
+        # Validate that the voice exists (optional but recommended)
+        try:
+            # Quick validation: check if voice is in our cached list or API list
+            available_voices = await self.list_voices(use_cache=True)
+            voice_ids = [v['voice_id'] for v in available_voices]
+            
+            if job.voice not in voice_ids:
+                logger.warning(f"Voice '{job.voice}' not found in available voices list")
+                # Don't fail here, let Edge TTS try anyway (in case our list is outdated)
+        except Exception as e:
+            logger.debug(f"Could not validate voice (continuing anyway): {e}")
+        
         outpath = os.path.join(AUDIO_DIR, f"{uuid.uuid4()}.{job.audio_format}")
-        communicate = edge_tts.Communicate(job.text, job.voice)
-        await communicate.save(outpath)
+        
+        try:
+            communicate = edge_tts.Communicate(job.text, job.voice)
+            await communicate.save(outpath)
+        except edge_tts.exceptions.NoAudioReceived as e:
+            logger.error(f"Edge TTS NoAudioReceived error - Voice: {job.voice}, Text: '{job.text[:50]}...'")
+            
+            # Try to suggest valid voices
+            try:
+                available_voices = await self.list_voices(use_cache=True)
+                logger.info(f"Hint: There are {len(available_voices)} valid Edge TTS voices available. Refresh the voice list in settings.")
+            except:
+                pass
+            
+            # Try with default voice as fallback
+            if job.voice != self.voice_id:
+                logger.warning(f"Voice '{job.voice}' appears to be invalid or deprecated. Retrying with default voice: {self.voice_id}")
+                try:
+                    communicate = edge_tts.Communicate(job.text, self.voice_id)
+                    await communicate.save(outpath)
+                    logger.info(f"Successfully synthesized with fallback voice: {self.voice_id}")
+                except edge_tts.exceptions.NoAudioReceived:
+                    raise RuntimeError(f"Edge TTS failed with both '{job.voice}' and fallback '{self.voice_id}'. The voices may be invalid or Edge TTS service is unavailable. Please refresh your voice list in Settings → TTS → Edge TTS.")
+            else:
+                raise RuntimeError(f"Edge TTS failed: {str(e)}. Voice '{job.voice}' may be invalid or deprecated. Please refresh your voice list in Settings → TTS → Edge TTS and select a different voice.")
+        except Exception as e:
+            logger.error(f"Edge TTS synthesis failed: {e}")
+            raise
         
         # Schedule cleanup after 30 seconds
         asyncio.create_task(self._cleanup_file_after_delay(outpath, 30))
@@ -223,13 +419,27 @@ class GoogleTTSProvider(TTSProvider):
         self.voice_id = voice_id
         self.base_url = "https://texttospeech.googleapis.com/v1/text:synthesize"
     
-    async def list_voices(self) -> list:
-        """Fetch available voices from Google Cloud TTS API"""
+    async def list_voices(self, use_cache: bool = True) -> list:
+        """Fetch available voices from Google Cloud TTS API with caching support
+        
+        Args:
+            use_cache: If True, return cached voices if available and credentials haven't changed.
+                      If False, force refresh from Google API.
+        """
         if not AIOHTTP_AVAILABLE:
             raise RuntimeError("aiohttp not available for Google TTS")
         
         if not self.api_key:
             raise RuntimeError("Google TTS API key not configured")
+        
+        # Check cache first if requested
+        if use_cache:
+            from modules.persistent_data import get_cached_voices, hash_credentials
+            credentials_hash = hash_credentials(self.api_key)
+            cached_voices = get_cached_voices("google", credentials_hash)
+            if cached_voices:
+                logger.info(f"Using cached Google TTS voices ({len(cached_voices)} voices)")
+                return cached_voices
         
         list_voices_url = "https://texttospeech.googleapis.com/v1/voices"
         headers = {
@@ -237,7 +447,7 @@ class GoogleTTSProvider(TTSProvider):
             "Content-Type": "application/json"
         }
         
-        logger.info(f"Fetching Google TTS voices...")
+        logger.info(f"Fetching Google TTS voices from API...")
         
         async with aiohttp.ClientSession() as session:
             async with session.get(list_voices_url, headers=headers) as response:
@@ -259,17 +469,16 @@ class GoogleTTSProvider(TTSProvider):
                         ssml_gender = voice.get('ssmlGender', 'UNSPECIFIED')
                         natural_sample_rate = voice.get('naturalSampleRateHertz', 24000)
                         
-                        # Skip voices that don't follow standard naming convention
-                        # Standard Google voices follow patterns like: en-US-Standard-A, en-US-Wavenet-A, en-US-Neural2-A, etc.
-                        # Non-standard voices (Journey, Chirp, star/moon names) aren't supported by v1 API
+                        # Only include English voices (starting with "en")
+                        # Standard English voices follow patterns like: en-US-Standard-A, en-US-Wavenet-A, en-US-Neural2-A, en-GB-Neural2-B, etc.
                         voice_lower = voice_name.lower()
                         
-                        # Check if voice has standard prefix (language-region-type format)
+                        # Check if voice starts with "en" (English)
                         voice_parts = voice_name.split('-')
-                        has_standard_format = len(voice_parts) >= 3 and voice_parts[0] in ['en', 'es', 'fr', 'de', 'it', 'pt', 'ja', 'ko', 'zh', 'ar', 'hi', 'ru', 'nl', 'pl', 'sv', 'da', 'fi', 'no', 'tr', 'uk', 'cs', 'el', 'he', 'id', 'ms', 'th', 'vi', 'bn', 'ta', 'te', 'mr', 'gu', 'kn', 'ml', 'ur', 'af', 'bg', 'ca', 'hr', 'et', 'fil', 'hu', 'is', 'lv', 'lt', 'ro', 'sk', 'sl', 'sr', 'cmn', 'yue']
+                        is_english = len(voice_parts) >= 3 and voice_parts[0] == 'en'
                         
-                        # Skip non-standard voices (including star/moon names like Alnilam, Iapetus, etc.)
-                        if not has_standard_format or any(unsupported in voice_lower for unsupported in [
+                        # Skip non-English voices and unsupported voices (Journey, Chirp, etc.)
+                        if not is_english or any(unsupported in voice_lower for unsupported in [
                             'journey', 'chirp', 
                             # Star names (Journey voices)
                             'alnilam', 'vega', 'altair', 'bellatrix', 'rigel', 'sirius', 'procyon', 'capella', 'arcturus', 'aldebaran',
@@ -300,8 +509,15 @@ class GoogleTTSProvider(TTSProvider):
                             })
                 
                 if skipped_voices:
-                    logger.info(f"Skipped {len(skipped_voices)} unsupported Google TTS voices (Journey/Chirp): {', '.join(skipped_voices[:5])}{' and more...' if len(skipped_voices) > 5 else ''}")
-                logger.info(f"Fetched {len(voices)} Google TTS voices")
+                    logger.info(f"Skipped {len(skipped_voices)} non-English/unsupported Google TTS voices: {', '.join(skipped_voices[:5])}{' and more...' if len(skipped_voices) > 5 else ''}")
+                logger.info(f"Fetched {len(voices)} English Google TTS voices from API")
+                
+                # Save to cache
+                from modules.persistent_data import save_cached_voices, hash_credentials
+                credentials_hash = hash_credentials(self.api_key)
+                save_cached_voices("google", voices, credentials_hash)
+                logger.info(f"Cached {len(voices)} Google TTS voices")
+                
                 return voices
 
     async def synth(self, job: TTSJob) -> str:
@@ -382,20 +598,77 @@ class AmazonPollyProvider(TTSProvider):
         self.voice_id = voice_id
         self.base_url = f"https://polly.{aws_region}.amazonaws.com/"
     
-    async def list_voices(self) -> list:
+    async def list_voices(self, use_cache: bool = True) -> list:
         """Fetch available voices from Amazon Polly API"""
-        if not AIOHTTP_AVAILABLE:
-            raise RuntimeError("aiohttp not available for Amazon Polly")
+        try:
+            import boto3
+            from botocore.exceptions import BotoCoreError, ClientError
+        except ImportError:
+            raise RuntimeError("boto3 not installed. Run: pip install boto3")
         
         if not self.aws_access_key or not self.aws_secret_key:
             raise RuntimeError("Amazon Polly credentials not configured")
         
-        # For simplicity, return a comprehensive list of Polly voices
-        # In a full implementation, we'd make an API call to DescribeVoices
-        polly_voices = []
+        # Check cache first
+        if use_cache:
+            from modules.persistent_data import get_cached_voices, hash_credentials, clear_voice_cache
+            credentials_hash = hash_credentials(self.aws_access_key, self.aws_secret_key)
+            cached_voices = get_cached_voices("polly", credentials_hash)
+            if cached_voices:
+                # Check if cache has old format (using 'id' instead of 'voice_id')
+                needs_migration = any('id' in voice and 'voice_id' not in voice for voice in cached_voices)
+                if needs_migration:
+                    logger.info("Old Polly cache format detected, clearing cache to refresh...")
+                    clear_voice_cache("polly")
+                    cached_voices = None  # Force refresh
+                else:
+                    logger.info(f"Using cached Polly voices ({len(cached_voices)} voices)")
+                    return cached_voices
         
-        logger.info(f"Returning {len(polly_voices)} Amazon Polly voices")
-        return polly_voices
+        try:
+            # Create Polly client
+            polly_client = boto3.client(
+                'polly',
+                aws_access_key_id=self.aws_access_key,
+                aws_secret_access_key=self.aws_secret_key,
+                region_name=self.aws_region
+            )
+            
+            logger.info(f"Fetching voices from Amazon Polly API (region: {self.aws_region})...")
+            
+            # Get all voices
+            response = polly_client.describe_voices()
+            
+            # Format voices for our system
+            polly_voices = []
+            for voice in response.get('Voices', []):
+                polly_voices.append({
+                    'voice_id': voice['Id'],  # Use voice_id for consistency with other providers
+                    'name': voice['Name'],
+                    'gender': voice.get('Gender', 'Unknown'),
+                    'language': voice.get('LanguageName', 'Unknown'),
+                    'language_code': voice.get('LanguageCode', ''),
+                    'engine': ', '.join(voice.get('SupportedEngines', [])),
+                    'provider': 'polly'
+                })
+            
+            logger.info(f"Fetched {len(polly_voices)} voices from Amazon Polly")
+            
+            # Save to cache
+            from modules.persistent_data import save_cached_voices, hash_credentials
+            credentials_hash = hash_credentials(self.aws_access_key, self.aws_secret_key)
+            save_cached_voices("polly", polly_voices, credentials_hash)
+            
+            return polly_voices
+            
+        except (BotoCoreError, ClientError) as error:
+            error_msg = f"Amazon Polly API error: {str(error)}"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+        except Exception as e:
+            error_msg = f"Failed to fetch Polly voices: {str(e)}"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
 
     async def synth(self, job: TTSJob) -> str:
         """Synthesize speech using Amazon Polly"""
@@ -669,3 +942,39 @@ async def get_provider(api_key: str = None, voice_id: str = "9aad4a1b-f04e-43a1-
     
     # Final fallback to fake tone
     return None
+
+def get_audio_duration(file_path: str) -> float:
+    """
+    Get the duration of an audio file in seconds.
+    Returns the duration if successful, or None if it fails.
+    """
+    try:
+        # Try using mutagen library for MP3 files (most common)
+        try:
+            from mutagen.mp3 import MP3
+            audio = MP3(file_path)
+            duration = audio.info.length
+            logger.info(f"Audio duration for {os.path.basename(file_path)}: {duration:.2f}s (mutagen)")
+            return duration
+        except ImportError:
+            # mutagen not installed, try alternative method
+            pass
+        except Exception as e:
+            logger.debug(f"Failed to get duration with mutagen: {e}")
+        
+        # Fallback: try to estimate from file size (very rough approximation)
+        # MP3 bitrate is typically 128-320 kbps, we'll assume 192 kbps average
+        try:
+            file_size = os.path.getsize(file_path)
+            # 192 kbps = 24 KB/s
+            estimated_duration = file_size / (24 * 1024)
+            logger.info(f"Audio duration estimated for {os.path.basename(file_path)}: ~{estimated_duration:.2f}s (file size)")
+            return estimated_duration
+        except Exception as e:
+            logger.debug(f"Failed to estimate duration from file size: {e}")
+        
+        return None
+        
+    except Exception as e:
+        logger.warning(f"Failed to get audio duration: {e}")
+        return None
