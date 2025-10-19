@@ -19,7 +19,7 @@ from fastapi.responses import StreamingResponse
 from modules import logger
 from modules.persistent_data import (
     get_settings, save_settings, get_all_avatars, get_voices,
-    add_avatar, add_voice, PERSISTENT_AVATARS_DIR, DB_PATH
+    add_avatar, add_voice, PERSISTENT_AVATARS_DIR, DB_PATH, USER_DATA_DIR
 )
 from modules.models import AvatarImage, Voice
 
@@ -340,3 +340,80 @@ async def get_config_info():
     except Exception as e:
         logger.error(f"Failed to get config info: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/config/reset")
+async def factory_reset():
+    """
+    Factory reset: Delete all user data, settings, voices, and avatars.
+    This will reset the application to its default state.
+    WARNING: This action cannot be undone!
+    """
+    try:
+        logger.warning("⚠️ FACTORY RESET INITIATED - Deleting all user data...")
+        
+        # Create backup before reset (in case user wants to recover)
+        backup_path = None
+        if os.path.exists(DB_PATH):
+            backup_dir = os.path.join(USER_DATA_DIR, "backups")
+            os.makedirs(backup_dir, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = os.path.join(backup_dir, f"pre_reset_backup_{timestamp}.db")
+            shutil.copy2(DB_PATH, backup_path)
+            logger.info(f"✓ Created backup at: {backup_path}")
+        
+        # Get counts before deletion (for reporting)
+        try:
+            settings = get_settings()
+            voices_data = get_voices()
+            avatars = get_all_avatars()
+            
+            settings_count = len(settings) if settings else 0
+            voices_count = len(voices_data.get("voices", [])) if voices_data else 0
+            avatars_count = len(avatars)
+        except:
+            settings_count = 0
+            voices_count = 0
+            avatars_count = 0
+        
+        # Delete avatar files
+        avatar_files_deleted = 0
+        if os.path.exists(PERSISTENT_AVATARS_DIR):
+            for filename in os.listdir(PERSISTENT_AVATARS_DIR):
+                file_path = os.path.join(PERSISTENT_AVATARS_DIR, filename)
+                try:
+                    if os.path.isfile(file_path):
+                        os.unlink(file_path)
+                        avatar_files_deleted += 1
+                except Exception as e:
+                    logger.warning(f"Failed to delete avatar file {filename}: {e}")
+            logger.info(f"✓ Deleted {avatar_files_deleted} avatar files")
+        
+        # Delete database file (this removes all settings, voices, avatars metadata, auth tokens, etc.)
+        if os.path.exists(DB_PATH):
+            os.unlink(DB_PATH)
+            logger.info(f"✓ Deleted database: {DB_PATH}")
+        
+        # Reinitialize database with empty tables
+        from sqlmodel import SQLModel, create_engine
+        engine = create_engine(f"sqlite:///{DB_PATH}")
+        SQLModel.metadata.create_all(engine)
+        logger.info("✓ Reinitialized empty database")
+        
+        logger.warning(f"✅ FACTORY RESET COMPLETE - Deleted: {settings_count} settings, {voices_count} voices, {avatars_count} avatars, {avatar_files_deleted} files")
+        
+        return {
+            "success": True,
+            "message": "Factory reset completed successfully",
+            "stats": {
+                "settings_deleted": settings_count,
+                "voices_deleted": voices_count,
+                "avatars_deleted": avatars_count,
+                "files_deleted": avatar_files_deleted,
+                "backup_path": backup_path
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Factory reset failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Factory reset failed: {str(e)}")

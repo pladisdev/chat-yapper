@@ -1025,8 +1025,15 @@ async def process_tts_message(evt: Dict[str, Any]):
     selected_voice = None
     if event_type in special:
         vid = special[event_type].get("voiceId")
+        # Validate vid is a proper integer/string ID, not a function name or corrupted value
+        if vid and not str(vid).isdigit() and str(vid) not in ["get_by_id", "null", "undefined", ""]:
+            logger.warning(f"Invalid voice ID '{vid}' in special event mapping for {event_type}, will use random voice instead")
+            vid = None
         # Try to find the voice by database ID
-        selected_voice = next((v for v in enabled_voices if str(v.id) == str(vid)), None)
+        if vid:
+            selected_voice = next((v for v in enabled_voices if str(v.id) == str(vid)), None)
+            if not selected_voice:
+                logger.warning(f"Special event voice ID {vid} for {event_type} not found in enabled voices, will use random voice instead")
     
     if not selected_voice:
         # Random selection from enabled voices, avoiding last selected voice if possible

@@ -4,6 +4,11 @@
 
 Chat Yapper is a text-to-speech application that reads Twitch or Youtube (Experimental) chat messages aloud using avatars. 
 
+<p align="center">
+  <img src="assets/avatars.png" alt="Frontend - Avatars" width="45%" />
+  <img src="assets/settings.png" alt="Frontend - Settings" width="48.5%" />
+</p>
+
 ## Features
 - **Voice Avatars**: Visually show chat as custom avatars that speak messages from Twitch and Youtube (Experimental)
 - **Multiple TTS Providers**: Support for Edge, Google, Amazon, Monster
@@ -16,8 +21,8 @@ Chat Yapper is a text-to-speech application that reads Twitch or Youtube (Experi
 1. Find the `ChatYapper.exe` file in the dist folder
 2. **Run** the executable - it will:
    - Start a local web server
-   - Automatically open your browser to the settings page
-   - Create necessary directories and files
+   - Automatically open your browser to the  [Settings Page](http://localhost:8008/settings)
+   - Once the application is running, you can paste the [Avatar Display](http://localhost:8008/yappers) link into OBS Browser Plugin  
 3. **Configure** your settings
 4. **Connect** to Twitch and start using!
 
