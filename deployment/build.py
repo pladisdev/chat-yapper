@@ -713,6 +713,60 @@ def test_executable():
     
     return all_tests_passed
 
+def generate_checksums():
+    """Generate SHA256 checksums for distribution files"""
+    logger.info("=== Generating checksums ===")
+    print("\nGenerating checksums...")
+    
+    try:
+        import hashlib
+        
+        exe_path = Path("dist/ChatYapper.exe")
+        if not exe_path.exists():
+            logger.error("Executable not found for checksum generation")
+            return False
+        
+        # Calculate SHA256
+        sha256_hash = hashlib.sha256()
+        with open(exe_path, "rb") as f:
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        
+        checksum = sha256_hash.hexdigest()
+        
+        # Save to file
+        checksum_file = Path("dist/ChatYapper.exe.sha256")
+        with open(checksum_file, "w") as f:
+            f.write(f"{checksum}  ChatYapper.exe\n")
+        
+        logger.info(f"SHA256 checksum: {checksum}")
+        print(f"[✓] SHA256: {checksum}")
+        print(f"[✓] Checksum saved to: {checksum_file}")
+        
+        # Also create a checksums.txt with metadata
+        metadata_file = Path("dist/CHECKSUMS.txt")
+        with open(metadata_file, "w") as f:
+            f.write("Chat Yapper - File Verification\n")
+            f.write("=" * 50 + "\n\n")
+            f.write(f"Build Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"File: ChatYapper.exe\n")
+            f.write(f"Size: {exe_path.stat().st_size:,} bytes ({exe_path.stat().st_size / (1024*1024):.2f} MB)\n")
+            f.write(f"\nSHA256: {checksum}\n")
+            f.write("\nTo verify:\n")
+            f.write("  Windows: certutil -hashfile ChatYapper.exe SHA256\n")
+            f.write("  Linux:   sha256sum ChatYapper.exe\n")
+            f.write("  Mac:     shasum -a 256 ChatYapper.exe\n")
+        
+        print(f"[✓] Verification file saved to: {metadata_file}")
+        logger.info(f"Checksum files generated successfully")
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to generate checksums: {e}")
+        print(f"[!] Warning: Could not generate checksums: {e}")
+        return False
+
 def main():
     # Check for command line arguments
     test_only = "--test-only" in sys.argv
@@ -748,6 +802,9 @@ def main():
         
         logger.info("=== Build process completed successfully ===")
         log_important("Build complete!")
+        
+        # Generate checksums for verification
+        generate_checksums()
         
         # Test the built executable
         if test_executable():

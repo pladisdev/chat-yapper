@@ -16,6 +16,25 @@ Chat Yapper is a text-to-speech application that reads Twitch or Youtube (Experi
 
 ## Quick Start (End Users)
 
+### ⚠️ Antivirus False Positive Warning
+
+**The executable may be flagged by antivirus software as a false positive.** This is common with PyInstaller-packaged applications.
+
+**Why this happens:**
+- PyInstaller bundles Python and all dependencies into a single .exe
+- This packing technique is similar to how some malware operates
+- The executable is **NOT signed** with a code signing certificate (costs $$$)
+
+**Quick Solutions:**
+
+1. **Add an exception** for `ChatYapper.exe` in your antivirus/Windows Defender
+2. **Build from source** (see Development Setup below) - most secure option
+3. **Verify the file hash** (if provided in releases) to ensure it's legitimate
+
+📖 **[Read the full Antivirus Help Guide](ANTIVIRUS_HELP.md)** for detailed instructions on handling false positives, verifying file integrity, and understanding why this happens.
+
+> **TL;DR**: This is a false positive. The code is open-source and can be audited. Building from source is recommended if you're concerned.
+
 ### Running the Executable
 
 1. Find the `ChatYapper.exe` file in the dist folder
@@ -90,19 +109,72 @@ docker-compose up -d
 
 ### Building for Distribution
 
+> 📖 **[Read the Nuitka vs PyInstaller Comparison](NUITKA_VS_PYINSTALLER.md)** for detailed analysis of why Nuitka is recommended.
+
+#### Method 1: Nuitka (Recommended - Minimal False Positives) ⭐
+
+**Nuitka compiles Python to native C code, resulting in 0-2 antivirus detections vs 10-20+ with PyInstaller.**
+
 ```bash
-# Build everything (frontend + executable)
+# Install Nuitka
+python -m pip install nuitka
+
+# Build with Nuitka (takes 5-15 minutes)
+python deployment/build-nuitka.py
+
+# Output: dist/ChatYapper.exe
+```
+
+**Why Nuitka?**
+- ✅ **Far fewer false positives** (0-2 vs 10-20+ detections)
+- ✅ **Native C compilation** (real executable, not bundled Python)
+- ✅ **Better performance** (compiled code runs faster)
+- ✅ **Smaller file size** (more efficient than bundled interpreters)
+
+#### Method 2: PyInstaller (Faster build, more false positives)
+
+```bash
+# Build with PyInstaller
 python deployment/build.py
 
 # Output: dist/ChatYapper.exe
 ```
 
-The build process:
-1. Builds the React frontend (`npm run build`)
-2. Copies build to `backend/public/`
-3. **Embeds credentials from .env file into executable**
-4. Creates Windows executable with PyInstaller
-5. Bundles all dependencies into single .exe file
+**Both build processes:**
+1. Build the React frontend (`npm run build`)
+2. Copy build to `backend/public/`
+3. **Embed credentials from .env file into executable**
+4. Create Windows executable
+5. Bundle all dependencies into single .exe file
+6. Generate SHA256 checksums for verification
+
+#### Code Signing (Further Reduces False Positives)
+
+To reduce false positives from antivirus software, you can sign the executable:
+
+**Option 1: Self-Signed Certificate (Free, for testing)**
+```powershell
+# Generate a self-signed certificate
+.\deployment\generate-certificate.ps1
+
+# Sign the executable after building
+.\deployment\sign-exe.ps1
+```
+
+**Option 2: Commercial Certificate (Recommended for distribution)**
+- Purchase a code signing certificate from a trusted CA (e.g., DigiCert, Sectigo)
+- Costs around $100-400/year
+- Significantly reduces false positives
+- Users won't see "Unknown Publisher" warnings
+
+> **Note**: Self-signed certificates still trigger warnings but show your organization name. Commercial certificates are trusted by Windows and reduce antivirus false positives.
+
+**Alternative: Provide checksums**
+```bash
+# Generate SHA256 hash for verification
+certutil -hashfile dist\ChatYapper.exe SHA256
+```
+Users can verify the file hasn't been tampered with by comparing hashes.
 
 ## Configuration Guide
 

@@ -131,8 +131,14 @@ def start_backend(port):
         
         # Import the app from the current directory (now in backend dir, so just import app)
         try:
-            import app as backend_app
-            logger.info("Backend app imported successfully")
+            # Try importing as backend.app first (for frozen executables)
+            try:
+                from backend import app as backend_app
+                logger.info("Backend app imported successfully (as backend.app)")
+            except ImportError:
+                # Fall back to direct import (for development)
+                import app as backend_app
+                logger.info("Backend app imported successfully (as app)")
         except ImportError as e:
             if "fastapi.middleware" in str(e):
                 error_msg = f"FastAPI import error: {e}. Install with: pip install -r requirements.txt"

@@ -58,12 +58,72 @@ class TwitchBot(commands.Bot):
         self.channel_name = channel
         self._nick = nick  # keep our own record for logs
 
-        # Build constructor kwargs compatible with 1.x and 2.x
-        if self._major >= 2:
-            super().__init__(token=token, prefix="!", initial_channels=[channel])
-        else:
-            # TwitchIO 1.x expects irc_token + nick
-            super().__init__(irc_token=token, nick=nick, prefix="!", initial_channels=[channel])
+        # Build constructor kwargs compatible with 1.x, 2.x, and 3.x
+        try:
+            if self._major >= 3:
+                # TwitchIO 3.x requires client_id, client_secret, and bot_id
+                # Import here to avoid circular imports
+                try:
+                    from modules.persistent_data import TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET
+                    client_id = TWITCH_CLIENT_ID or ""
+                    client_secret = TWITCH_CLIENT_SECRET or ""
+                except ImportError:
+                    # Fallback for embedded builds
+                    try:
+                        import embedded_config
+                        client_id = getattr(embedded_config, 'TWITCH_CLIENT_ID', '')
+                        client_secret = getattr(embedded_config, 'TWITCH_CLIENT_SECRET', '')
+                    except ImportError:
+                        client_id = ""
+                        client_secret = ""
+                
+                # Try to get bot_id from the token (user ID)
+                # For TwitchIO 3.x, bot_id is the numeric user ID
+                # We'll use the nick as a fallback, though it should be numeric
+                bot_id = nick  # This should ideally be the numeric user ID
+                
+                super().__init__(
+                    token=token,
+                    client_id=client_id,
+                    client_secret=client_secret,
+                    bot_id=bot_id,
+                    prefix="!",
+                    initial_channels=[channel]
+                )
+            elif self._major >= 2:
+                # TwitchIO 2.x
+                super().__init__(token=token, prefix="!", initial_channels=[channel])
+            else:
+                # TwitchIO 1.x expects irc_token + nick
+                super().__init__(irc_token=token, nick=nick, prefix="!", initial_channels=[channel])
+        except TypeError as e:
+            # If we still get a TypeError, it might be version detection issue
+            # Try the 3.x format as fallback
+            if "client_id" in str(e) or "client_secret" in str(e) or "bot_id" in str(e):
+                try:
+                    from modules.persistent_data import TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET
+                    client_id = TWITCH_CLIENT_ID or ""
+                    client_secret = TWITCH_CLIENT_SECRET or ""
+                except ImportError:
+                    try:
+                        import embedded_config
+                        client_id = getattr(embedded_config, 'TWITCH_CLIENT_ID', '')
+                        client_secret = getattr(embedded_config, 'TWITCH_CLIENT_SECRET', '')
+                    except ImportError:
+                        client_id = ""
+                        client_secret = ""
+                
+                bot_id = nick
+                super().__init__(
+                    token=token,
+                    client_id=client_id,
+                    client_secret=client_secret,
+                    bot_id=bot_id,
+                    prefix="!",
+                    initial_channels=[channel]
+                )
+            else:
+                raise  # Re-raise if it's a different TypeError
 
     # ---------- Lifecycle ----------
 
@@ -225,6 +285,14 @@ async def run_twitch_bot(token: str, nick: str, channel: str, on_event: Callable
         import logging
         bot_logger = logging.getLogger("ChatYapper.Twitch")
         bot_logger.info(f"Starting Twitch bot: nick={nick}, channel={channel}")
+        
+        # Log TwitchIO version for debugging
+        try:
+            import twitchio
+            version = getattr(twitchio, "__version__", "unknown")
+            bot_logger.info(f"TwitchIO version: {version}")
+        except Exception:
+            pass
     except Exception:
         pass
 
@@ -234,7 +302,7 @@ async def run_twitch_bot(token: str, nick: str, channel: str, on_event: Callable
             bot_logger.info("Twitch bot instance created, connecting...")
 
         # Start compatibly across versions
-        # Prefer async start() if present (2.x), else connect() (1.x),
+        # Prefer async start() if present (2.x/3.x), else connect() (1.x),
         # else last-resort run() via a thread to avoid blocking an async caller.
         started = False
 
