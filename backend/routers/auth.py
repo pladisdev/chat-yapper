@@ -48,21 +48,43 @@ async def twitch_auth_start():
     
     auth_url = "https://id.twitch.tv/oauth2/authorize?" + urllib.parse.urlencode(params)
     logger.info(f"Starting Twitch OAuth flow with state: {state}")
+    logger.info(f"Twitch redirect URI: {TWITCH_REDIRECT_URI}")
+    logger.info(f"Make sure this EXACT redirect URI is registered in your Twitch app: {TWITCH_REDIRECT_URI}")
     
     return RedirectResponse(url=auth_url)
 
 @router.get("/auth/twitch/callback")
-async def twitch_auth_callback(code: str = None, state: str = None, error: str = None):
+async def twitch_auth_callback(code: str = None, state: str = None, error: str = None, error_description: str = None):
     """Handle Twitch OAuth callback"""
     try:
         # Check for OAuth errors
         if error:
             logger.error(f"Twitch OAuth error: {error}")
-            return RedirectResponse(url="/?error=oauth_denied")
+            if error_description:
+                logger.error(f"Error description: {error_description}")
+            
+            # Special handling for redirect_mismatch error
+            if error == "redirect_mismatch":
+                logger.error("=" * 80)
+                logger.error("REDIRECT URI MISMATCH ERROR")
+                logger.error("=" * 80)
+                logger.error(f"Chat Yapper is using: {TWITCH_REDIRECT_URI}")
+                logger.error("")
+                logger.error("To fix this error:")
+                logger.error("1. Go to https://dev.twitch.tv/console/apps")
+                logger.error("2. Click on your application")
+                logger.error("3. Add this EXACT redirect URI to OAuth Redirect URLs:")
+                logger.error(f"   {TWITCH_REDIRECT_URI}")
+                logger.error("4. Click 'Add' and then 'Save'")
+                logger.error("5. Try connecting to Twitch again")
+                logger.error("=" * 80)
+                return RedirectResponse(url="/settings?error=twitch_redirect_mismatch")
+            
+            return RedirectResponse(url="/settings?error=twitch_oauth_error")
         
         if not code or not state:
             logger.error("Missing code or state in OAuth callback")
-            return RedirectResponse(url="/?error=invalid_callback")
+            return RedirectResponse(url="/settings?error=invalid_callback")
         
         # Verify state to prevent CSRF
         if state not in oauth_states:
@@ -246,17 +268,39 @@ async def youtube_auth_start():
     
     auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(params)
     logger.info(f"Starting YouTube OAuth flow with state: {state}")
+    logger.info(f"YouTube redirect URI: {YOUTUBE_REDIRECT_URI}")
+    logger.info(f"⚠ Make sure this EXACT redirect URI is registered in your Google Cloud Console: {YOUTUBE_REDIRECT_URI}")
     
     return RedirectResponse(url=auth_url)
 
 @router.get("/auth/youtube/callback")
-async def youtube_auth_callback(code: str = None, state: str = None, error: str = None):
+async def youtube_auth_callback(code: str = None, state: str = None, error: str = None, error_description: str = None):
     """Handle YouTube OAuth callback"""
     try:
         # Check for OAuth errors
         if error:
             logger.error(f"YouTube OAuth error: {error}")
-            return RedirectResponse(url="/?error=oauth_denied")
+            if error_description:
+                logger.error(f"Error description: {error_description}")
+            
+            # Special handling for redirect_uri_mismatch error
+            if error == "redirect_uri_mismatch" or "redirect" in error.lower():
+                logger.error("=" * 80)
+                logger.error("REDIRECT URI MISMATCH ERROR")
+                logger.error("=" * 80)
+                logger.error(f"Chat Yapper is using: {YOUTUBE_REDIRECT_URI}")
+                logger.error("")
+                logger.error("To fix this error:")
+                logger.error("1. Go to https://console.cloud.google.com/apis/credentials")
+                logger.error("2. Click on your OAuth 2.0 Client ID")
+                logger.error("3. Add this EXACT redirect URI to 'Authorized redirect URIs':")
+                logger.error(f"   {YOUTUBE_REDIRECT_URI}")
+                logger.error("4. Click 'Save'")
+                logger.error("5. Try connecting to YouTube again")
+                logger.error("=" * 80)
+                return RedirectResponse(url="/settings?error=youtube_redirect_mismatch")
+            
+            return RedirectResponse(url="/settings?error=youtube_oauth_error")
         
         if not code or not state:
             logger.error("Missing code or state in OAuth callback")

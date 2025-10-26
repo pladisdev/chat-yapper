@@ -197,20 +197,51 @@ def build_with_nuitka():
         "--enable-plugin=anti-bloat",  # Reduce size
         "--assume-yes-for-downloads",  # Auto-download dependencies
         "--windows-console-mode=force",  # Show console window
-        "--include-package=backend",  # Include backend package
-        "--include-package=backend.modules",  # Include modules
-        "--include-package=backend.routers",  # Include routers
-        "--include-package-data=backend",  # Include backend data files
-        "--include-data-dir=backend/public=backend/public",  # Include static files
+        "--follow-imports",  # Follow all imports
+        # CRITICAL: Include backend as a proper Python package
+        # This makes "from backend import app" work in the frozen executable
+        "--include-package=backend",  # Include entire backend package
+        "--include-package=backend.modules",  # Include modules subpackage
+        "--include-package=backend.routers",  # Include routers subpackage
+        # Include static files and data
+        "--include-data-dir=backend/public=backend/public",  # Include frontend static files
+        # Exclude test and unnecessary packages to reduce size
         "--nofollow-import-to=backend.tests",  # Exclude test files
         "--nofollow-import-to=pytest",  # Exclude pytest
         "--nofollow-import-to=testing",  # Exclude testing directory
-        "--include-module=backend.app",  # Explicitly include backend.app
-        "--include-module=uvicorn",  # Explicitly include uvicorn
-        "--include-module=fastapi",  # Explicitly include fastapi
-        "--include-module=twitchio",  # Explicitly include twitchio
-        "--include-module=edge_tts",  # Explicitly include edge_tts
-        "--include-module=sqlmodel",  # Explicitly include sqlmodel
+        "--nofollow-import-to=matplotlib",  # Exclude matplotlib (not used)
+        "--nofollow-import-to=numpy",  # Exclude numpy (unless needed)
+        "--nofollow-import-to=pandas",  # Exclude pandas (not used)
+        "--nofollow-import-to=PIL.ImageTk",  # Exclude Tkinter image support
+        "--nofollow-import-to=tkinter",  # Exclude tkinter (not used)
+        # Explicitly include critical runtime modules that may be missed
+        # Uvicorn web server components
+        "--include-module=uvicorn",
+        "--include-module=uvicorn.loops.auto",
+        "--include-module=uvicorn.protocols.http.auto",
+        "--include-module=uvicorn.protocols.http.h11_impl",
+        "--include-module=uvicorn.protocols.websockets.auto",
+        "--include-module=uvicorn.protocols.websockets.websockets_impl",
+        "--include-module=uvicorn.lifespan.on",
+        # FastAPI and Starlette components
+        "--include-module=fastapi",
+        "--include-module=starlette.middleware.cors",
+        "--include-module=starlette.staticfiles",
+        "--include-module=h11",  # HTTP/1.1 protocol
+        "--include-module=websockets",  # WebSocket library
+        # Application-specific modules
+        "--include-module=twitchio",
+        "--include-module=twitchio.ext.commands",
+        "--include-module=edge_tts",
+        "--include-module=sqlmodel",
+        "--include-module=sqlalchemy.engine",
+        "--include-module=sqlalchemy.pool",
+        "--include-module=aiohttp",
+        "--include-module=boto3",  # AWS SDK (for Polly TTS)
+        "--include-module=botocore",
+        "--include-module=google.auth",  # Google auth (for YouTube)
+        "--include-module=google.oauth2",
+        "--include-module=googleapiclient",
         "--output-dir=dist",  # Output directory
         "--output-filename=ChatYapper.exe",  # Output filename
     ]

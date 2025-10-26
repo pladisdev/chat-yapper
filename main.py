@@ -25,10 +25,12 @@ except Exception:
 
 def is_executable():
     """
-    Detect if we're running as a PyInstaller executable.
+    Detect if we're running as a frozen executable (PyInstaller or Nuitka).
     Returns True if running from .exe, False if running from source.
     """
-    return getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
+    # PyInstaller sets both 'frozen' and '_MEIPASS'
+    # Nuitka sets 'frozen' but not '_MEIPASS'
+    return getattr(sys, 'frozen', False)
 
 # Set up logging
 def setup_logging():
@@ -80,6 +82,25 @@ def log_important(message):
     logger.warning(f"IMPORTANT: {message}")  # WARNING level ensures console output
     print(f"{message}")  # Also print directly for immediate visibility
 
+if 'PORT' not in os.environ:
+    default_port = 8008
+    # Try to find an available port
+    import socket
+    for test_port in range(default_port, default_port + 10):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(('localhost', test_port))
+                os.environ['PORT'] = str(test_port)
+                logger.info(f"Set PORT environment variable to {test_port}")
+                break
+        except OSError:
+            continue
+    
+    # If no port was set (all were busy), use default anyway
+    if 'PORT' not in os.environ:
+        os.environ['PORT'] = str(default_port)
+        logger.warning(f"All ports busy, using default PORT={default_port}")
+
 # Add backend to Python path
 backend_dir = Path(__file__).parent / "backend"
 if not backend_dir.exists():
@@ -114,12 +135,8 @@ def start_backend(port):
     """Start the FastAPI backend server"""
     
     try:
-        # Change to backend directory first
-        original_cwd = os.getcwd()
-        os.chdir(backend_dir)
-        logger.info(f"Changed to backend directory: {backend_dir}")
         
-        # Import dependencies
+        # Import dependencies first (before changing directory)
         logger.info("Importing dependencies...")
         try:
             import uvicorn
@@ -129,25 +146,39 @@ def start_backend(port):
             logger.error(error_msg)
             raise ImportError(error_msg)
         
-        # Import the app from the current directory (now in backend dir, so just import app)
+        # Import the backend app module
+        # For frozen executables, backend is already in the package
+        # For development, we added backend to sys.path earlier
         try:
-            # Try importing as backend.app first (for frozen executables)
-            try:
-                from backend import app as backend_app
-                logger.info("Backend app imported successfully (as backend.app)")
-            except ImportError:
-                # Fall back to direct import (for development)
-                import app as backend_app
-                logger.info("Backend app imported successfully (as app)")
+            logger.info("Attempting to import backend.app...")
+            from backend import app as backend_app
+            logger.info("Backend app imported successfully (as backend.app)")
         except ImportError as e:
-            if "fastapi.middleware" in str(e):
-                error_msg = f"FastAPI import error: {e}. Install with: pip install -r requirements.txt"
-                logger.error(error_msg)
-                raise ImportError(error_msg)
-            else:
-                error_msg = f"Backend app import error: {e}"
-                logger.error(error_msg)
-                raise ImportError(error_msg)
+            # If that fails, try adding backend to path and importing directly
+            logger.info(f"Failed to import backend.app: {e}")
+            logger.info("Attempting fallback import method...")
+            try:
+                # Change to backend directory for fallback
+                original_cwd = os.getcwd()
+                os.chdir(backend_dir)
+                logger.info(f"Changed to backend directory: {backend_dir}")
+                
+                import app as backend_app
+                logger.info("Backend app imported successfully (fallback: as app)")
+            except ImportError as e2:
+                if "fastapi.middleware" in str(e2):
+                    error_msg = f"FastAPI import error: {e2}. Install with: pip install -r requirements.txt"
+                    logger.error(error_msg)
+                    raise ImportError(error_msg)
+                else:
+                    error_msg = f"Backend app import error: {e2}"
+                    logger.error(error_msg)
+                    logger.error(f"sys.path: {sys.path}")
+                    logger.error(f"backend_dir: {backend_dir}")
+                    logger.error(f"backend_dir exists: {backend_dir.exists()}")
+                    if backend_dir.exists():
+                        logger.error(f"backend_dir contents: {list(backend_dir.iterdir())[:10]}")
+                    raise ImportError(error_msg)
         
         # Use the pre-determined available port
         host = os.getenv('HOST', '0.0.0.0')
@@ -207,16 +238,31 @@ def main():
     print("=" * 50)
     print()
     
-    # Find an available port before starting threads
-    default_port = int(os.getenv('PORT', 8008))
+    # Use the port that was already determined and set in the environment
+    # This was done before backend imports to ensure OAuth redirects work correctly
+    server_port = int(os.environ.get('PORT', 8008))
+    log_important(f"Using port: {server_port}")
+    
+    # Double-check the port is actually available
+    # (in case something grabbed it between initial check and now)
+    import socket
     try:
-        server_port = find_available_port(default_port)
-        log_important(f"Found available port: {server_port}")
-    except RuntimeError as e:
-        logger.error(f"Could not find available port: {e}")
-        logger.error(f"Could not find available port: {e}")
-        input("Press Enter to exit...")
-        sys.exit(1)
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(('localhost', server_port))
+        logger.info(f"Port {server_port} is available")
+    except OSError:
+        # Port is busy, try to find a new one
+        logger.warning(f"Port {server_port} became busy, finding alternative...")
+        try:
+            server_port = find_available_port(server_port + 1)
+            os.environ['PORT'] = str(server_port)
+            log_important(f"Using alternative port: {server_port}")
+            log_important("WARNING: OAuth redirects may fail! Port changed after backend initialized.")
+            log_important("You may need to restart the application.")
+        except RuntimeError as e:
+            logger.error(f"Could not find available port: {e}")
+            input("Press Enter to exit...")
+            sys.exit(1)
     
     # Start backend in a separate thread
     logger.info("Starting backend server thread...")
