@@ -77,10 +77,7 @@ class TwitchBot(commands.Bot):
                         client_id = ""
                         client_secret = ""
                 
-                # Try to get bot_id from the token (user ID)
-                # For TwitchIO 3.x, bot_id is the numeric user ID
-                # We'll use the nick as a fallback, though it should be numeric
-                bot_id = nick  # This should ideally be the numeric user ID
+                bot_id = nick
                 
                 super().__init__(
                     token=token,
@@ -123,12 +120,9 @@ class TwitchBot(commands.Bot):
                     initial_channels=[channel]
                 )
             else:
-                raise  # Re-raise if it's a different TypeError
-
-    # ---------- Lifecycle ----------
+                raise
 
     async def event_ready(self):
-        # self.nick is available in both, but keep fallback to provided nick
         who = getattr(self, "nick", None) or self._nick or "unknown"
         try:
             logger.info(f"Twitch bot ready as {who}, listening to {self.channel_name}")
@@ -140,8 +134,6 @@ class TwitchBot(commands.Bot):
             logger.error(f"Twitch bot error: {error}", exc_info=True)
         except Exception:
             pass
-
-    # ---------- Messages ----------
 
     async def event_message(self, message):
         # 2.x provides echo; 1.x sometimes not—guard it.
@@ -173,42 +165,27 @@ class TwitchBot(commands.Bot):
         }
         self.on_event_cb(payload)
 
-        # If you also use commands, keep TwitchIO's command handling alive:
-        try:
-            await self.handle_commands(message)  # no-op if no commands defined
-        except Exception:
-            pass
-
-    # ---------- Notices (subs, raids, etc.) ----------
-
     def _emit_usernotice(self, channel, tags_in):
         tags = _normalize_tags(tags_in)
         msgid = (tags.get("msg-id") or "").lower()
         user = tags.get("display-name") or tags.get("login") or "unknown"
         
         etype = {
-            "sub": "sub",
-            "resub": "sub",
-            "subgift": "sub",
-            "anonsubgift": "sub",
-            "submysterygift": "sub",
-            "raid": "raid",
-            "bitsbadgetier": "bits",
+            "sub": "skip",
+            "resub": "skip",
+            "subgift": "skip",
+            "anonsubgift": "skip",
+            "submysterygift": "skip",
+            "raid": "skip",
+            "bitsbadgetier": "skip",
+            "viewcount" : "skip",
+            "watchstreak" : "skip"
         }.get(msgid, "chat")
         
-        # Filter out watch streak notifications - these are automated system messages
-        # that shouldn't trigger TTS (e.g., "User watched 5 consecutive streams")
-        if msgid in ["viewcount", "watchstreak"]:
-            # Don't send these messages to TTS at all
+        #For now, skip these messages. Deal with them later
+        if etype == "skip":
             return
-        
-        # For subscription events, check if there's an actual user message attached
-        # If not, send empty text so TTS doesn't read the system notification
-        if etype == "sub":
-            # User messages in sub events are in the 'message' tag, not 'system-msg'
-            text = tags.get("message") or ""
         else:
-            # For other events (raids, bits), system-msg is appropriate
             text = tags.get("system-msg") or ""
 
         self.on_event_cb({
