@@ -44,30 +44,28 @@ jobs:
     - name: Get version from git tags
       id: get_version
       run: |
-        # Try to get version from latest git tag
-        $gitVersion = git describe --tags --abbrev=0 2>$null
-        if ($LASTEXITCODE -eq 0 -and $gitVersion) {
-          # Clean up version (remove 'v' prefix if present)
-          $version = $gitVersion -replace '^v', ''
-          Write-Host "Found git tag version: $version"
-        } else {
-          # Fallback to version from backend/version.py
-          if (Test-Path "backend/version.py") {
-            $versionContent = Get-Content "backend/version.py" | Select-String -Pattern '__version__\s*=\s*[''"]([^''"]+)[''"]'
-            if ($versionContent) {
-              $version = $versionContent.Matches.Groups[1].Value
-              Write-Host "Using version from backend/version.py: $version"
-            } else {
-              $version = "1.0.0"
-              Write-Host "No version found, using default: $version"
-            }
-          } else {
-            $version = "1.0.0"
-            Write-Host "No version found, using default: $version"
+        # Get version from backend/version.py as the source of truth
+        $fileVersion = "1.0.0"  # Default fallback
+        if (Test-Path "backend/version.py") {
+          $versionContent = Get-Content "backend/version.py" | Select-String -Pattern '__version__\s*=\s*[''"]([^''"]+)[''"]'
+          if ($versionContent) {
+            $fileVersion = $versionContent.Matches.Groups[1].Value
+            Write-Host "Found version in backend/version.py: $fileVersion"
           }
         }
         
-        # Update backend/version.py with the version
+        # Also check latest git tag for reference
+        $gitVersion = git describe --tags --abbrev=0 2>$null
+        if ($LASTEXITCODE -eq 0 -and $gitVersion) {
+          $gitVersion = $gitVersion -replace '^v', ''
+          Write-Host "Latest git tag version: $gitVersion"
+        }
+        
+        # Use the version from backend/version.py as the authoritative source
+        $version = $fileVersion
+        Write-Host "Using version: $version"
+        
+        # Update backend/version.py to ensure it's consistent
         @"
         # Auto-generated version file
         # This file is automatically updated during the build process
@@ -179,13 +177,10 @@ jobs:
     
     - name: Create Release (on merge to main)
       if: steps.version.outputs.is_release == 'true'
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      uses: softprops/action-gh-release@v1
       with:
         tag_name: ${{ steps.version.outputs.version }}
-        release_name: Chat Yapper ${{ steps.version.outputs.version }}
+        name: Chat Yapper ${{ steps.version.outputs.version }}
         body: |
           ## Chat Yapper ${{ steps.version.outputs.version }}
           
@@ -211,19 +206,10 @@ jobs:
           ### Support
           - **Issues:** https://github.com/${{ github.repository }}/issues
           - **Discussions:** https://github.com/${{ github.repository }}/discussions
+        files: |
+          dist/ChatYapper.exe
         draft: false
         prerelease: false
-    
-    - name: Upload Release Asset
-      if: steps.version.outputs.is_release == 'true'
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./dist/ChatYapper.exe
-        asset_name: ChatYapper.exe
-        asset_content_type: application/vnd.microsoft.portable-executable
     
     - name: Notify release created
       if: steps.version.outputs.is_release == 'true'
