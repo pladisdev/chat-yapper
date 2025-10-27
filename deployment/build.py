@@ -78,11 +78,11 @@ def log_important(message):
     """Log important messages that should appear in both console and file"""
     logger.warning(f"IMPORTANT: {message}")  # WARNING level ensures console output
 
-def run_command(cmd, cwd=None):
+def run_command(cmd, cwd=None, env=None):
     """Run a command and print output"""
     logger.info(f"Running command: {cmd}" + (f" (cwd: {cwd})" if cwd else ""))
     print(f"Running: {cmd}")
-    result = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True)
+    result = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True, env=env)
     if result.returncode != 0:
         logger.error(f"Command failed with return code {result.returncode}: {cmd}")
         logger.error(f"Error output: {result.stderr}")
@@ -107,10 +107,35 @@ def build_frontend():
         print("Frontend directory not found")
         sys.exit(1)
     
+    # Get version from environment variable (defaults to version in backend/version.py)
+    app_version = os.environ.get('VITE_APP_VERSION')
+    if app_version:
+        logger.info(f"Building with version: {app_version}")
+        print(f"Building frontend with version: {app_version}")
+    else:
+        # Try to read from backend/version.py as fallback
+        try:
+            version_file = Path("backend/version.py")
+            if version_file.exists():
+                with open(version_file) as f:
+                    for line in f:
+                        if line.startswith('__version__'):
+                            app_version = line.split('=')[1].strip().strip('"').strip("'")
+                            logger.info(f"Using version from backend/version.py: {app_version}")
+                            print(f"Using version from backend/version.py: {app_version}")
+                            break
+        except Exception as e:
+            logger.warning(f"Could not read version from backend/version.py: {e}")
+    
+    # Set VITE_APP_VERSION for the build process
+    build_env = os.environ.copy()
+    if app_version:
+        build_env['VITE_APP_VERSION'] = app_version
+    
     # Install dependencies and build
     # Note: vite.config.js is configured to build directly to backend/public
-    run_command("npm install", cwd=frontend_dir)
-    run_command("npm run build", cwd=frontend_dir)
+    run_command("npm install", cwd=frontend_dir, env=build_env)
+    run_command("npm run build", cwd=frontend_dir, env=build_env)
     
     # Verify the build output exists
     backend_public = Path("backend/public")

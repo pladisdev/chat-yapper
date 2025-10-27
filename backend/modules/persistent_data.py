@@ -105,8 +105,8 @@ def save_settings(data: dict):
     except Exception as e:
         logger.error(f"Error saving settings: {e}")
         raise
-    
-def get_avatars():
+
+def get_enabled_avatars():
     """Get all enabled avatar configurations from database"""
     from modules.models import AvatarImage
     
@@ -145,18 +145,12 @@ def get_avatar(avatar_name, avatar_type):
 
 def add_avatar(avatar: AvatarImage):
     with Session(engine) as session:
-        # Create new avatar           
         session.add(avatar)
         session.commit()
         session.refresh(avatar)
 
 def update_avatar(avatar: AvatarImage):
-    """Update an existing avatar in the database"""
-    with Session(engine) as session:
-        session.add(avatar)
-        session.commit()
-        session.refresh(avatar)
-
+    add_avatar(avatar)
 
 def delete_avatar(avatar_id: int):
     with Session(engine) as session:
@@ -460,13 +454,10 @@ def Debug_Database():
                 "database_path": DB_PATH,
                 "user_data_dir": USER_DATA_DIR
             }
-# ---------- Config & DB ----------
-# Database and user directory setup is now handled in modules/__init__.py
+
 logger.info(f"Database path: {DB_PATH}")
 logger.info(f"User data directory: {USER_DATA_DIR}")
 
-# Run database migrations BEFORE creating engine and tables
-# This ensures old databases are updated to the new schema
 try:
     from modules.db_migration import run_all_migrations, get_database_info
     logger.info("Running database migration check...")
@@ -480,7 +471,6 @@ try:
 except Exception as e:
     logger.error(f"Database migration failed: {e}")
     log_important(f"Database migration error: {e}")
-    # Continue anyway - SQLModel.metadata.create_all will create missing tables
 
 # Ensure tables exist (engine is imported from modules)
 SQLModel.metadata.create_all(engine)
@@ -505,9 +495,6 @@ with Session(engine) as s:
     else:
         logger.info("Existing settings found in database")
 
-
-# ---------- Provider Voice Cache Functions ----------
-
 def get_cached_voices(provider: str, credentials_hash: str = None):
     """Get cached voice list for a provider"""
     with Session(engine) as session:
@@ -529,7 +516,6 @@ def get_cached_voices(provider: str, credentials_hash: str = None):
                 return None
         
         return None
-
 
 def save_cached_voices(provider: str, voices: list, credentials_hash: str = None):
     """Save voice list to cache for a provider"""
@@ -560,7 +546,6 @@ def save_cached_voices(provider: str, voices: list, credentials_hash: str = None
         session.commit()
         logger.info(f"Saved {len(voices)} voices to cache for {provider}")
 
-
 def clear_voice_cache(provider: str = None):
     """Clear voice cache for a specific provider or all providers"""
     with Session(engine) as session:
@@ -578,7 +563,6 @@ def clear_voice_cache(provider: str = None):
             session.commit()
             logger.info("Cleared all voice caches")
 
-
 def hash_credentials(*credentials: str) -> str:
     """Create a hash of credentials to detect changes
     
@@ -591,5 +575,3 @@ def hash_credentials(*credentials: str) -> str:
     """
     combined = ":".join(credentials)
     return hashlib.sha256(combined.encode()).hexdigest()[:16]
-
-

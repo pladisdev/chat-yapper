@@ -41,12 +41,52 @@ jobs:
         pip install -r requirements.txt
         pip install -r deployment/requirements-build.txt
     
+    - name: Get version from git tags
+      id: get_version
+      run: |
+        # Try to get version from latest git tag
+        $gitVersion = git describe --tags --abbrev=0 2>$null
+        if ($LASTEXITCODE -eq 0 -and $gitVersion) {
+          # Clean up version (remove 'v' prefix if present)
+          $version = $gitVersion -replace '^v', ''
+          Write-Host "Found git tag version: $version"
+        } else {
+          # Fallback to version from backend/version.py
+          if (Test-Path "backend/version.py") {
+            $versionContent = Get-Content "backend/version.py" | Select-String -Pattern '__version__\s*=\s*[''"]([^''"]+)[''"]'
+            if ($versionContent) {
+              $version = $versionContent.Matches.Groups[1].Value
+              Write-Host "Using version from backend/version.py: $version"
+            } else {
+              $version = "1.0.0"
+              Write-Host "No version found, using default: $version"
+            }
+          } else {
+            $version = "1.0.0"
+            Write-Host "No version found, using default: $version"
+          }
+        }
+        
+        # Update backend/version.py with the version
+        @"
+        # Auto-generated version file
+        # This file is automatically updated during the build process
+        __version__ = "$version"
+        "@ | Set-Content -Path "backend/version.py"
+        Write-Host "Updated backend/version.py with version: $version"
+        
+        # Export version for later steps
+        echo "app_version=$version" >> $env:GITHUB_OUTPUT
+        echo "VITE_APP_VERSION=$version" >> $env:GITHUB_ENV
+      shell: powershell
+    
     - name: Create .env file for build
       run: |
         echo "TWITCH_CLIENT_ID=${{ secrets.TWITCH_CLIENT_ID }}" > .env
         echo "TWITCH_CLIENT_SECRET=${{ secrets.TWITCH_CLIENT_SECRET }}" >> .env
         echo "YOUTUBE_CLIENT_ID=${{ secrets.YOUTUBE_CLIENT_ID }}" >> .env
         echo "YOUTUBE_CLIENT_SECRET=${{ secrets.YOUTUBE_CLIENT_SECRET }}" >> .env
+        echo "VITE_APP_VERSION=${{ steps.get_version.outputs.app_version }}" >> .env
       shell: bash
     
     - name: Build frontend
@@ -54,6 +94,8 @@ jobs:
       run: |
         npm install
         npm run build
+      env:
+        VITE_APP_VERSION: ${{ steps.get_version.outputs.app_version }}
     
     - name: Run build script
       run: python deployment/build.py
@@ -62,6 +104,7 @@ jobs:
         TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
         YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
         YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+        VITE_APP_VERSION: ${{ steps.get_version.outputs.app_version }}
     
     - name: Verify executable exists
       run: |
@@ -77,19 +120,20 @@ jobs:
     - name: Get version info
       id: version
       run: |
-        $date = Get-Date -Format "yyyy.MM.dd"
+        $appVersion = "${{ steps.get_version.outputs.app_version }}"
         $shortSha = "${{ github.sha }}".Substring(0, 7)
         
         # Check if this is a merge to main
         if ("${{ github.event_name }}" -eq "push" -and "${{ github.ref }}" -eq "refs/heads/main") {
-          # This is a push to main (after merge)
-          $version = "v$date-$shortSha"
+          # This is a push to main (after merge) - use app version as tag
+          $version = "v$appVersion"
           echo "version=$version" >> $env:GITHUB_OUTPUT
           echo "is_release=true" >> $env:GITHUB_OUTPUT
           Write-Host "Release version: $version"
         } else {
-          # This is a PR build
-          $version = "build-$date-$shortSha"
+          # This is a PR build - include build info
+          $date = Get-Date -Format "yyyy.MM.dd"
+          $version = "build-v$appVersion-$date-$shortSha"
           echo "version=$version" >> $env:GITHUB_OUTPUT
           echo "is_release=false" >> $env:GITHUB_OUTPUT
           Write-Host "PR build version: $version"
@@ -113,17 +157,18 @@ jobs:
           const stats = fs.statSync('dist/ChatYapper.exe');
           const sizeMB = (stats.size / (1024 * 1024)).toFixed(2);
           
-          const comment = `## Build Successful
+          const comment = `## ✅ Build Successful
           
           **Executable:** \`ChatYapper.exe\`
           **Size:** ${sizeMB} MB
-          **Version:** \`${{ steps.version.outputs.version }}\`
+          **App Version:** \`${{ steps.get_version.outputs.app_version }}\`
+          **Build ID:** \`${{ steps.version.outputs.version }}\`
           **Commit:** ${{ github.sha }}
           
           The executable has been built and is ready for testing.
           Download the artifact from the workflow run to test before merging.
           
-          Once merged to \`main\`, an official release will be created automatically.`;
+          Once merged to \`main\`, an official release will be created automatically with tag \`v${{ steps.get_version.outputs.app_version }}\`.`;
           
           github.rest.issues.createComment({
             issue_number: context.issue.number,
@@ -142,13 +187,14 @@ jobs:
         tag_name: ${{ steps.version.outputs.version }}
         release_name: Chat Yapper ${{ steps.version.outputs.version }}
         body: |
-          ## Chat Yapper Release ${{ steps.version.outputs.version }}
+          ## Chat Yapper ${{ steps.version.outputs.version }}
           
           ### What's Changed
           This release was automatically created from the latest merge to main.
           
+          **Version:** ${{ steps.get_version.outputs.app_version }}
           **Commit:** ${{ github.sha }}
-          **Build Date:** ${{ steps.version.outputs.version }}
+          **Build Date:** ${{ github.event.head_commit.timestamp }}
           
           ### Download
           Download `ChatYapper.exe` below to run the application.
@@ -161,6 +207,10 @@ jobs:
           ### System Requirements
           - Windows 10 or later
           - No additional dependencies required (all bundled in the executable)
+          
+          ### Support
+          - **Issues:** https://github.com/${{ github.repository }}/issues
+          - **Discussions:** https://github.com/${{ github.repository }}/discussions
         draft: false
         prerelease: false
     

@@ -3,7 +3,7 @@ import random
 import time
 
 from modules import logger
-from modules.persistent_data import get_avatars
+from modules.persistent_data import get_enabled_avatars
 from modules.persistent_data import get_settings
 
 avatar_slot_assignments = []  # List of slot objects with avatar assignments
@@ -27,7 +27,7 @@ def get_available_avatars():
     try:
         
             # Get all enabled avatars from database
-        avatars = get_avatars()
+        avatars = get_enabled_avatars()
         
         if not avatars:
             # Fallback to default avatars if no managed avatars
