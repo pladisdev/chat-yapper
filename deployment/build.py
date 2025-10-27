@@ -78,11 +78,11 @@ def log_important(message):
     """Log important messages that should appear in both console and file"""
     logger.warning(f"IMPORTANT: {message}")  # WARNING level ensures console output
 
-def run_command(cmd, cwd=None):
+def run_command(cmd, cwd=None, env=None):
     """Run a command and print output"""
     logger.info(f"Running command: {cmd}" + (f" (cwd: {cwd})" if cwd else ""))
     print(f"Running: {cmd}")
-    result = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True)
+    result = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True, env=env)
     if result.returncode != 0:
         logger.error(f"Command failed with return code {result.returncode}: {cmd}")
         logger.error(f"Error output: {result.stderr}")
@@ -107,10 +107,35 @@ def build_frontend():
         print("Frontend directory not found")
         sys.exit(1)
     
+    # Get version from environment variable (defaults to version in backend/version.py)
+    app_version = os.environ.get('VITE_APP_VERSION')
+    if app_version:
+        logger.info(f"Building with version: {app_version}")
+        print(f"Building frontend with version: {app_version}")
+    else:
+        # Try to read from backend/version.py as fallback
+        try:
+            version_file = Path("backend/version.py")
+            if version_file.exists():
+                with open(version_file) as f:
+                    for line in f:
+                        if line.startswith('__version__'):
+                            app_version = line.split('=')[1].strip().strip('"').strip("'")
+                            logger.info(f"Using version from backend/version.py: {app_version}")
+                            print(f"Using version from backend/version.py: {app_version}")
+                            break
+        except Exception as e:
+            logger.warning(f"Could not read version from backend/version.py: {e}")
+    
+    # Set VITE_APP_VERSION for the build process
+    build_env = os.environ.copy()
+    if app_version:
+        build_env['VITE_APP_VERSION'] = app_version
+    
     # Install dependencies and build
     # Note: vite.config.js is configured to build directly to backend/public
-    run_command("npm install", cwd=frontend_dir)
-    run_command("npm run build", cwd=frontend_dir)
+    run_command("npm install", cwd=frontend_dir, env=build_env)
+    run_command("npm run build", cwd=frontend_dir, env=build_env)
     
     # Verify the build output exists
     backend_public = Path("backend/public")
@@ -713,6 +738,60 @@ def test_executable():
     
     return all_tests_passed
 
+def generate_checksums():
+    """Generate SHA256 checksums for distribution files"""
+    logger.info("=== Generating checksums ===")
+    print("\nGenerating checksums...")
+    
+    try:
+        import hashlib
+        
+        exe_path = Path("dist/ChatYapper.exe")
+        if not exe_path.exists():
+            logger.error("Executable not found for checksum generation")
+            return False
+        
+        # Calculate SHA256
+        sha256_hash = hashlib.sha256()
+        with open(exe_path, "rb") as f:
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        
+        checksum = sha256_hash.hexdigest()
+        
+        # Save to file
+        checksum_file = Path("dist/ChatYapper.exe.sha256")
+        with open(checksum_file, "w") as f:
+            f.write(f"{checksum}  ChatYapper.exe\n")
+        
+        logger.info(f"SHA256 checksum: {checksum}")
+        print(f"[✓] SHA256: {checksum}")
+        print(f"[✓] Checksum saved to: {checksum_file}")
+        
+        # Also create a checksums.txt with metadata
+        metadata_file = Path("dist/CHECKSUMS.txt")
+        with open(metadata_file, "w") as f:
+            f.write("Chat Yapper - File Verification\n")
+            f.write("=" * 50 + "\n\n")
+            f.write(f"Build Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"File: ChatYapper.exe\n")
+            f.write(f"Size: {exe_path.stat().st_size:,} bytes ({exe_path.stat().st_size / (1024*1024):.2f} MB)\n")
+            f.write(f"\nSHA256: {checksum}\n")
+            f.write("\nTo verify:\n")
+            f.write("  Windows: certutil -hashfile ChatYapper.exe SHA256\n")
+            f.write("  Linux:   sha256sum ChatYapper.exe\n")
+            f.write("  Mac:     shasum -a 256 ChatYapper.exe\n")
+        
+        print(f"[✓] Verification file saved to: {metadata_file}")
+        logger.info(f"Checksum files generated successfully")
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to generate checksums: {e}")
+        print(f"[!] Warning: Could not generate checksums: {e}")
+        return False
+
 def main():
     # Check for command line arguments
     test_only = "--test-only" in sys.argv
@@ -748,6 +827,9 @@ def main():
         
         logger.info("=== Build process completed successfully ===")
         log_important("Build complete!")
+        
+        # Generate checksums for verification
+        generate_checksums()
         
         # Test the built executable
         if test_executable():

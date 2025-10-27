@@ -58,17 +58,71 @@ class TwitchBot(commands.Bot):
         self.channel_name = channel
         self._nick = nick  # keep our own record for logs
 
-        # Build constructor kwargs compatible with 1.x and 2.x
-        if self._major >= 2:
-            super().__init__(token=token, prefix="!", initial_channels=[channel])
-        else:
-            # TwitchIO 1.x expects irc_token + nick
-            super().__init__(irc_token=token, nick=nick, prefix="!", initial_channels=[channel])
-
-    # ---------- Lifecycle ----------
+        # Build constructor kwargs compatible with 1.x, 2.x, and 3.x
+        try:
+            if self._major >= 3:
+                # TwitchIO 3.x requires client_id, client_secret, and bot_id
+                # Import here to avoid circular imports
+                try:
+                    from modules.persistent_data import TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET
+                    client_id = TWITCH_CLIENT_ID or ""
+                    client_secret = TWITCH_CLIENT_SECRET or ""
+                except ImportError:
+                    # Fallback for embedded builds
+                    try:
+                        import embedded_config
+                        client_id = getattr(embedded_config, 'TWITCH_CLIENT_ID', '')
+                        client_secret = getattr(embedded_config, 'TWITCH_CLIENT_SECRET', '')
+                    except ImportError:
+                        client_id = ""
+                        client_secret = ""
+                
+                bot_id = nick
+                
+                super().__init__(
+                    token=token,
+                    client_id=client_id,
+                    client_secret=client_secret,
+                    bot_id=bot_id,
+                    prefix="!",
+                    initial_channels=[channel]
+                )
+            elif self._major >= 2:
+                # TwitchIO 2.x
+                super().__init__(token=token, prefix="!", initial_channels=[channel])
+            else:
+                # TwitchIO 1.x expects irc_token + nick
+                super().__init__(irc_token=token, nick=nick, prefix="!", initial_channels=[channel])
+        except TypeError as e:
+            # If we still get a TypeError, it might be version detection issue
+            # Try the 3.x format as fallback
+            if "client_id" in str(e) or "client_secret" in str(e) or "bot_id" in str(e):
+                try:
+                    from modules.persistent_data import TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET
+                    client_id = TWITCH_CLIENT_ID or ""
+                    client_secret = TWITCH_CLIENT_SECRET or ""
+                except ImportError:
+                    try:
+                        import embedded_config
+                        client_id = getattr(embedded_config, 'TWITCH_CLIENT_ID', '')
+                        client_secret = getattr(embedded_config, 'TWITCH_CLIENT_SECRET', '')
+                    except ImportError:
+                        client_id = ""
+                        client_secret = ""
+                
+                bot_id = nick
+                super().__init__(
+                    token=token,
+                    client_id=client_id,
+                    client_secret=client_secret,
+                    bot_id=bot_id,
+                    prefix="!",
+                    initial_channels=[channel]
+                )
+            else:
+                raise
 
     async def event_ready(self):
-        # self.nick is available in both, but keep fallback to provided nick
         who = getattr(self, "nick", None) or self._nick or "unknown"
         try:
             logger.info(f"Twitch bot ready as {who}, listening to {self.channel_name}")
@@ -80,8 +134,6 @@ class TwitchBot(commands.Bot):
             logger.error(f"Twitch bot error: {error}", exc_info=True)
         except Exception:
             pass
-
-    # ---------- Messages ----------
 
     async def event_message(self, message):
         # 2.x provides echo; 1.x sometimes not—guard it.
@@ -113,42 +165,27 @@ class TwitchBot(commands.Bot):
         }
         self.on_event_cb(payload)
 
-        # If you also use commands, keep TwitchIO's command handling alive:
-        try:
-            await self.handle_commands(message)  # no-op if no commands defined
-        except Exception:
-            pass
-
-    # ---------- Notices (subs, raids, etc.) ----------
-
     def _emit_usernotice(self, channel, tags_in):
         tags = _normalize_tags(tags_in)
         msgid = (tags.get("msg-id") or "").lower()
         user = tags.get("display-name") or tags.get("login") or "unknown"
         
         etype = {
-            "sub": "sub",
-            "resub": "sub",
-            "subgift": "sub",
-            "anonsubgift": "sub",
-            "submysterygift": "sub",
-            "raid": "raid",
-            "bitsbadgetier": "bits",
+            "sub": "skip",
+            "resub": "skip",
+            "subgift": "skip",
+            "anonsubgift": "skip",
+            "submysterygift": "skip",
+            "raid": "skip",
+            "bitsbadgetier": "skip",
+            "viewcount" : "skip",
+            "watchstreak" : "skip"
         }.get(msgid, "chat")
         
-        # Filter out watch streak notifications - these are automated system messages
-        # that shouldn't trigger TTS (e.g., "User watched 5 consecutive streams")
-        if msgid in ["viewcount", "watchstreak"]:
-            # Don't send these messages to TTS at all
+        #For now, skip these messages. Deal with them later
+        if etype == "skip":
             return
-        
-        # For subscription events, check if there's an actual user message attached
-        # If not, send empty text so TTS doesn't read the system notification
-        if etype == "sub":
-            # User messages in sub events are in the 'message' tag, not 'system-msg'
-            text = tags.get("message") or ""
         else:
-            # For other events (raids, bits), system-msg is appropriate
             text = tags.get("system-msg") or ""
 
         self.on_event_cb({
@@ -225,6 +262,14 @@ async def run_twitch_bot(token: str, nick: str, channel: str, on_event: Callable
         import logging
         bot_logger = logging.getLogger("ChatYapper.Twitch")
         bot_logger.info(f"Starting Twitch bot: nick={nick}, channel={channel}")
+        
+        # Log TwitchIO version for debugging
+        try:
+            import twitchio
+            version = getattr(twitchio, "__version__", "unknown")
+            bot_logger.info(f"TwitchIO version: {version}")
+        except Exception:
+            pass
     except Exception:
         pass
 
@@ -234,7 +279,7 @@ async def run_twitch_bot(token: str, nick: str, channel: str, on_event: Callable
             bot_logger.info("Twitch bot instance created, connecting...")
 
         # Start compatibly across versions
-        # Prefer async start() if present (2.x), else connect() (1.x),
+        # Prefer async start() if present (2.x/3.x), else connect() (1.x),
         # else last-resort run() via a thread to avoid blocking an async caller.
         started = False
 

@@ -21,13 +21,14 @@ except ImportError as e:
 class YouTubeListener:
     """YouTube Live Chat listener using YouTube Data API v3"""
     
-    def __init__(self, credentials: Any, video_id: Optional[str] = None):
+    def __init__(self, credentials: Any, video_id: Optional[str] = None, settings: Optional[Dict[str, Any]] = None):
         """
         Initialize YouTube listener
         
         Args:
             credentials: Google OAuth2 credentials
             video_id: Specific video/stream ID to monitor, or None to auto-detect active stream
+            settings: Optional settings dict to configure polling behavior
         """
         if not YOUTUBE_AVAILABLE:
             raise ImportError("YouTube dependencies not available. Install google-auth, google-auth-oauthlib, google-api-python-client")
@@ -38,9 +39,20 @@ class YouTubeListener:
         self.live_chat_id = None
         self.next_page_token = None
         self.running = False
-        self.polling_interval = 5  # Default polling interval in seconds
+        
+        # Get YouTube settings with defaults
+        youtube_settings = settings.get('youtube', {}) if settings else {}
+        
+        # Adaptive polling: start slower and adjust based on API response
+        self.polling_interval = 20  # Start with 10 seconds (more conservative)
+        self.min_polling_interval = youtube_settings.get('minPollingInterval', 15)  # YouTube's minimum recommended
+        self.max_polling_interval = youtube_settings.get('maxPollingInterval', 30)  # Maximum when chat is slow
+        self.polling_strategy = youtube_settings.get('pollingStrategy', 'adaptive')  # 'adaptive' or 'fixed'
+        self.consecutive_empty_polls = 0  # Track empty responses
         
         logger.info(f"YouTube listener initialized with video_id: {video_id or 'auto-detect'}")
+        logger.info(f"Polling strategy: {self.polling_strategy} (min: {self.min_polling_interval}s, max: {self.max_polling_interval}s)")
+        logger.info("💡 Tip: Adaptive polling reduces API quota usage by slowing down when chat is quiet")
     
     async def find_active_stream(self) -> bool:
         """Find the currently active live stream for the authenticated channel"""
@@ -156,6 +168,8 @@ class YouTubeListener:
                 
                 # Process messages
                 items = response.get('items', [])
+                new_messages_count = 0
+                
                 for item in items:
                     message_id = item['id']
                     
@@ -163,6 +177,7 @@ class YouTubeListener:
                     if message_id in processed_messages:
                         continue
                     processed_messages.add(message_id)
+                    new_messages_count += 1
                     
                     snippet = item['snippet']
                     author = item['authorDetails']
@@ -228,9 +243,40 @@ class YouTubeListener:
                 # Update next page token for polling
                 self.next_page_token = response.get('nextPageToken')
                 
-                # Get polling interval from YouTube API (they tell us how often to poll)
-                polling_interval_ms = response.get('pollingIntervalMillis', 5000)
-                self.polling_interval = polling_interval_ms / 1000.0
+                # Adaptive polling interval management
+                # YouTube API provides pollingIntervalMillis - always respect it as minimum
+                api_suggested_interval = response.get('pollingIntervalMillis', 6000) / 1000.0
+                
+                # Ensure we don't poll faster than YouTube recommends
+                base_interval = max(api_suggested_interval, self.min_polling_interval)
+                
+                # Apply polling strategy
+                if self.polling_strategy == 'adaptive':
+                    # Adaptive strategy: slow down when chat is inactive to save quota
+                    if new_messages_count == 0:
+                        self.consecutive_empty_polls += 1
+                        # Gradually increase interval up to max when chat is quiet
+                        # After 3 empty polls, start backing off
+                        if self.consecutive_empty_polls > 3:
+                            backoff_multiplier = min(1 + (self.consecutive_empty_polls - 3) * 0.5, 3)
+                            self.polling_interval = min(base_interval * backoff_multiplier, self.max_polling_interval)
+                            if self.consecutive_empty_polls == 4:  # Log once when backing off
+                                logger.info(f"💤 Chat quiet, reducing poll frequency to save quota (interval: {self.polling_interval:.1f}s)")
+                        else:
+                            self.polling_interval = base_interval
+                    else:
+                        # Active chat - use API suggested interval
+                        if self.consecutive_empty_polls > 3:  # Log when resuming normal polling
+                            logger.info(f"💬 Chat active, resuming normal poll frequency (interval: {base_interval:.1f}s)")
+                        self.consecutive_empty_polls = 0
+                        self.polling_interval = base_interval
+                else:
+                    # Fixed strategy: always use API suggested interval
+                    self.polling_interval = base_interval
+                
+                # Log quota-saving info periodically
+                if new_messages_count > 0:
+                    logger.debug(f"Processed {new_messages_count} new message(s), next poll in {self.polling_interval:.1f}s")
                 
                 # Clean up old processed messages (keep last 1000)
                 if len(processed_messages) > 1000:
@@ -244,14 +290,22 @@ class YouTubeListener:
                 status_code = getattr(e, 'resp', {}).get('status', 0)
                 
                 if status_code == 403:
-                    logger.error("YouTube API quota exceeded or access forbidden")
-                    await asyncio.sleep(60)  # Wait longer on quota errors
+                    logger.error("⚠️  YouTube API quota exceeded or access forbidden")
+                    logger.error("   The YouTube Data API has strict quota limits:")
+                    logger.error("   - Default quota: 10,000 units/day")
+                    logger.error("   - Each chat poll costs ~5 units")
+                    logger.error("   - This allows ~2,000 polls/day (~83/hour or ~1.4/minute)")
+                    logger.error("   Pausing for 5 minutes to avoid further quota usage...")
+                    await asyncio.sleep(300)  # Wait 5 minutes on quota errors
+                    # After quota error, slow down significantly
+                    self.polling_interval = self.max_polling_interval
+                    self.consecutive_empty_polls = 10  # Force slow polling
                 elif status_code == 404:
                     logger.error("Live chat not found - stream may have ended")
                     self.running = False
                 else:
-                    logger.error(f"YouTube API error: {error_reason}")
-                    await asyncio.sleep(10)
+                    logger.error(f"YouTube API error ({status_code}): {error_reason}")
+                    await asyncio.sleep(15)  # Longer wait for other errors
                     
             except asyncio.CancelledError:
                 logger.info("YouTube listener cancelled")
@@ -302,7 +356,8 @@ class YouTubeListener:
 
 
 async def run_youtube_bot(credentials: Any, video_id: Optional[str] = None, 
-                         on_event: Callable[[Dict[str, Any]], None] = None):
+                         on_event: Callable[[Dict[str, Any]], None] = None,
+                         settings: Optional[Dict[str, Any]] = None):
     """
     Main entry point for YouTube listener
     
@@ -310,6 +365,7 @@ async def run_youtube_bot(credentials: Any, video_id: Optional[str] = None,
         credentials: Google OAuth2 credentials
         video_id: Specific video/stream ID to monitor, or None to auto-detect
         on_event: Callback function to handle chat events
+        settings: Optional settings dict to configure polling behavior
     """
     if not YOUTUBE_AVAILABLE:
         logger.error("Cannot start YouTube bot: Required dependencies not installed")
@@ -323,7 +379,7 @@ async def run_youtube_bot(credentials: Any, video_id: Optional[str] = None,
         bot_logger.info(f"Starting YouTube bot with video_id: {video_id or 'auto-detect'}")
         
         # Create listener instance
-        listener = YouTubeListener(credentials, video_id)
+        listener = YouTubeListener(credentials, video_id, settings)
         bot_logger.info("YouTube listener instance created, starting chat monitoring...")
         
         # Start listening to chat

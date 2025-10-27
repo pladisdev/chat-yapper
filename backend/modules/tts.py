@@ -264,34 +264,14 @@ class EdgeTTSProvider(TTSProvider):
             all_voices = await edge_tts.list_voices()
         except Exception as e:
             logger.error(f"Failed to fetch voices from Edge TTS API: {e}")
-            # Return a fallback list of common voices
-            logger.info("Using fallback list of common Edge TTS voices")
-            fallback_voices = [
-                {"voice_id": "en-US-JennyNeural", "name": "Jenny - Female (en-US)", "gender": "Female", "locale": "en-US"},
-                {"voice_id": "en-US-GuyNeural", "name": "Guy - Male (en-US)", "gender": "Male", "locale": "en-US"},
-                {"voice_id": "en-US-AriaNeural", "name": "Aria - Female (en-US)", "gender": "Female", "locale": "en-US"},
-                {"voice_id": "en-US-DavisNeural", "name": "Davis - Male (en-US)", "gender": "Male", "locale": "en-US"},
-                {"voice_id": "en-GB-SoniaNeural", "name": "Sonia - Female (en-GB)", "gender": "Female", "locale": "en-GB"},
-                {"voice_id": "en-GB-RyanNeural", "name": "Ryan - Male (en-GB)", "gender": "Male", "locale": "en-GB"},
-                {"voice_id": "en-AU-NatashaNeural", "name": "Natasha - Female (en-AU)", "gender": "Female", "locale": "en-AU"},
-                {"voice_id": "en-AU-WilliamNeural", "name": "William - Male (en-AU)", "gender": "Male", "locale": "en-AU"},
-            ]
-            return fallback_voices
+            raise RuntimeError("edge-tts not available")
         
-        # Log the structure of the first voice to debug
-        if all_voices and len(all_voices) > 0:
-            logger.debug(f"Sample voice data structure: {all_voices[0]}")
-            logger.debug(f"Available keys: {list(all_voices[0].keys())}")
-        
-        # Filter for English voices only (Locale starts with 'en')
-        # Handle both dict and object access patterns
         english_voices = []
         for v in all_voices:
             locale = v.get('Locale') if isinstance(v, dict) else getattr(v, 'Locale', None)
             if locale and locale.startswith('en'):
                 english_voices.append(v)
         
-        # Transform to our format
         voices = []
         for voice in english_voices:
             try:
@@ -309,12 +289,8 @@ class EdgeTTSProvider(TTSProvider):
                     gender = getattr(voice, 'Gender', 'Unknown')
                     locale = getattr(voice, 'Locale', 'en-US')
                 
-                # Extract just the name from DisplayName
-                # Edge TTS format: "Microsoft Jenny Online (Natural) - English (United States)"
-                # We want: "Jenny"
                 clean_name = display_name
                 if 'Microsoft' in display_name:
-                    # Extract the name between "Microsoft " and " Online"
                     parts = display_name.replace('Microsoft ', '').split(' Online')
                     if parts:
                         clean_name = parts[0].strip()
@@ -332,7 +308,6 @@ class EdgeTTSProvider(TTSProvider):
         
         logger.info(f"Fetched {len(voices)} English Edge TTS voices from API")
         
-        # Save to cache (no credential hash for free service)
         from modules.persistent_data import save_cached_voices
         save_cached_voices("edge", voices, "")
         logger.info(f"Cached {len(voices)} Edge TTS voices")
@@ -734,35 +709,6 @@ class AmazonPollyProvider(TTSProvider):
                 logger.info(f"Cleaned up temporary file: {filepath}")
         except Exception as e:
             logger.info(f"Failed to cleanup file {filepath}: {e}")
-
-class WebSpeechTTSProvider(TTSProvider):
-    """Web Speech API provider (client-side, returns placeholder)"""
-    
-    def __init__(self, voice_id: str = "en-US"):
-        self.voice_id = voice_id
-    
-    async def synth(self, job: TTSJob) -> str:
-        # Web Speech API runs on the client side, so we return a special marker
-        # The frontend will handle this differently
-        outpath = os.path.join(AUDIO_DIR, f"{uuid.uuid4()}_webspeech.json")
-        
-        # Create a JSON file with instructions for the frontend
-        webspeech_data = {
-            "provider": "webspeech",
-            "text": job.text,
-            "voice": job.voice or self.voice_id,
-            "format": job.audio_format
-        }
-        
-        import json
-        with open(outpath, 'w') as f:
-            json.dump(webspeech_data, f)
-        
-        # Schedule cleanup after 30 seconds
-        asyncio.create_task(self._cleanup_file_after_delay(outpath, 30))
-        
-        logger.info(f"Web Speech API instruction ready: {outpath}")
-        return outpath
     
     async def _cleanup_file_after_delay(self, filepath: str, delay_seconds: int):
         """Clean up temporary audio file after delay"""
@@ -785,7 +731,6 @@ class HybridTTSProvider(TTSProvider):
         self.edge_provider = None
         self.google_provider = None
         self.polly_provider = None
-        self.webspeech_provider = None
         self.fallback_voices = fallback_voices or []
         
         # Initialize MonsterTTS if API key provided
@@ -807,9 +752,6 @@ class HybridTTSProvider(TTSProvider):
                 polly_config['secretKey'],
                 polly_config.get('region', 'us-east-1')
             )
-        
-        # Initialize Web Speech API (always available for client-side)
-        self.webspeech_provider = WebSpeechTTSProvider()
         
         self.edge_voice_id = edge_voice_id
         self.monster_voice_id = monster_voice_id
@@ -861,8 +803,6 @@ class HybridTTSProvider(TTSProvider):
                         return await self.polly_provider.synth(job)
                     except Exception as e:
                         logger.info(f"Amazon Polly voice failed: {e}, trying random fallback")
-                elif matching_voice.provider == "webspeech" and self.webspeech_provider:
-                    return await self.webspeech_provider.synth(job)
             
             # Random fallback from enabled voices
             fallback_voice = random.choice(self.fallback_voices)
@@ -908,8 +848,6 @@ class HybridTTSProvider(TTSProvider):
                     return await self.polly_provider.synth(fallback_job)
                 except Exception as e:
                     logger.info(f"Amazon Polly random fallback failed: {e}")
-            elif fallback_voice.provider == "webspeech" and self.webspeech_provider:
-                return await self.webspeech_provider.synth(fallback_job)
         
         # Final fallback to Edge TTS with default voice
         if self.edge_provider:

@@ -281,7 +281,7 @@ class TestAvatarPersistentData:
     
     def test_get_avatars_enabled_only(self, session):
         """Test getting only enabled avatars"""
-        from modules.persistent_data import get_avatars, add_avatar, delete_avatar
+        from modules.persistent_data import get_enabled_avatars, add_avatar, delete_avatar
         
         # Add enabled and disabled avatars to persistent DB
         enabled = AvatarImage(
@@ -302,8 +302,7 @@ class TestAvatarPersistentData:
         add_avatar(disabled)
         
         try:
-            # get_avatars should return only enabled
-            avatars = get_avatars()
+            avatars = get_enabled_avatars()
             avatar_names = [a.name for a in avatars]
             
             assert "Enabled" in avatar_names

@@ -11,7 +11,7 @@ from typing import List
 from fastapi import APIRouter, UploadFile, Form, HTTPException
 from modules.persistent_data import (
     PUBLIC_DIR, PERSISTENT_AVATARS_DIR,
-    delete_avatar, get_avatar, get_avatars, get_all_avatars, add_avatar, update_avatar,
+    delete_avatar, get_avatar, get_all_avatars, add_avatar, update_avatar,
     delete_avatar_group, update_avatar_group_position, toggle_avatar_group_disabled
 )
 from modules.models import AvatarImage

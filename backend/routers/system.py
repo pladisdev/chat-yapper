@@ -239,3 +239,49 @@ async def api_replay_message(payload: Dict[str, Any]):
     except Exception as e:
         logger.error(f"Failed to replay message: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
+
+@router.post("/api/test/clearchat")
+async def api_test_clearchat(payload: Dict[str, Any]):
+    """Simulate a Twitch CLEARCHAT event (ban/timeout) for testing"""
+    try:
+        from app import handle_moderation_event
+        import asyncio
+        
+        # Extract parameters
+        target_user = payload.get("target_user", "TestUser")
+        event_type = payload.get("eventType", "ban")  # "ban" or "timeout"
+        duration = payload.get("duration", 600)  # Default 600 seconds (10 minutes) for timeout
+        
+        if not target_user:
+            return {"success": False, "error": "No target_user provided"}
+        
+        # Validate event type
+        if event_type not in ["ban", "timeout"]:
+            return {"success": False, "error": "eventType must be 'ban' or 'timeout'"}
+        
+        # Create moderation event object that matches CLEARCHAT structure
+        event = {
+            "type": "moderation",
+            "eventType": event_type,
+            "target_user": target_user,
+            "duration": int(duration) if event_type == "timeout" else None,
+            "tags": {
+                "login": target_user,
+                "target-user-id": target_user,
+                "ban-duration": str(duration) if event_type == "timeout" else None
+            }
+        }
+        
+        # Process the moderation event directly (not as a chat message)
+        asyncio.create_task(handle_moderation_event(event))
+        
+        logger.info(f"Test CLEARCHAT: {event_type} for {target_user}" + (f" ({duration}s)" if event_type == "timeout" else ""))
+        
+        return {
+            "success": True, 
+            "message": f"Simulated {event_type} for {target_user}",
+            "event": event
+        }
+    except Exception as e:
+        logger.error(f"Failed to simulate CLEARCHAT: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}

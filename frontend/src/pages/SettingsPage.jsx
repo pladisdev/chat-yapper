@@ -28,6 +28,7 @@ import {
   CheckCircle2,
   XCircle,
   Music,
+  Shield,
   Database
 } from 'lucide-react'
 
@@ -86,6 +87,32 @@ export default function SettingsPage() {
       logger.info('Simulate response:', result)
     } catch (error) {
       console.error('Simulate error:', error)
+    }
+  }
+
+  const simulateClearChat = async (targetUser, moderationType, duration = 600) => {
+    logger.info('Simulating CLEARCHAT event:', { targetUser, moderationType, duration })
+    
+    try {
+      const response = await fetch(`${apiUrl}/api/test/clearchat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target_user: targetUser,
+          eventType: moderationType,
+          duration: duration
+        })
+      })
+      const result = await response.json()
+      logger.info('CLEARCHAT test response:', result)
+      
+      if (result.success) {
+        logger.info(`✓ Successfully simulated ${moderationType} for ${targetUser}`)
+      } else {
+        console.error('CLEARCHAT test failed:', result.error)
+      }
+    } catch (error) {
+      console.error('CLEARCHAT test error:', error)
     }
   }
 
@@ -204,6 +231,7 @@ export default function SettingsPage() {
 
           <TabsContent value="test" className="space-y-6">
             <Simulator onSend={simulate} />
+            <ClearChatTester onTest={simulateClearChat} />
             <MessageHistory apiUrl={apiUrl} />
           </TabsContent>
 
@@ -368,6 +396,111 @@ function Simulator({ onSend }) {
   )
 }
 
+function ClearChatTester({ onTest }) {
+  const [targetUser, setTargetUser] = useState('TestUser')
+  const [moderationType, setModerationType] = useState('ban')
+  const [duration, setDuration] = useState(600) // Default 10 minutes
+  
+  const moderationTypes = [
+    { value: 'ban', label: 'Ban', desc: 'Permanent ban - stops all TTS for user' },
+    { value: 'timeout', label: 'Timeout', desc: 'Temporary timeout - stops TTS for duration' }
+  ]
+
+  const commonDurations = [
+    { value: 60, label: '1 minute' },
+    { value: 300, label: '5 minutes' },
+    { value: 600, label: '10 minutes' },
+    { value: 1800, label: '30 minutes' },
+    { value: 3600, label: '1 hour' }
+  ]
+  
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Shield className="w-5 h-5" />
+          Moderation Event Tester
+        </CardTitle>
+        <CardDescription>
+          Test Twitch CLEARCHAT events (bans/timeouts) to verify TTS cancellation works correctly
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="mod-user">Target Username</Label>
+            <Input
+              id="mod-user"
+              placeholder="TestUser"
+              value={targetUser} 
+              onChange={e => setTargetUser(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              User whose TTS will be cancelled
+            </p>
+          </div>
+          
+          <div className="space-y-2">
+            <Label htmlFor="mod-type">Moderation Type</Label>
+            <select 
+              id="mod-type"
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={moderationType} 
+              onChange={e => setModerationType(e.target.value)}
+            >
+              {moderationTypes.map(type => 
+                <option key={type.value} value={type.value}>{type.label} - {type.desc}</option>
+              )}
+            </select>
+          </div>
+        </div>
+        
+        {moderationType === 'timeout' && (
+          <div className="space-y-2">
+            <Label htmlFor="mod-duration">Timeout Duration</Label>
+            <select 
+              id="mod-duration"
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={duration} 
+              onChange={e => setDuration(Number(e.target.value))}
+            >
+              {commonDurations.map(d => 
+                <option key={d.value} value={d.value}>{d.label}</option>
+              )}
+            </select>
+            <p className="text-xs text-muted-foreground">
+              How long the user will be timed out
+            </p>
+          </div>
+        )}
+        
+        <div className="bg-muted/50 border border-border rounded-lg p-4 space-y-2">
+          <p className="text-sm font-medium">What this tests:</p>
+          <ul className="text-sm text-muted-foreground space-y-1 ml-4 list-disc">
+            <li>Cancels any active TTS for the target user</li>
+            <li>Removes queued messages from the target user</li>
+            <li>Releases avatar slot if user is currently speaking</li>
+            <li>Simulates real Twitch moderation events</li>
+          </ul>
+        </div>
+        
+        <div className="flex justify-center pt-2">
+          <Button 
+            size="lg"
+            variant="destructive"
+            className="gap-2" 
+            onClick={() => onTest(targetUser, moderationType, duration)}
+            disabled={!targetUser}
+          >
+            <Shield className="w-4 h-4" />
+            Simulate {moderationType === 'ban' ? 'Ban' : 'Timeout'}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 function AboutSection() {
   return (
     <Card>
@@ -376,15 +509,10 @@ function AboutSection() {
           <BarChart3 className="w-5 h-5" />
           About Chat Yapper
         </CardTitle>
-        <CardDescription>Information and support for Chat Yapper TTS System</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="space-y-4">
           <div className="p-4 rounded-lg border bg-muted/50">
-            <h3 className="font-medium text-lg mb-2">Chat Yapper</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              A way to have your chat talk through avatars! At the same time... not obnoxious at all...
-            </p>
             <div className="space-y-2 text-sm">
               <div className="flex items-center gap-2">
                 <span className="font-medium">Features:</span>
@@ -404,10 +532,6 @@ function AboutSection() {
             <h3 className="font-medium text-lg">OBS Studio Integration</h3>
             <div className="p-4 rounded-lg border bg-card">
               <div className="space-y-3">
-                <p className="text-sm font-medium">Use Chat Yapper with OBS Studio</p>
-                <p className="text-sm text-muted-foreground">
-                  Display animated chat avatars in your stream by adding the yappers page as a Browser Source in OBS.
-                </p>
                 <div className="space-y-3">
                   <div>
                     <p className="text-xs font-medium mb-2">Steps to add to OBS:</p>
@@ -429,20 +553,40 @@ function AboutSection() {
 
           <div className="space-y-4">
             <h3 className="font-medium text-lg">Support & Contact</h3>
-            <div className="p-4 rounded-lg border bg-card">
-              <div className="flex items-center gap-3">
-                <div className="text-2xl"></div>
-                <div>
-                  <p className="font-medium">Need help or have questions?</p>
-                  <p className="text-sm text-muted-foreground">
-                    Contact the developer for support, bug reports, or feature requests
-                  </p>
-                  <a 
-                    href="mailto:pladisdev@gmail.com" 
-                    className="text-primary hover:underline font-mono text-sm"
-                  >
-                    pladisdev@gmail.com
-                  </a>
+            <div className="space-y-3">
+              <div className="p-4 rounded-lg border bg-card">
+                <div className="flex items-center gap-3">
+                  <div>
+                    <p className="font-medium">Email Support</p>
+                    <p className="text-sm text-muted-foreground mb-1">
+                      Contact the developer for support, bug reports, or feature requests
+                    </p>
+                    <a 
+                      href="mailto:pladisdev@gmail.com" 
+                      className="text-primary hover:underline font-mono text-sm"
+                    >
+                      pladisdev@gmail.com
+                    </a>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="p-4 rounded-lg border bg-card">
+                <div className="flex items-center gap-3">
+                  <div>
+                    <p className="font-medium">GitHub Issues</p>
+                    <p className="text-sm text-muted-foreground mb-1">
+                      Report bugs, request features, or view the source code
+                    </p>
+                    <a 
+                      href="https://github.com/pladisdev/chat-yapper/" 
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline font-mono text-sm"
+                    >
+                      github.com/pladisdev/chat-yapper
+                    </a>
+                  </div>
                 </div>
               </div>
             </div>
@@ -455,7 +599,9 @@ function AboutSection() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="p-3 rounded-lg border bg-card">
                 <div className="text-sm font-medium mb-1">Version</div>
-                <div className="text-xs text-muted-foreground">Chat Yapper v1.0.0</div>
+                <div className="text-xs text-muted-foreground">
+                  Chat Yapper v{import.meta.env.VITE_APP_VERSION || '1.1.0'}
+                </div>
               </div>
               <div className="p-3 rounded-lg border bg-card">
                 <div className="text-sm font-medium mb-1">Status</div>

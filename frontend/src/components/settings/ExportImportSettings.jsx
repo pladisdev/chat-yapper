@@ -370,24 +370,6 @@ export default function ExportImportSettings({ apiUrl = '' }) {
           )}
         </div>
 
-        {/* Warning */}
-        <div className="flex gap-3 p-4 rounded-lg border border-yellow-500/50 bg-yellow-500/10">
-          <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" />
-          <div className="text-sm">
-            <strong>Important:</strong> Importing will create a backup of your current database before making changes. 
-            If import fails, the backup will be automatically restored.
-          </div>
-        </div>
-
-        {/* Info */}
-        <div className="flex gap-3 p-4 rounded-lg border border-blue-500/50 bg-blue-500/10">
-          <Info className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
-          <div className="text-sm">
-            <strong>What's included:</strong> All settings, TTS voices, avatar configurations, and uploaded avatar images.
-            Built-in avatars are not included (they're part of the application).
-          </div>
-        </div>
-
         {/* Success Result */}
         {result && result.type === 'success' && (
           <div className="flex gap-3 p-4 rounded-lg border border-green-500 bg-green-500/10">

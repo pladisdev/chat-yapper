@@ -5,8 +5,12 @@ import os
 import sys
 
 def is_executable():
-    """Detect if running as PyInstaller executable"""
-    return getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
+    """
+    Detect if running as a frozen executable (PyInstaller or Nuitka).
+    PyInstaller sets both 'frozen' and '_MEIPASS'.
+    Nuitka sets 'frozen' but not '_MEIPASS'.
+    """
+    return getattr(sys, 'frozen', False)
 
 # Import backend_logging after is_executable is defined to avoid circular import
 from .backend_logging import setup_backend_logging

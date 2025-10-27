@@ -558,7 +558,8 @@ async def restart_youtube_if_needed(settings: Dict[str, Any]):
             YouTubeTask = asyncio.create_task(run_youtube_bot(
                 credentials=token_info["credentials"],
                 video_id=video_id,
-                on_event=lambda e: asyncio.create_task(route_youtube_event(e))
+                on_event=lambda e: asyncio.create_task(route_youtube_event(e)),
+                settings=settings
             ))
             logger.info("YouTube bot restarted")
         else:
@@ -1354,7 +1355,8 @@ async def startup():
                 yt = asyncio.create_task(run_youtube_bot(
                     credentials=token_info["credentials"],
                     video_id=video_id,
-                    on_event=lambda e: asyncio.create_task(route_youtube_event(e))
+                    on_event=lambda e: asyncio.create_task(route_youtube_event(e)),
+                    settings=settings
                 ))
                 
                 # Add error handler for the YouTube task
