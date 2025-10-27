@@ -32,6 +32,13 @@
 "token": "",
 "nick": ""
 },
+"youtube": {
+"enabled": false,
+"videoId": "",
+"pollingStrategy": "adaptive",
+"minPollingInterval": 6,
+"maxPollingInterval": 30
+},
 "messageFiltering": {
 "enabled": true,
 "minLength": 1,
