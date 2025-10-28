@@ -160,9 +160,11 @@ jobs:
         $size = $msiPath.Length / 1MB
         Write-Host "MSI size: $([math]::Round($size, 2)) MB"
         
-        # Store MSI info for later steps
-        echo "msi_path=$($msiPath.FullName)" >> $env:GITHUB_OUTPUT
+        # Store MSI info for later steps - use forward slashes for cross-platform compatibility
+        $relativePath = "dist/msi/$($msiPath.Name)"
+        echo "msi_path=$relativePath" >> $env:GITHUB_OUTPUT
         echo "msi_name=$($msiPath.Name)" >> $env:GITHUB_OUTPUT
+        Write-Host "MSI path for upload: $relativePath"
       shell: powershell
     
     - name: Get version info
@@ -288,7 +290,7 @@ jobs:
           - **Discussions:** https://github.com/${{ github.repository }}/discussions
         files: |
           dist/ChatYapper.exe
-          ${{ steps.msi_info.outputs.msi_path }}
+          dist/msi/*.msi
         draft: false
         prerelease: false
     
