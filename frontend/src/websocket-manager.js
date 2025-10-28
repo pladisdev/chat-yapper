@@ -13,6 +13,14 @@ class WebSocketManager {
       this.wsUrl = location.hostname === 'localhost' && (location.port === '5173' || location.port === '5174')
         ? `ws://localhost:${import.meta.env.VITE_BACKEND_PORT || 8008}/ws`
         : `ws://${location.host}/ws`
+      
+      console.log('WebSocket URL initialized:', this.wsUrl)
+      console.log('Location details:', {
+        hostname: location.hostname,
+        port: location.port,
+        host: location.host,
+        href: location.href
+      })
     }
   }
 
@@ -40,11 +48,16 @@ class WebSocketManager {
     }
 
     try {
-      console.log('Connecting WebSocket to', this.wsUrl, '(', this.listeners.size, 'listeners)')
+      console.log('ATTEMPTING WebSocket connection to', this.wsUrl, '(', this.listeners.size, 'listeners)')
+      console.log('Current WebSocket state:', this.ws ? this.ws.readyState : 'null')
+
       this.ws = new WebSocket(this.wsUrl)
+      
+      console.log('WebSocket object created, waiting for connection...')
 
       this.ws.onopen = () => {
-        console.log('Global WebSocket connected, listeners:', this.listeners.size)
+        console.log('Global WebSocket connected successfully! Listeners:', this.listeners.size)
+        console.log('WebSocket URL:', this.wsUrl)
         this.connected = true
         this.ws.send('hello')
         
@@ -110,6 +123,11 @@ class WebSocketManager {
       this.ws.onerror = (err) => {
         this.connected = false
         
+        console.error('WebSocket ERROR occurred!')
+        console.error('WebSocket URL was:', this.wsUrl)
+        console.error('Error details:', err)
+        console.error('WebSocket state:', this.ws ? this.ws.readyState : 'null')
+
         // Only log errors if we're not in the process of disconnecting
         if (this.ws && this.ws.readyState !== WebSocket.CLOSING && this.ws.readyState !== WebSocket.CLOSED) {
           console.error('WebSocket error during connection')
@@ -120,19 +138,25 @@ class WebSocketManager {
         // Suppress error logging during cleanup when no listeners remain
       }
     } catch (error) {
-      console.error('Global WebSocket connection failed:', error)
+      console.error('FATAL: Global WebSocket connection failed with exception!')
+      console.error('Exception:', error)
+      console.error('WebSocket URL:', this.wsUrl)
       this.connected = false
     }
   }
 
   addListener(listener) {
-    console.log('Adding global listener. Total:', this.listeners.size + 1)
+    console.log('Adding global WebSocket listener. Total will be:', this.listeners.size + 1)
     this.listeners.add(listener)
     
     // Start connection if this is the first listener
     if (this.listeners.size === 1) {
+      console.log('First listener added - initializing WebSocket...')
       this.init()
+      console.log('Calling connect()...')
       this.connect()
+    } else {
+      console.log('Listener added, WebSocket already active')
     }
     
     return () => {

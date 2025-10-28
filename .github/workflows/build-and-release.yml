@@ -44,30 +44,28 @@ jobs:
     - name: Get version from git tags
       id: get_version
       run: |
-        # Try to get version from latest git tag
-        $gitVersion = git describe --tags --abbrev=0 2>$null
-        if ($LASTEXITCODE -eq 0 -and $gitVersion) {
-          # Clean up version (remove 'v' prefix if present)
-          $version = $gitVersion -replace '^v', ''
-          Write-Host "Found git tag version: $version"
-        } else {
-          # Fallback to version from backend/version.py
-          if (Test-Path "backend/version.py") {
-            $versionContent = Get-Content "backend/version.py" | Select-String -Pattern '__version__\s*=\s*[''"]([^''"]+)[''"]'
-            if ($versionContent) {
-              $version = $versionContent.Matches.Groups[1].Value
-              Write-Host "Using version from backend/version.py: $version"
-            } else {
-              $version = "1.0.0"
-              Write-Host "No version found, using default: $version"
-            }
-          } else {
-            $version = "1.0.0"
-            Write-Host "No version found, using default: $version"
+        # Get version from backend/version.py as the source of truth
+        $fileVersion = "1.0.0"  # Default fallback
+        if (Test-Path "backend/version.py") {
+          $versionContent = Get-Content "backend/version.py" | Select-String -Pattern '__version__\s*=\s*[''"]([^''"]+)[''"]'
+          if ($versionContent) {
+            $fileVersion = $versionContent.Matches.Groups[1].Value
+            Write-Host "Found version in backend/version.py: $fileVersion"
           }
         }
         
-        # Update backend/version.py with the version
+        # Also check latest git tag for reference
+        $gitVersion = git describe --tags --abbrev=0 2>$null
+        if ($LASTEXITCODE -eq 0 -and $gitVersion) {
+          $gitVersion = $gitVersion -replace '^v', ''
+          Write-Host "Latest git tag version: $gitVersion"
+        }
+        
+        # Use the version from backend/version.py as the authoritative source
+        $version = $fileVersion
+        Write-Host "Using version: $version"
+        
+        # Update backend/version.py to ensure it's consistent
         @"
         # Auto-generated version file
         # This file is automatically updated during the build process
@@ -117,6 +115,56 @@ jobs:
         Write-Host "Executable size: $([math]::Round($size, 2)) MB"
       shell: powershell
     
+    - name: Install WiX Toolset v4
+      run: |
+        Write-Host "Installing WiX Toolset v4..."
+        dotnet tool install --global wix
+        
+        # Ensure WiX is in PATH
+        $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
+        
+        Write-Host "Verifying WiX installation..."
+        wix --version
+        
+        Write-Host "Installing WiX UI extension globally..."
+        wix extension add --global WixToolset.UI.wixext
+        
+        Write-Host "Verifying UI extension..."
+        wix extension list
+        wix extension list --global
+        
+        Write-Host "WiX installation complete"
+      shell: powershell
+    
+    - name: Generate installer images
+      run: |
+        Write-Host "Generating custom installer images..."
+        pip install pillow
+        python deployment/create_installer_images.py
+      shell: powershell
+    
+    - name: Build MSI Installer
+      run: python deployment/build_msi.py
+      env:
+        VITE_APP_VERSION: ${{ steps.get_version.outputs.app_version }}
+    
+    - name: Verify MSI exists
+      id: msi_info
+      run: |
+        $msiPath = Get-ChildItem -Path "dist/msi" -Filter "*.msi" | Select-Object -First 1
+        if (!$msiPath) {
+          Write-Error "MSI build failed: No .msi file found in dist/msi directory"
+          exit 1
+        }
+        Write-Host "[SUCCESS] MSI build successful: $($msiPath.Name) found"
+        $size = $msiPath.Length / 1MB
+        Write-Host "MSI size: $([math]::Round($size, 2)) MB"
+        
+        # Store MSI info for later steps
+        echo "msi_path=$($msiPath.FullName)" >> $env:GITHUB_OUTPUT
+        echo "msi_name=$($msiPath.Name)" >> $env:GITHUB_OUTPUT
+      shell: powershell
+    
     - name: Get version info
       id: version
       run: |
@@ -145,7 +193,9 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: ChatYapper-${{ steps.version.outputs.version }}
-        path: dist/ChatYapper.exe
+        path: |
+          dist/ChatYapper.exe
+          dist/msi/*.msi
         retention-days: 7
     
     - name: Comment PR with build status
@@ -154,19 +204,28 @@ jobs:
       with:
         script: |
           const fs = require('fs');
-          const stats = fs.statSync('dist/ChatYapper.exe');
-          const sizeMB = (stats.size / (1024 * 1024)).toFixed(2);
+          const path = require('path');
+          
+          const exeStats = fs.statSync('dist/ChatYapper.exe');
+          const exeSizeMB = (exeStats.size / (1024 * 1024)).toFixed(2);
+          
+          // Find MSI file
+          const msiDir = 'dist/msi';
+          const msiFiles = fs.readdirSync(msiDir).filter(f => f.endsWith('.msi'));
+          const msiFile = msiFiles.length > 0 ? msiFiles[0] : null;
+          const msiStats = msiFile ? fs.statSync(path.join(msiDir, msiFile)) : null;
+          const msiSizeMB = msiStats ? (msiStats.size / (1024 * 1024)).toFixed(2) : 'N/A';
           
           const comment = `## ✅ Build Successful
           
-          **Executable:** \`ChatYapper.exe\`
-          **Size:** ${sizeMB} MB
+          **Executable:** \`ChatYapper.exe\` (${exeSizeMB} MB)
+          **MSI Installer:** \`${msiFile || 'Not found'}\` (${msiSizeMB} MB)
           **App Version:** \`${{ steps.get_version.outputs.app_version }}\`
           **Build ID:** \`${{ steps.version.outputs.version }}\`
           **Commit:** ${{ github.sha }}
           
-          The executable has been built and is ready for testing.
-          Download the artifact from the workflow run to test before merging.
+          Both the standalone executable and MSI installer have been built and are ready for testing.
+          Download the artifacts from the workflow run to test before merging.
           
           Once merged to \`main\`, an official release will be created automatically with tag \`v${{ steps.get_version.outputs.app_version }}\`.`;
           
@@ -179,13 +238,10 @@ jobs:
     
     - name: Create Release (on merge to main)
       if: steps.version.outputs.is_release == 'true'
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      uses: softprops/action-gh-release@v1
       with:
         tag_name: ${{ steps.version.outputs.version }}
-        release_name: Chat Yapper ${{ steps.version.outputs.version }}
+        name: Chat Yapper ${{ steps.version.outputs.version }}
         body: |
           ## Chat Yapper ${{ steps.version.outputs.version }}
           
@@ -197,33 +253,44 @@ jobs:
           **Build Date:** ${{ github.event.head_commit.timestamp }}
           
           ### Download
-          Download `ChatYapper.exe` below to run the application.
+          Choose one of the following installation methods:
+          
+          #### MSI Installer (Recommended)
+          - Download `${{ steps.msi_info.outputs.msi_name }}` for a traditional Windows installation
+          - Double-click to install to Program Files
+          - Creates Start Menu and Desktop shortcuts
+          - Easily uninstall via Windows Settings
+          
+          #### Standalone Executable
+          - Download `ChatYapper.exe` for a portable version
+          - No installation required
+          - Run directly from any location
           
           ### Installation
+          
+          **MSI Installer:**
+          1. Download the `.msi` file below
+          2. Double-click to run the installer
+          3. Follow the installation wizard
+          4. Launch from Start Menu or Desktop shortcut
+          
+          **Standalone Executable:**
           1. Download `ChatYapper.exe`
           2. Run the executable
           3. The application will start on `http://localhost:8008`
           
           ### System Requirements
           - Windows 10 or later
-          - No additional dependencies required (all bundled in the executable)
+          - No additional dependencies required (all bundled)
           
           ### Support
           - **Issues:** https://github.com/${{ github.repository }}/issues
           - **Discussions:** https://github.com/${{ github.repository }}/discussions
+        files: |
+          dist/ChatYapper.exe
+          ${{ steps.msi_info.outputs.msi_path }}
         draft: false
         prerelease: false
-    
-    - name: Upload Release Asset
-      if: steps.version.outputs.is_release == 'true'
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./dist/ChatYapper.exe
-        asset_name: ChatYapper.exe
-        asset_content_type: application/vnd.microsoft.portable-executable
     
     - name: Notify release created
       if: steps.version.outputs.is_release == 'true'

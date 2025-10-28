@@ -58,8 +58,20 @@ YOUTUBE_CLIENT_SECRET = get_env_var("YOUTUBE_CLIENT_SECRET", "")
 YOUTUBE_REDIRECT_URI = f"http://localhost:{os.environ.get('PORT', 8000)}/auth/youtube/callback"
 YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/youtube.force-ssl"
 
-AUDIO_DIR = os.environ.get("AUDIO_DIR", os.path.join(find_project_root(), "audio"))
+# Audio directory - use persistent location for .exe compatibility
+# In development, use project root's audio folder
+# When packaged as .exe, use user data directory
+if os.environ.get("AUDIO_DIR"):
+    AUDIO_DIR = os.environ.get("AUDIO_DIR")
+elif getattr(sys, 'frozen', False):
+    # Running as compiled executable - use user data directory
+    AUDIO_DIR = os.path.join(USER_DATA_DIR, "audio")
+else:
+    # Running from source - use project root
+    AUDIO_DIR = os.path.join(find_project_root(), "audio")
+
 os.makedirs(AUDIO_DIR, exist_ok=True)
+logger.info(f"Audio directory set to: {AUDIO_DIR}")
 
 # Database setup
 engine = create_engine(f"sqlite:///{DB_PATH}", echo=False, connect_args={"check_same_thread": False})
