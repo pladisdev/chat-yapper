@@ -52,7 +52,7 @@ def check_wix_extensions():
             install_result = subprocess.run("wix extension add WixToolset.UI.wixext", 
                                           shell=True, capture_output=True, text=True)
             if install_result.returncode == 0:
-                print("✓ WiX UI extension installed successfully")
+                print("WiX UI extension installed successfully")
                 return True
             else:
                 print(f"Failed to install extension: {install_result.stderr}")
@@ -66,7 +66,7 @@ def check_wix_extensions():
             install_result = subprocess.run("wix extension add WixToolset.UI.wixext", 
                                           shell=True, capture_output=True, text=True)
             if install_result.returncode == 0:
-                print("✓ WiX UI extension installed successfully")
+                print("WiX UI extension installed successfully")
                 return True
         except:
             pass
@@ -208,12 +208,12 @@ def build_msi():
         print(f"Installer size: {file_size:.1f} MB")
         
         print("\nInstaller features:")
-        print("  ✓ User-selectable install location")
-        print("  ✓ Desktop shortcut (optional)")
-        print("  ✓ Start Menu shortcut")
-        print("  ✓ Logs folder with write permissions")
-        print("  ✓ Launch application after install (optional)")
-        print("  ✓ Proper uninstall support")
+        print("  User-selectable install location")
+        print("  Desktop shortcut (optional)")
+        print("  Start Menu shortcut")
+        print("  Logs folder with write permissions")
+        print("  Launch application after install (optional)")
+        print("  Proper uninstall support")
         
         print("\nNext steps:")
         print(f"  1. Test the installer: {output_msi.name}")
