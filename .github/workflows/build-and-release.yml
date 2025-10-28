@@ -126,11 +126,12 @@ jobs:
         Write-Host "Verifying WiX installation..."
         wix --version
         
-        Write-Host "Installing WiX UI extension..."
-        wix extension add WixToolset.UI.wixext
+        Write-Host "Installing WiX UI extension globally..."
+        wix extension add --global WixToolset.UI.wixext
         
         Write-Host "Verifying UI extension..."
         wix extension list
+        wix extension list --global
         
         Write-Host "WiX installation complete"
       shell: powershell

@@ -169,11 +169,35 @@ def build_msi():
     # WiX 4 uses: wix build -o output.msi source.wxs -d VariableName=Value
     output_msi = msi_output_dir / f"ChatYapper-{version}.msi"
     
-    # Include UI extension for WixUI
-    cmd = f'wix build -o "{output_msi}" ChatYapper.wxs -d SourceDir="{source_dir}" -ext WixToolset.UI.wixext'
+    # Try to build with UI extension
+    # WiX 4 extensions can be specified with -ext or the full package name
+    build_commands = [
+        # Try with short name first
+        f'wix build -o "{output_msi}" ChatYapper.wxs -d SourceDir="{source_dir}" -ext WixToolset.UI.wixext',
+        # Try with full package reference
+        f'wix build -o "{output_msi}" ChatYapper.wxs -d SourceDir="{source_dir}" -ext WixToolset.UI.wixext/4.0.5',
+        # Try without version
+        f'wix build -o "{output_msi}" ChatYapper.wxs -d SourceDir="{source_dir}" --ext WixToolset.UI.wixext',
+    ]
+    
+    build_success = False
+    
+    for i, cmd in enumerate(build_commands):
+        try:
+            if i > 0:
+                print(f"Retrying with alternative command syntax (attempt {i + 1})...")
+            run_command(cmd, cwd=deployment_dir)
+            build_success = True
+            break
+        except SystemExit:
+            if i < len(build_commands) - 1:
+                continue
+            raise
     
     try:
-        run_command(cmd, cwd=deployment_dir)
+        if not build_success:
+            raise Exception("All build attempts failed")
+            
         print("\n" + "="*60)
         print("MSI installer created successfully!")
         print("="*60)
