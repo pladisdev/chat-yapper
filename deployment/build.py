@@ -246,19 +246,30 @@ def create_executable():
     # Install PyInstaller
     run_command("pip install pyinstaller")
     
-    # Check for icon file
+    # Check for icon file (use absolute path)
     icon_path = None
-    for icon_file in ['../assets/icon.ico', '../assets/logo.ico', '../assets/app.ico', 'icon.ico', 'logo.ico', 'app.ico']:
-        if Path(icon_file).exists():
-            icon_path = icon_file
-            print(f"Found icon: {icon_file}")
+    project_root_path = Path(__file__).parent.parent
+    icon_candidates = [
+        project_root_path / 'assets' / 'icon.ico',
+        project_root_path / 'assets' / 'logo.ico',
+        project_root_path / 'assets' / 'app.ico',
+        Path('icon.ico'),
+        Path('logo.ico'),
+        Path('app.ico')
+    ]
+    
+    for icon_file in icon_candidates:
+        if icon_file.exists():
+            icon_path = str(icon_file.resolve())
+            print(f"Found icon: {icon_path}")
             break
     
     if not icon_path:
-        print("No icon file found - executable will use default icon")
+        print("WARNING: No icon file found - executable will use default icon")
+        print(f"Searched in: {project_root_path / 'assets'}")
     
     # Create spec file for PyInstaller
-    icon_line = f"icon='{icon_path}'" if icon_path else "icon=None"
+    icon_line = f"icon=r'{icon_path}'," if icon_path else ""
     
     spec_content = f'''# -*- mode: python ; coding: utf-8 -*-
 import sys

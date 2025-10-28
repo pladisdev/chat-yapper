@@ -8,9 +8,77 @@ from fastapi.staticfiles import StaticFiles
 
 from modules import logger
 
-from modules.persistent_data import PUBLIC_DIR, PERSISTENT_AVATARS_DIR
+from modules.persistent_data import PUBLIC_DIR, PERSISTENT_AVATARS_DIR, AUDIO_DIR
 
 router = APIRouter()
+
+# Direct route for audio files (fallback if mount doesn't work)
+@router.get("/audio/{filename}")
+async def serve_audio(filename: str):
+    """Serve audio files"""
+    file_path = os.path.join(AUDIO_DIR, filename)
+    logger.info(f"Audio request: {filename} -> {file_path}")
+    
+    if not os.path.isfile(file_path):
+        logger.warning(f"Audio file not found: {file_path}")
+        logger.info(f"AUDIO_DIR: {AUDIO_DIR}")
+        logger.info(f"AUDIO_DIR exists: {os.path.isdir(AUDIO_DIR)}")
+        if os.path.isdir(AUDIO_DIR):
+            try:
+                files = os.listdir(AUDIO_DIR)
+                logger.info(f"Available audio files: {len(files)} files")
+                if files:
+                    logger.info(f"Sample files: {files[:5]}")
+            except Exception as e:
+                logger.error(f"Error listing audio directory: {e}")
+        raise HTTPException(status_code=404, detail="Audio file not found")
+    
+    # Determine MIME type based on file extension
+    media_type = None
+    if filename.lower().endswith('.mp3'):
+        media_type = 'audio/mpeg'
+    elif filename.lower().endswith('.wav'):
+        media_type = 'audio/wav'
+    elif filename.lower().endswith('.ogg'):
+        media_type = 'audio/ogg'
+    elif filename.lower().endswith('.m4a'):
+        media_type = 'audio/mp4'
+    
+    logger.info(f"Serving audio file: {filename} ({os.path.getsize(file_path)} bytes) with MIME type: {media_type}")
+    return FileResponse(file_path, media_type=media_type)
+
+# Direct route for user avatars (fallback if mount doesn't work)
+@router.get("/user_avatars/{filename}")
+async def serve_user_avatar(filename: str):
+    """Serve user-uploaded avatar images"""
+    file_path = os.path.join(PERSISTENT_AVATARS_DIR, filename)
+    logger.info(f"User avatar request: {filename} -> {file_path}")
+    
+    if not os.path.isfile(file_path):
+        logger.warning(f"User avatar file not found: {file_path}")
+        logger.info(f"PERSISTENT_AVATARS_DIR: {PERSISTENT_AVATARS_DIR}")
+        logger.info(f"PERSISTENT_AVATARS_DIR exists: {os.path.isdir(PERSISTENT_AVATARS_DIR)}")
+        if os.path.isdir(PERSISTENT_AVATARS_DIR):
+            try:
+                files = os.listdir(PERSISTENT_AVATARS_DIR)
+                logger.info(f"Available files: {files}")
+            except Exception as e:
+                logger.error(f"Error listing directory: {e}")
+        raise HTTPException(status_code=404, detail="Avatar not found")
+    
+    # Determine MIME type
+    media_type = None
+    if filename.lower().endswith('.png'):
+        media_type = 'image/png'
+    elif filename.lower().endswith(('.jpg', '.jpeg')):
+        media_type = 'image/jpeg'
+    elif filename.lower().endswith('.gif'):
+        media_type = 'image/gif'
+    elif filename.lower().endswith('.webp'):
+        media_type = 'image/webp'
+    
+    logger.info(f"Serving user avatar: {filename} with MIME type: {media_type}")
+    return FileResponse(file_path, media_type=media_type)
 
 @router.get("/favicon.ico")
 async def favicon():
@@ -82,6 +150,12 @@ if os.path.isdir(PUBLIC_DIR):
 
 def mount_static_files(app):
     """Mount static file directories after all routes are defined"""
+    logger.info(f"=== MOUNTING STATIC FILES ===")
+    logger.info(f"PUBLIC_DIR: {PUBLIC_DIR}")
+    logger.info(f"PUBLIC_DIR exists: {os.path.isdir(PUBLIC_DIR)}")
+    logger.info(f"PERSISTENT_AVATARS_DIR: {PERSISTENT_AVATARS_DIR}")
+    logger.info(f"PERSISTENT_AVATARS_DIR exists: {os.path.isdir(PERSISTENT_AVATARS_DIR)}")
+    
     if os.path.isdir(PUBLIC_DIR):
         logger.info(f"Mounting static files from: {PUBLIC_DIR}")
         
@@ -91,13 +165,31 @@ def mount_static_files(app):
             logger.info(f"Mounting /voice_avatars from: {voice_avatars_dir}")
             app.mount("/voice_avatars", StaticFiles(directory=voice_avatars_dir), name="voice_avatars")
         else:
-            logger.info(f"Built-in voice avatars directory not found: {voice_avatars_dir}")
+            logger.warning(f"Built-in voice avatars directory not found: {voice_avatars_dir}")
         
         # Mount user-uploaded avatars from persistent directory
         if os.path.isdir(PERSISTENT_AVATARS_DIR):
             logger.info(f"Mounting /user_avatars from: {PERSISTENT_AVATARS_DIR}")
+            # List files in directory for debugging
+            try:
+                files = os.listdir(PERSISTENT_AVATARS_DIR)
+                logger.info(f"Files in PERSISTENT_AVATARS_DIR: {len(files)} files")
+                if files:
+                    logger.info(f"Sample files: {files[:5]}")
+            except Exception as e:
+                logger.error(f"Error listing files in PERSISTENT_AVATARS_DIR: {e}")
+            
             app.mount("/user_avatars", StaticFiles(directory=PERSISTENT_AVATARS_DIR), name="user_avatars")
         else:
-            logger.info(f"User avatars directory not found: {PERSISTENT_AVATARS_DIR}")
+            logger.warning(f"User avatars directory not found: {PERSISTENT_AVATARS_DIR}")
+            logger.warning(f"Creating directory: {PERSISTENT_AVATARS_DIR}")
+            try:
+                os.makedirs(PERSISTENT_AVATARS_DIR, exist_ok=True)
+                logger.info(f"Directory created successfully")
+                app.mount("/user_avatars", StaticFiles(directory=PERSISTENT_AVATARS_DIR), name="user_avatars")
+            except Exception as e:
+                logger.error(f"Failed to create PERSISTENT_AVATARS_DIR: {e}")
     else:
-        logger.info(f"Static files directory not found: {PUBLIC_DIR}")
+        logger.error(f"Static files directory not found: {PUBLIC_DIR}")
+    
+    logger.info(f"=== STATIC FILES MOUNT COMPLETE ===")

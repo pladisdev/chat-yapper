@@ -548,35 +548,56 @@ export default function YappersPage() {
 
   // CRITICAL: Only initialize WebSocket AFTER settings are loaded
   useEffect(() => {
+    console.log('YappersPage WebSocket useEffect triggered')
+    console.log('settingsLoaded:', settingsLoaded)
+    console.log('settings:', settings)
+    
     if (!settingsLoaded) {
       logger.info('Waiting for settings to load before WebSocket initialization')
+      console.log('Settings not loaded yet, skipping WebSocket init')
       return
     }
 
+    console.log('Settings loaded! Proceeding with WebSocket initialization...')
+    
     // Import global WebSocket manager directly
     let removeListener = null
     let mounted = true
     
     // Add a small delay to prevent rapid connect/disconnect in development
     const connectTimeout = setTimeout(() => {
-      if (!mounted) return
-      
+      console.log('YappersPage: Timeout elapsed, checking if still mounted...')
+      if (!mounted) {
+        console.log('Component unmounted before WebSocket init')
+        return
+      }
+
+      console.log('YappersPage: Importing WebSocket manager...')
       import('../websocket-manager.js').then(({ default: wsManager }) => {
-        if (!mounted) return
+        if (!mounted) {
+          console.log('Component unmounted after import')
+          return
+        }
+        console.log('WebSocket manager imported successfully')
         logger.info('YappersPage: Adding WebSocket listener (settings loaded)')
+        console.log('YappersPage: Calling wsManager.addListener()...')
         removeListener = wsManager.addListener(handleMessage)
-        
+        console.log('Listener added, removeListener function received')
+
         // Store WebSocket reference for sending messages
         wsRef.current = wsManager.ws
         
         // Request initial avatar slots when connected
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          console.log('WebSocket already open, requesting avatar slots')
           requestAvatarSlots()
         } else {
+          console.log('WebSocket not open yet, will request slots on connect')
           // Wait for connection and then request slots
           const originalOnOpen = wsManager.ws?.onopen
           if (wsManager.ws) {
             wsManager.ws.onopen = (event) => {
+              console.log('WebSocket opened via onopen handler')
               if (originalOnOpen) originalOnOpen(event)
               wsRef.current = wsManager.ws
               requestAvatarSlots()
@@ -591,7 +612,7 @@ export default function YappersPage() {
       clearTimeout(connectTimeout)
       
       if (removeListener) {
-        logger.info('🔌 YappersPage: Removing WebSocket listener')
+        logger.info('YappersPage: Removing WebSocket listener')
         // Add a small delay before removing to prevent rapid disconnect/reconnect
         setTimeout(() => removeListener(), 50)
       }

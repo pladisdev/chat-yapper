@@ -7,6 +7,7 @@ import time
 from datetime import datetime
 from typing import Dict, Any, List
 from collections import defaultdict
+import builtins
 
 # Load environment variables from .env file
 from dotenv import load_dotenv
@@ -204,8 +205,18 @@ app.include_router(config_backup_router)
 
 # Serve generated audio files under /audio
 # Use AUDIO_DIR from TTS module to ensure consistency
+logger.info(f"=== MOUNTING AUDIO DIRECTORY ===")
 logger.info(f"Audio directory: {AUDIO_DIR}")
+logger.info(f"Audio directory exists: {os.path.isdir(AUDIO_DIR)}")
+if os.path.isdir(AUDIO_DIR):
+    try:
+        files = os.listdir(AUDIO_DIR)
+        logger.info(f"Files in audio directory: {len(files)} files")
+    except Exception as e:
+        logger.error(f"Error listing audio directory: {e}")
+        
 app.mount("/audio", StaticFiles(directory=AUDIO_DIR), name="audio")
+logger.info(f"=== AUDIO MOUNT COMPLETE ===")
 
 
 # Debug: List files in the public directory
@@ -232,16 +243,33 @@ class Hub:
         if ws in self.clients:
             self.clients.remove(ws)
     async def broadcast(self, payload: Dict[str, Any]):
+        logger.debug(f"Hub.broadcast called with payload type: {payload.get('type')}")
+        logger.debug(f"Broadcasting to {len(self.clients)} clients")
         dead = []
+        sent_count = 0
         for ws in self.clients:
             try:
                 await ws.send_text(json.dumps(payload))
-            except Exception:
+                sent_count += 1
+                logger.debug(f"Sent message to client {sent_count}/{len(self.clients)}")
+            except Exception as e:
+                logger.warning(f"Failed to send to client: {e}")
                 dead.append(ws)
         for d in dead:
             self.unregister(d)
+        logger.debug(f"Broadcast complete: {sent_count} succeeded, {len(dead)} failed")
 
-hub = Hub()
+# Use a singleton pattern to prevent hub from being recreated on module reload
+# This is critical for .exe builds where imports can cause module reinitialization
+# We store the hub in builtins which is truly global and survives module reloads
+if not hasattr(builtins, '_chatyapper_hub_instance'):
+    logger.info("Creating new Hub instance (first initialization)")
+    hub = Hub()
+    builtins._chatyapper_hub_instance = hub
+else:
+    hub = builtins._chatyapper_hub_instance
+    logger.info(f"Hub already exists with {len(hub.clients)} clients (module reload detected)")
+
 async def broadcast_avatar_slots():
     await hub.broadcast({
         "type": "avatar_slots_updated",
@@ -1142,6 +1170,15 @@ async def process_tts_message(evt: Dict[str, Any]):
         
         audio_url = f"/audio/{os.path.basename(path)}"
         
+        # Debug logging for .exe troubleshooting
+        logger.info(f"=== TTS AUDIO GENERATED ===")
+        logger.info(f"Audio file path: {path}")
+        logger.info(f"Audio file exists: {os.path.exists(path)}")
+        logger.info(f"Audio file size: {os.path.getsize(path) if os.path.exists(path) else 'N/A'} bytes")
+        logger.info(f"Audio URL: {audio_url}")
+        logger.info(f"Audio duration: {audio_duration}s")
+        logger.info(f"AUDIO_DIR: {AUDIO_DIR}")
+        
         # Create base payload
         voice_info = {
             "id": selected_voice.id,
@@ -1176,7 +1213,15 @@ async def process_tts_message(evt: Dict[str, Any]):
             })
             
             logger.info(f"Broadcasting TTS with slot {target_slot['id']} to {len(hub.clients)} clients")
+            logger.info(f"=== BROADCASTING WEBSOCKET MESSAGE ===")
+            logger.info(f"Message type: play")
+            logger.info(f"Target slot: {target_slot['id']}")
+            logger.info(f"Audio URL in payload: {enhanced_payload.get('audioUrl')}")
+            logger.info(f"Connected WebSocket clients: {len(hub.clients)}")
+            logger.info(f"Payload keys: {list(enhanced_payload.keys())}")
+            
             await hub.broadcast(enhanced_payload)
+            logger.info(f"=== BROADCAST COMPLETE ===")
         else:
             # No slots available - queue the message
             logger.info(f"All slots busy, queuing TTS for {username}")

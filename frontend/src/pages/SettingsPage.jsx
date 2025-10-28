@@ -377,7 +377,7 @@ function Simulator({ onSend }) {
             </select>
           </div>
           
-          <div className="flex justify-center pt-2">
+          <div className="flex flex-col items-center gap-2 pt-2">
             <Button 
               size="lg"
               className="gap-2" 
@@ -389,6 +389,9 @@ function Simulator({ onSend }) {
             >
               Send Test Message
             </Button>
+            <p className="text-xs text-muted-foreground text-center">
+              💡 Open the <a href="/yappers" className="underline font-medium">Yappers page</a> to see avatars and hear audio
+            </p>
           </div>
         </div>
       </CardContent>
