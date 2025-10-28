@@ -119,10 +119,27 @@ jobs:
       run: |
         Write-Host "Installing WiX Toolset v4..."
         dotnet tool install --global wix
+        
+        # Ensure WiX is in PATH
+        $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
+        
+        Write-Host "Verifying WiX installation..."
+        wix --version
+        
         Write-Host "Installing WiX UI extension..."
         wix extension add WixToolset.UI.wixext
+        
+        Write-Host "Verifying UI extension..."
+        wix extension list
+        
         Write-Host "WiX installation complete"
-        wix --version
+      shell: powershell
+    
+    - name: Generate installer images
+      run: |
+        Write-Host "Generating custom installer images..."
+        pip install pillow
+        python deployment/create_installer_images.py
       shell: powershell
     
     - name: Build MSI Installer
