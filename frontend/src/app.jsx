@@ -6,8 +6,13 @@ import SettingsPage from './pages/SettingsPage'
 
 export default function App() {
   useEffect(() => {
-    // Enable dark mode by default
-    document.documentElement.classList.add('dark')
+    // Apply saved theme preference or default to dark mode
+    const savedTheme = localStorage.getItem('theme') || 'dark'
+    if (savedTheme === 'dark') {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+    }
   }, [])
 
   return (

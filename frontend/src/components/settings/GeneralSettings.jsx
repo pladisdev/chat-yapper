@@ -1,13 +1,32 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { Button } from '../ui/button'
-import { Settings } from 'lucide-react'
+import { Settings, Sun, Moon } from 'lucide-react'
 import logger from '../../utils/logger'
 
 function GeneralSettings({ settings, setSettings, updateSettings, apiUrl }) {
   const [tempVolume, setTempVolume] = useState(Math.round((settings.volume !== undefined ? settings.volume : 1.0) * 100))
+  const [theme, setTheme] = useState(() => {
+    // Get theme from localStorage or default to 'dark'
+    return localStorage.getItem('theme') || 'dark'
+  })
+
+  useEffect(() => {
+    // Apply theme on mount and when it changes
+    const root = document.documentElement
+    if (theme === 'dark') {
+      root.classList.add('dark')
+    } else {
+      root.classList.remove('dark')
+    }
+    localStorage.setItem('theme', theme)
+  }, [theme])
+
+  const toggleTheme = () => {
+    setTheme(prevTheme => prevTheme === 'dark' ? 'light' : 'dark')
+  }
 
   return (
     <Card>
@@ -19,6 +38,31 @@ function GeneralSettings({ settings, setSettings, updateSettings, apiUrl }) {
         <CardDescription>Configure TTS control and audio volume</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <Label className="text-base">Theme</Label>
+            <p className="text-sm text-muted-foreground">Choose between light and dark mode</p>
+          </div>
+          <Button
+            onClick={toggleTheme}
+            variant="outline"
+            size="sm"
+            className="gap-2"
+          >
+            {theme === 'dark' ? (
+              <>
+                <Moon className="w-4 h-4" />
+                Dark
+              </>
+            ) : (
+              <>
+                <Sun className="w-4 h-4" />
+                Light
+              </>
+            )}
+          </Button>
+        </div>
+
         <div className="flex items-center justify-between">
           <div>
             <Label className="text-base">TTS Control</Label>

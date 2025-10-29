@@ -180,9 +180,11 @@ chat-yapper/
 
 ## Changelog
 
-### v1.1.0 (Latest)
+### v1.1.1 (Latest)
 - Stabiltiy fixes
 - msi installation for windows for easier support
+- Light mode
+- Cleaned up settings
 
 ### v1.0.0 (Latest)
 - GIF and WebP support for animated avatars

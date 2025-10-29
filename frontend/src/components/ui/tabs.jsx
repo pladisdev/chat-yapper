@@ -20,7 +20,7 @@ const TabsList = React.forwardRef((props, ref) => {
     <TabsPrimitive.List
       ref={ref}
       className={cn(
-        "inline-flex h-10 items-center justify-center rounded-md bg-neutral-900 p-1 text-neutral-400",
+        "inline-flex h-10 items-center justify-center rounded-md bg-neutral-200 dark:bg-neutral-900 p-1 text-neutral-600 dark:text-neutral-400",
         className
       )}
       {...rest}
@@ -35,7 +35,7 @@ const TabsTrigger = React.forwardRef((props, ref) => {
     <TabsPrimitive.Trigger
       ref={ref}
       className={cn(
-        "inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-neutral-950 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-300 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-neutral-800 data-[state=active]:text-neutral-50 data-[state=active]:shadow-sm",
+        "inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-white dark:ring-offset-neutral-950 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 dark:focus-visible:ring-neutral-300 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-white dark:data-[state=active]:bg-neutral-800 data-[state=active]:text-neutral-900 dark:data-[state=active]:text-neutral-50 data-[state=active]:shadow-sm",
         className
       )}
       {...rest}
@@ -50,7 +50,7 @@ const TabsContent = React.forwardRef((props, ref) => {
     <TabsPrimitive.Content
       ref={ref}
       className={cn(
-        "mt-2 ring-offset-neutral-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-300 focus-visible:ring-offset-2",
+        "mt-2 ring-offset-white dark:ring-offset-neutral-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-400 dark:focus-visible:ring-neutral-300 focus-visible:ring-offset-2",
         className
       )}
       {...rest}
