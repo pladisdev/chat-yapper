@@ -10,13 +10,15 @@ import { useWebSocket } from '../WebSocketContext'
 import VoiceManager from '../components/VoiceManager'
 import GeneralSettings from '../components/settings/GeneralSettings'
 import AvatarManagement from '../components/settings/AvatarManagement'
-import GlowEffectSettings from '../components/settings/GlowEffectSettings'
+import AvatarConfigurationTabs from '../components/settings/AvatarConfigurationTabs'
 import TTSConfiguration from '../components/settings/TTSConfiguration'
 import PlatformIntegration from '../components/settings/PlatformIntegration'
 import MessageFiltering from '../components/settings/MessageFiltering'
 import AudioFiltersSettings from '../components/settings/AudioFiltersSettings'
 import MessageHistory from '../components/MessageHistory'
 import ExportImportSettings from '../components/settings/ExportImportSettings'
+import chatYapperIcon from '../assets/icon.png'
+import backgroundImage from '../assets/background.png'
 import { 
   Settings, 
   Image, 
@@ -29,7 +31,9 @@ import {
   XCircle,
   Music,
   Shield,
-  Database
+  Database,
+  Grid3x3,
+  Sparkles
 } from 'lucide-react'
 
 export default function SettingsPage() {
@@ -130,11 +134,15 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className="min-h-screen bg-background p-6 relative">
+      <div 
+        className="absolute inset-0 bg-center bg-no-repeat bg-cover opacity-5 pointer-events-none"
+        style={{ backgroundImage: `url(${backgroundImage})` }}
+      />
+      <div className="max-w-7xl mx-auto space-y-6 relative z-10">
         <div className="space-y-2">
           <h1 className="text-4xl font-bold flex items-center gap-3">
-            <Settings className="w-10 h-10" />
+            <img src={chatYapperIcon} alt="Chat Yapper" className="w-10 h-10" />
             Chat Yapper Settings
           </h1>
           <p className="text-muted-foreground">Configure your voice avatar TTS system</p>
@@ -185,10 +193,12 @@ export default function SettingsPage() {
           </TabsContent>
 
           <TabsContent value="avatars" className="space-y-6">
-            <GlowEffectSettings
+            <AvatarConfigurationTabs
               settings={settings}
-              onUpdate={updateSettings}
+              updateSettings={updateSettings}
+              apiUrl={apiUrl}
             />
+            
             <AvatarManagement
               managedAvatars={managedAvatars}
               apiUrl={apiUrl}
@@ -613,6 +623,15 @@ function AboutSection() {
                   System Running
                 </div>
               </div>
+            </div>
+            
+            <div className="flex justify-center pt-6">
+              <img 
+                src={chatYapperIcon} 
+                alt="Chat Yapper" 
+                className="w-full max-w-md opacity-80" 
+                title="This is Aiko, she says hi!"
+              />
             </div>
           </div>
         </div>
