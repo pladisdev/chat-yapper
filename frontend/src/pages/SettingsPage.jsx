@@ -159,7 +159,7 @@ export default function SettingsPage() {
   return (
     <div className="min-h-screen bg-background p-6 relative">
       <div 
-        className="absolute inset-0 bg-center bg-no-repeat bg-cover pointer-events-none opacity-[0.2] dark:opacity-[0.05]"
+        className="fixed inset-0 bg-center bg-no-repeat bg-cover pointer-events-none opacity-[0.2] dark:opacity-[0.05]"
         style={{ backgroundImage: `url(${isDarkMode ? backgroundImage : backgroundImage2})` }}
       />
       <div className="max-w-7xl mx-auto space-y-6 relative z-10">

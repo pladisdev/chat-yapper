@@ -180,13 +180,13 @@ chat-yapper/
 
 ## Changelog
 
-### v1.1.1 (Latest)
+### v1.1.2 (Latest)
 - Stabiltiy fixes
 - msi installation for windows for easier support
 - Light mode
 - Cleaned up settings
 
-### v1.0.0 (Latest)
+### v1.0.0
 - GIF and WebP support for animated avatars
 - Customizable speaking glow effects (color, opacity, size, enable/disable)
 - Message history and replay system (stores 100 recent messages)
