@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { Switch } from '../ui/switch'
@@ -10,7 +11,11 @@ import {
   MessageSquare, 
   TestTube2,
   CheckCircle2,
-  XCircle
+  Ruler,
+  Filter,
+  Clock,
+  Shield,
+  UserX
 } from 'lucide-react'
 
 function MessageFilterTester({ apiUrl }) {
@@ -281,321 +286,378 @@ function ProfanityWordsManager({ words, onUpdate }) {
 
 function MessageFiltering({ settings, updateSettings, apiUrl }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <MessageSquare className="w-5 h-5" />
-          Message Filtering
-        </CardTitle>
-        <CardDescription>Control which messages get processed for TTS</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="flex items-center justify-between p-4 rounded-lg border bg-card">
-          <div className="space-y-1">
-            <Label htmlFor="filtering-enabled" className="text-base">Enable Message Filtering</Label>
-            <p className="text-sm text-muted-foreground">Filter messages before TTS processing</p>
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquare className="w-5 h-5" />
+            Message Filtering
+          </CardTitle>
+          <CardDescription>Control which messages get processed for TTS</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Enable Message Filtering Toggle - Always Visible */}
+          <div className="flex items-center justify-between p-4 rounded-lg border bg-card">
+            <div className="space-y-1">
+              <Label htmlFor="filtering-enabled" className="text-base">Enable Message Filtering</Label>
+              <p className="text-sm text-muted-foreground">Filter messages before TTS processing</p>
+            </div>
+            <Switch
+              id="filtering-enabled"
+              checked={settings.messageFiltering?.enabled ?? true}
+              onCheckedChange={checked => updateSettings({ 
+                messageFiltering: { 
+                  ...settings.messageFiltering, 
+                  enabled: checked 
+                } 
+              })}
+            />
           </div>
-          <Switch
-            id="filtering-enabled"
-            checked={settings.messageFiltering?.enabled ?? true}
-            onCheckedChange={checked => updateSettings({ 
-              messageFiltering: { 
-                ...settings.messageFiltering, 
-                enabled: checked 
-              } 
-            })}
-          />
-        </div>
 
-        {(settings.messageFiltering?.enabled !== false) && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="minLength">Minimum Length</Label>
-                <Input
-                  id="minLength"
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={settings.messageFiltering?.minLength ?? 1}
-                  onChange={e => updateSettings({ 
-                    messageFiltering: { 
-                      ...settings.messageFiltering, 
-                      minLength: parseInt(e.target.value) || 1 
-                    } 
-                  })}
-                />
-                <p className="text-xs text-muted-foreground">Messages shorter than this will be skipped</p>
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="maxLength">Maximum Length</Label>
-                <Input
-                  id="maxLength"
-                  type="number"
-                  min="10"
-                  max="2000"
-                  value={settings.messageFiltering?.maxLength ?? 500}
-                  onChange={e => updateSettings({ 
-                    messageFiltering: { 
-                      ...settings.messageFiltering, 
-                      maxLength: parseInt(e.target.value) || 500 
-                    } 
-                  })}
-                />
-                <p className="text-xs text-muted-foreground">Messages longer than this will be truncated</p>
-              </div>
-            </div>
+          {/* Filtering Options Tabs - Only show when enabled */}
+          {(settings.messageFiltering?.enabled !== false) && (
+            <Tabs defaultValue="length" className="w-full">
+              <TabsList className="grid w-full grid-cols-5">
+                <TabsTrigger value="length" className="flex items-center gap-1.5">
+                  <Ruler className="w-4 h-4" />
+                  <span className="hidden sm:inline">Length</span>
+                </TabsTrigger>
+                <TabsTrigger value="content" className="flex items-center gap-1.5">
+                  <Filter className="w-4 h-4" />
+                  <span className="hidden sm:inline">Content</span>
+                </TabsTrigger>
+                <TabsTrigger value="rate" className="flex items-center gap-1.5">
+                  <Clock className="w-4 h-4" />
+                  <span className="hidden sm:inline">Rate</span>
+                </TabsTrigger>
+                <TabsTrigger value="profanity" className="flex items-center gap-1.5">
+                  <Shield className="w-4 h-4" />
+                  <span className="hidden sm:inline">Profanity</span>
+                </TabsTrigger>
+                <TabsTrigger value="users" className="flex items-center gap-1.5">
+                  <UserX className="w-4 h-4" />
+                  <span className="hidden sm:inline">Users</span>
+                </TabsTrigger>
+              </TabsList>
 
-            <div className="space-y-4">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="skipCommands"
-                  checked={settings.messageFiltering?.skipCommands ?? true}
-                  onCheckedChange={checked => updateSettings({ 
-                    messageFiltering: { 
-                      ...settings.messageFiltering, 
-                      skipCommands: checked 
-                    } 
-                  })}
-                />
-                <Label htmlFor="skipCommands" className="text-sm font-normal">
-                  Skip Commands - Messages starting with ! or / (bot commands)
-                </Label>
-              </div>
-
-              <div className="space-y-1">
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="skipEmotes"
-                    checked={settings.messageFiltering?.skipEmotes ?? false}
-                    onCheckedChange={checked => updateSettings({ 
-                      messageFiltering: { 
-                        ...settings.messageFiltering, 
-                        skipEmotes: checked 
-                      } 
-                    })}
-                  />
-                  <Label htmlFor="skipEmotes" className="text-sm font-normal">
-                    Remove Emotes from Messages
-                  </Label>
-                </div>
-                <p className="text-xs text-muted-foreground ml-6">
-                  Uses Twitch emote tags to remove emotes from messages. Skips emote-only messages entirely.
-                </p>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="removeUrls"
-                  checked={settings.messageFiltering?.removeUrls ?? true}
-                  onCheckedChange={checked => updateSettings({ 
-                    messageFiltering: { 
-                      ...settings.messageFiltering, 
-                      removeUrls: checked 
-                    } 
-                  })}
-                />
-                <Label htmlFor="removeUrls" className="text-sm font-normal">
-                  Remove URLs from messages before TTS processing
-                </Label>
-              </div>
-
-
-            </div>
-
-            <Separator />
-
-            <div className="space-y-6">
-              <h4 className="font-medium flex items-center gap-2 text-lg">
-                Rate Limiting & Message Control
-              </h4>
-              
-              <div className="space-y-4">
+              {/* Message Length Filters Tab */}
+              <TabsContent value="length" className="mt-4">
                 <div className="space-y-4">
-                  <div className="flex items-center space-x-2 mb-3">
-                    <Checkbox
-                      id="enableSpamFilter"
-                      checked={settings.messageFiltering?.enableSpamFilter ?? true}
-                      onCheckedChange={checked => updateSettings({ 
-                        messageFiltering: { 
-                          ...settings.messageFiltering, 
-                          enableSpamFilter: checked 
-                        } 
-                      })}
-                    />
-                    <div className="space-y-1 flex-1">
-                      <Label htmlFor="enableSpamFilter" className="text-base font-medium">
-                        Rate Limit Users
-                      </Label>
-                      <p className="text-sm text-muted-foreground">
-                        Prevent users from sending too many messages in a short time period. New messages from rate-limited users are completely ignored.
-                      </p>
+                  <div>
+                    <h3 className="text-base font-medium mb-2">Message Length Filters</h3>
+                    <p className="text-sm text-muted-foreground mb-4">Set minimum and maximum message length requirements</p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="minLength">Minimum Length</Label>
+                      <Input
+                        id="minLength"
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={settings.messageFiltering?.minLength ?? 1}
+                        onChange={e => updateSettings({ 
+                          messageFiltering: { 
+                            ...settings.messageFiltering, 
+                            minLength: parseInt(e.target.value) || 1 
+                          } 
+                        })}
+                      />
+                      <p className="text-xs text-muted-foreground">Messages shorter than this will be skipped</p>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="maxLength">Maximum Length</Label>
+                      <Input
+                        id="maxLength"
+                        type="number"
+                        min="10"
+                        max="2000"
+                        value={settings.messageFiltering?.maxLength ?? 500}
+                        onChange={e => updateSettings({ 
+                          messageFiltering: { 
+                            ...settings.messageFiltering, 
+                            maxLength: parseInt(e.target.value) || 500 
+                          } 
+                        })}
+                      />
+                      <p className="text-xs text-muted-foreground">Messages longer than this will be truncated</p>
                     </div>
                   </div>
+                </div>
+              </TabsContent>
 
-                  {settings.messageFiltering?.enableSpamFilter !== false && (
-                    <div className="ml-6 space-y-3">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="spamThreshold">Max Messages</Label>
-                          <Input
-                            id="spamThreshold"
-                            type="number"
-                            min="2"
-                            max="20"
-                            value={settings.messageFiltering?.spamThreshold ?? 5}
-                            onChange={e => updateSettings({ 
-                              messageFiltering: { 
-                                ...settings.messageFiltering, 
-                                spamThreshold: parseInt(e.target.value) || 5 
-                              } 
-                            })}
-                          />
-                          <p className="text-xs text-muted-foreground">Maximum messages allowed</p>
+              {/* Content Filters Tab */}
+              <TabsContent value="content" className="mt-4">
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-base font-medium mb-2">Content Filters</h3>
+                    <p className="text-sm text-muted-foreground mb-4">Filter or remove specific types of content from messages</p>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="skipCommands"
+                        checked={settings.messageFiltering?.skipCommands ?? true}
+                        onCheckedChange={checked => updateSettings({ 
+                          messageFiltering: { 
+                            ...settings.messageFiltering, 
+                            skipCommands: checked 
+                          } 
+                        })}
+                      />
+                      <Label htmlFor="skipCommands" className="text-sm font-normal">
+                        Skip Commands - Messages starting with ! or / (bot commands)
+                      </Label>
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="skipEmotes"
+                          checked={settings.messageFiltering?.skipEmotes ?? false}
+                          onCheckedChange={checked => updateSettings({ 
+                            messageFiltering: { 
+                              ...settings.messageFiltering, 
+                              skipEmotes: checked 
+                            } 
+                          })}
+                        />
+                        <Label htmlFor="skipEmotes" className="text-sm font-normal">
+                          Remove Emotes from Messages
+                        </Label>
+                      </div>
+                      <p className="text-xs text-muted-foreground ml-6">
+                        Skips emote-only messages entirely. Doesn't work for 7tv emotes.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="removeUrls"
+                        checked={settings.messageFiltering?.removeUrls ?? true}
+                        onCheckedChange={checked => updateSettings({ 
+                          messageFiltering: { 
+                            ...settings.messageFiltering, 
+                            removeUrls: checked 
+                          } 
+                        })}
+                      />
+                      <Label htmlFor="removeUrls" className="text-sm font-normal">
+                        Remove URLs from messages before TTS processing
+                      </Label>
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+
+              {/* Rate Limiting Tab */}
+              <TabsContent value="rate" className="mt-4">
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-base font-medium mb-2">Rate Limiting & Message Control</h3>
+                    <p className="text-sm text-muted-foreground mb-4">Control how frequently users can send messages for TTS</p>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="flex items-center space-x-2 mb-3">
+                      <Checkbox
+                        id="enableSpamFilter"
+                        checked={settings.messageFiltering?.enableSpamFilter ?? true}
+                        onCheckedChange={checked => updateSettings({ 
+                          messageFiltering: { 
+                            ...settings.messageFiltering, 
+                            enableSpamFilter: checked 
+                          } 
+                        })}
+                      />
+                      <div className="space-y-1 flex-1">
+                        <Label htmlFor="enableSpamFilter" className="text-base font-medium">
+                          Rate Limit Users
+                        </Label>
+                        <p className="text-sm text-muted-foreground">
+                          Prevent users from sending too many messages in a short time period. New messages from rate-limited users are completely ignored.
+                        </p>
+                      </div>
+                    </div>
+
+                    {settings.messageFiltering?.enableSpamFilter !== false && (
+                      <div className="ml-6 space-y-3">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="spamThreshold">Max Messages</Label>
+                            <Input
+                              id="spamThreshold"
+                              type="number"
+                              min="2"
+                              max="20"
+                              value={settings.messageFiltering?.spamThreshold ?? 5}
+                              onChange={e => updateSettings({ 
+                                messageFiltering: { 
+                                  ...settings.messageFiltering, 
+                                  spamThreshold: parseInt(e.target.value) || 5 
+                                } 
+                              })}
+                            />
+                            <p className="text-xs text-muted-foreground">Maximum messages allowed</p>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="spamTimeWindow">Time Window (seconds)</Label>
+                            <Input
+                              id="spamTimeWindow"
+                              type="number"
+                              min="5"
+                              max="60"
+                              value={settings.messageFiltering?.spamTimeWindow ?? 10}
+                              onChange={e => updateSettings({ 
+                                messageFiltering: { 
+                                  ...settings.messageFiltering, 
+                                  spamTimeWindow: parseInt(e.target.value) || 10 
+                                } 
+                              })}
+                            />
+                            <p className="text-xs text-muted-foreground">Within this many seconds</p>
+                          </div>
                         </div>
+                      </div>
+                    )}
 
-                        <div className="space-y-2">
-                          <Label htmlFor="spamTimeWindow">Time Window (seconds)</Label>
-                          <Input
-                            id="spamTimeWindow"
-                            type="number"
-                            min="5"
-                            max="60"
-                            value={settings.messageFiltering?.spamTimeWindow ?? 10}
-                            onChange={e => updateSettings({ 
-                              messageFiltering: { 
-                                ...settings.messageFiltering, 
-                                spamTimeWindow: parseInt(e.target.value) || 10 
-                              } 
-                            })}
-                          />
-                          <p className="text-xs text-muted-foreground">Within this many seconds</p>
+                    <Separator />
+
+                    <div>
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="ignoreIfUserSpeaking"
+                          checked={settings.messageFiltering?.ignoreIfUserSpeaking ?? true}
+                          onCheckedChange={checked => updateSettings({ 
+                            messageFiltering: { 
+                              ...settings.messageFiltering, 
+                              ignoreIfUserSpeaking: checked 
+                            } 
+                          })}
+                        />
+                        <div className="space-y-1">
+                          <Label htmlFor="ignoreIfUserSpeaking" className="text-base font-medium">
+                            Ignore New Messages from Speaking User
+                          </Label>
+                          <p className="text-sm text-muted-foreground">
+                            When a user's message is currently playing TTS, ignore any new messages from that same user until the current message finishes. This prevents interrupting or queueing multiple messages from one person.
+                          </p>
                         </div>
                       </div>
                     </div>
-                  )}
+                  </div>
                 </div>
+              </TabsContent>
 
-                <div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="ignoreIfUserSpeaking"
-                      checked={settings.messageFiltering?.ignoreIfUserSpeaking ?? true}
-                      onCheckedChange={checked => updateSettings({ 
-                        messageFiltering: { 
-                          ...settings.messageFiltering, 
-                          ignoreIfUserSpeaking: checked 
-                        } 
-                      })}
-                    />
-                    <div className="space-y-1">
-                      <Label htmlFor="ignoreIfUserSpeaking" className="text-base font-medium">
-                        Ignore New Messages from Speaking User
+              {/* Profanity Filter Tab */}
+              <TabsContent value="profanity" className="mt-4">
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-base font-medium mb-2">Profanity Filter</h3>
+                    <p className="text-sm text-muted-foreground mb-4">Filter and replace inappropriate words in messages</p>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="profanityFilterEnabled"
+                        checked={settings.messageFiltering?.profanityFilter?.enabled ?? false}
+                        onCheckedChange={checked => updateSettings({ 
+                          messageFiltering: { 
+                            ...settings.messageFiltering, 
+                            profanityFilter: {
+                              ...settings.messageFiltering?.profanityFilter,
+                              enabled: checked
+                            }
+                          } 
+                        })}
+                      />
+                      <Label htmlFor="profanityFilterEnabled" className="text-sm font-normal">
+                        Enable Profanity Filter
                       </Label>
-                      <p className="text-sm text-muted-foreground">
-                        When a user's message is currently playing TTS, ignore any new messages from that same user until the current message finishes. This prevents interrupting or queueing multiple messages from one person.
-                      </p>
                     </div>
+
+                    {settings.messageFiltering?.profanityFilter?.enabled && (
+                      <div className="space-y-4 pl-6 border-l-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="replacementText">Replacement Text</Label>
+                          <Input
+                            id="replacementText"
+                            value={settings.messageFiltering?.profanityFilter?.replacement ?? 'beep'}
+                            onChange={e => updateSettings({ 
+                              messageFiltering: { 
+                                ...settings.messageFiltering, 
+                                profanityFilter: {
+                                  ...settings.messageFiltering?.profanityFilter,
+                                  replacement: e.target.value
+                                }
+                              } 
+                            })}
+                            placeholder="beep"
+                          />
+                          <p className="text-xs text-muted-foreground">Text to replace filtered words with</p>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label>Custom Words to Filter</Label>
+                          <ProfanityWordsManager 
+                            words={settings.messageFiltering?.profanityFilter?.customWords || []}
+                            onUpdate={(words) => updateSettings({ 
+                              messageFiltering: { 
+                                ...settings.messageFiltering, 
+                                profanityFilter: {
+                                  ...settings.messageFiltering?.profanityFilter,
+                                  customWords: words
+                                }
+                              } 
+                            })}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
-              </div>
+              </TabsContent>
 
-
-            </div>
-
-            <Separator />
-
-            <div className="space-y-4">
-              <h4 className="font-medium flex items-center gap-2">
-                Profanity Filter
-              </h4>
-              
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="profanityFilterEnabled"
-                  checked={settings.messageFiltering?.profanityFilter?.enabled ?? false}
-                  onCheckedChange={checked => updateSettings({ 
-                    messageFiltering: { 
-                      ...settings.messageFiltering, 
-                      profanityFilter: {
-                        ...settings.messageFiltering?.profanityFilter,
-                        enabled: checked
-                      }
-                    } 
-                  })}
-                />
-                <Label htmlFor="profanityFilterEnabled" className="text-sm font-normal">
-                  Enable Profanity Filter
-                </Label>
-              </div>
-
-              {settings.messageFiltering?.profanityFilter?.enabled && (
-                <div className="space-y-4 pl-6 border-l-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="replacementText">Replacement Text</Label>
-                    <Input
-                      id="replacementText"
-                      value={settings.messageFiltering?.profanityFilter?.replacement ?? 'beep'}
-                      onChange={e => updateSettings({ 
-                        messageFiltering: { 
-                          ...settings.messageFiltering, 
-                          profanityFilter: {
-                            ...settings.messageFiltering?.profanityFilter,
-                            replacement: e.target.value
-                          }
-                        } 
-                      })}
-                      placeholder="beep"
-                    />
-                    <p className="text-xs text-muted-foreground">Text to replace filtered words with</p>
+              {/* Ignored Users Tab */}
+              <TabsContent value="users" className="mt-4">
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-base font-medium mb-2">Ignored Users</h3>
+                    <p className="text-sm text-muted-foreground mb-4">Block specific users from triggering TTS</p>
                   </div>
-
-                  <div className="space-y-2">
-                    <Label>Custom Words to Filter</Label>
-                    <ProfanityWordsManager 
-                      words={settings.messageFiltering?.profanityFilter?.customWords || []}
-                      onUpdate={(words) => updateSettings({ 
-                        messageFiltering: { 
-                          ...settings.messageFiltering, 
-                          profanityFilter: {
-                            ...settings.messageFiltering?.profanityFilter,
-                            customWords: words
-                          }
-                        } 
-                      })}
-                    />
-                  </div>
+                  <IgnoredUsersManager 
+                    ignoredUsers={settings.messageFiltering?.ignoredUsers || []}
+                    onUpdate={(users) => updateSettings({ 
+                      messageFiltering: { 
+                        ...settings.messageFiltering, 
+                        ignoredUsers: users 
+                      } 
+                    })}
+                  />
                 </div>
-              )}
-            </div>
+              </TabsContent>
+            </Tabs>
+          )}
+        </CardContent>
+      </Card>
 
-            <Separator />
-
-            <div className="space-y-3">
-              <h4 className="font-medium">Ignored Users</h4>
-              <IgnoredUsersManager 
-                ignoredUsers={settings.messageFiltering?.ignoredUsers || []}
-                onUpdate={(users) => updateSettings({ 
-                  messageFiltering: { 
-                    ...settings.messageFiltering, 
-                    ignoredUsers: users 
-                  } 
-                })}
-              />
-            </div>
-
-            <div className="p-4 rounded-lg border bg-muted/50">
-              <h4 className="font-medium mb-2 flex items-center gap-2">
-                <TestTube2 className="w-4 h-4" />
-                Test Message Filter
-              </h4>
-              <MessageFilterTester apiUrl={apiUrl} />
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+      {/* Test Message Filter - Separate Card */}
+      {(settings.messageFiltering?.enabled !== false) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <TestTube2 className="w-4 h-4" />
+              Test Message Filter
+            </CardTitle>
+            <CardDescription>Test your filter settings with sample messages</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <MessageFilterTester apiUrl={apiUrl} />
+          </CardContent>
+        </Card>
+      )}
+    </>
   )
 }
 

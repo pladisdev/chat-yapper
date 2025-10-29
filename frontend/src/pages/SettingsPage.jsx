@@ -10,13 +10,16 @@ import { useWebSocket } from '../WebSocketContext'
 import VoiceManager from '../components/VoiceManager'
 import GeneralSettings from '../components/settings/GeneralSettings'
 import AvatarManagement from '../components/settings/AvatarManagement'
-import GlowEffectSettings from '../components/settings/GlowEffectSettings'
+import AvatarConfigurationTabs from '../components/settings/AvatarConfigurationTabs'
 import TTSConfiguration from '../components/settings/TTSConfiguration'
 import PlatformIntegration from '../components/settings/PlatformIntegration'
 import MessageFiltering from '../components/settings/MessageFiltering'
 import AudioFiltersSettings from '../components/settings/AudioFiltersSettings'
 import MessageHistory from '../components/MessageHistory'
 import ExportImportSettings from '../components/settings/ExportImportSettings'
+import chatYapperIcon from '../assets/icon.png'
+import backgroundImage from '../assets/background.png'
+import backgroundImage2 from '../assets/background2.png'
 import { 
   Settings, 
   Image, 
@@ -29,7 +32,9 @@ import {
   XCircle,
   Music,
   Shield,
-  Database
+  Database,
+  Grid3x3,
+  Sparkles
 } from 'lucide-react'
 
 export default function SettingsPage() {
@@ -41,12 +46,34 @@ export default function SettingsPage() {
   const [selectedAvatarGroup, setSelectedAvatarGroup] = useState('')
   const [avatarName, setAvatarName] = useState('')
   const [lastUploadedName, setLastUploadedName] = useState('')
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    // Initialize from current theme
+    return document.documentElement.classList.contains('dark')
+  })
   const { addListener } = useWebSocket()
 
   // Determine the correct API URL
   const apiUrl = location.hostname === 'localhost' && (location.port === '5173' || location.port === '5174')
     ? `http://localhost:${import.meta.env.VITE_BACKEND_PORT || 8008}`
     : ''
+
+  useEffect(() => {
+    // Watch for theme changes
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.attributeName === 'class') {
+          setIsDarkMode(document.documentElement.classList.contains('dark'))
+        }
+      })
+    })
+
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class']
+    })
+
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     // Load settings
@@ -130,11 +157,15 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className="min-h-screen bg-background p-6 relative">
+      <div 
+        className="absolute inset-0 bg-center bg-no-repeat bg-cover pointer-events-none opacity-[0.2] dark:opacity-[0.05]"
+        style={{ backgroundImage: `url(${isDarkMode ? backgroundImage : backgroundImage2})` }}
+      />
+      <div className="max-w-7xl mx-auto space-y-6 relative z-10">
         <div className="space-y-2">
           <h1 className="text-4xl font-bold flex items-center gap-3">
-            <Settings className="w-10 h-10" />
+            <img src={chatYapperIcon} alt="Chat Yapper" className="w-10 h-10" />
             Chat Yapper Settings
           </h1>
           <p className="text-muted-foreground">Configure your voice avatar TTS system</p>
@@ -185,10 +216,12 @@ export default function SettingsPage() {
           </TabsContent>
 
           <TabsContent value="avatars" className="space-y-6">
-            <GlowEffectSettings
+            <AvatarConfigurationTabs
               settings={settings}
-              onUpdate={updateSettings}
+              updateSettings={updateSettings}
+              apiUrl={apiUrl}
             />
+            
             <AvatarManagement
               managedAvatars={managedAvatars}
               apiUrl={apiUrl}
@@ -236,7 +269,7 @@ export default function SettingsPage() {
           </TabsContent>
 
           <TabsContent value="about" className="space-y-6">
-            <AboutSection />
+            <AboutSection apiUrl={apiUrl} />
           </TabsContent>
         </Tabs>
       </div>
@@ -504,7 +537,28 @@ function ClearChatTester({ onTest }) {
   )
 }
 
-function AboutSection() {
+function AboutSection({ apiUrl }) {
+  const [systemStatus, setSystemStatus] = useState(null)
+
+  useEffect(() => {
+    // Fetch system status
+    const fetchStatus = async () => {
+      try {
+        const response = await fetch(`${apiUrl}/api/status`)
+        const data = await response.json()
+        setSystemStatus(data)
+      } catch (error) {
+        console.error('Failed to fetch system status:', error)
+      }
+    }
+
+    fetchStatus()
+    
+    // Refresh status every 5 seconds
+    const interval = setInterval(fetchStatus, 5000)
+    return () => clearInterval(interval)
+  }, [apiUrl])
+
   return (
     <Card>
       <CardHeader>
@@ -557,27 +611,12 @@ function AboutSection() {
           <div className="space-y-4">
             <h3 className="font-medium text-lg">Support & Contact</h3>
             <div className="space-y-3">
-              <div className="p-4 rounded-lg border bg-card">
-                <div className="flex items-center gap-3">
-                  <div>
-                    <p className="font-medium">Email Support</p>
-                    <p className="text-sm text-muted-foreground mb-1">
-                      Contact the developer for support, bug reports, or feature requests
-                    </p>
-                    <a 
-                      href="mailto:pladisdev@gmail.com" 
-                      className="text-primary hover:underline font-mono text-sm"
-                    >
-                      pladisdev@gmail.com
-                    </a>
-                  </div>
-                </div>
-              </div>
+              
               
               <div className="p-4 rounded-lg border bg-card">
                 <div className="flex items-center gap-3">
                   <div>
-                    <p className="font-medium">GitHub Issues</p>
+                    <p className="font-medium">Source Code</p>
                     <p className="text-sm text-muted-foreground mb-1">
                       Report bugs, request features, or view the source code
                     </p>
@@ -592,6 +631,23 @@ function AboutSection() {
                   </div>
                 </div>
               </div>
+
+              <div className="p-4 rounded-lg border bg-card">
+                <div className="flex items-center gap-3">
+                  <div>
+                    <p className="font-medium">Email for other inquiries</p>
+                    <p className="text-sm text-muted-foreground mb-1">
+                    </p>
+                    <a 
+                      href="mailto:pladisdev@gmail.com" 
+                      className="text-primary hover:underline font-mono text-sm"
+                    >
+                      pladisdev@gmail.com
+                    </a>
+                  </div>
+                </div>
+              </div>
+
             </div>
           </div>
 
@@ -607,12 +663,26 @@ function AboutSection() {
                 </div>
               </div>
               <div className="p-3 rounded-lg border bg-card">
-                <div className="text-sm font-medium mb-1">Status</div>
-                <div className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3" />
-                  System Running
+                <div className="text-sm font-medium mb-1">Connected Avatar Views</div>
+                <div className="text-xs text-muted-foreground">
+                  {systemStatus ? (
+                    <>
+                      {systemStatus.websocket_clients} {systemStatus.websocket_clients === 1 ? 'page' : 'pages'} connected
+                    </>
+                  ) : (
+                    'Loading...'
+                  )}
                 </div>
               </div>
+            </div>
+            
+            <div className="flex justify-center pt-6">
+              <img 
+                src={chatYapperIcon} 
+                alt="Chat Yapper" 
+                className="w-full max-w-md opacity-80" 
+                title="This is Aiko, she says hi!"
+              />
             </div>
           </div>
         </div>
