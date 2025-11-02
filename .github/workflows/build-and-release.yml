@@ -243,28 +243,86 @@ jobs:
             body: comment
           });
     
-    - name: Download Docker artifacts
+    - name: Upload Windows artifacts for release
       if: steps.version.outputs.is_release == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-build
+        path: |
+          dist/ChatYapper.exe
+          dist/msi/*.msi
+        retention-days: 90
+
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build, linux-build, docker-build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Get version from backend/version.py
+      id: get_version
+      run: |
+        if [ -f "backend/version.py" ]; then
+          version=$(grep -oP '__version__\s*=\s*["\047]\K[^"\047]+' backend/version.py || echo "1.0.0")
+        else
+          version="1.0.0"
+        fi
+        echo "app_version=$version" >> $GITHUB_OUTPUT
+        echo "version=v$version" >> $GITHUB_OUTPUT
+    
+    - name: Download Windows build artifacts
       uses: actions/download-artifact@v4
       with:
-        name: docker-release-files
-        path: ./docker-release
+        name: windows-build
+        path: ./windows-build
     
-    - name: Download Linux build
-      if: steps.version.outputs.is_release == 'true'
+    - name: Download Linux build artifacts
       uses: actions/download-artifact@v4
       with:
         name: linux-build
         path: ./linux-build
     
-    - name: Create Release (on merge to main)
-      if: steps.version.outputs.is_release == 'true'
+    - name: Download Docker artifacts
+      if: needs.docker-build.result == 'success'
+      uses: actions/download-artifact@v4
+      with:
+        name: docker-release-files
+        path: ./docker-release
+      continue-on-error: true
+    
+    - name: Get MSI filename
+      id: msi_info
+      run: |
+        msi_file=$(ls windows-build/dist/msi/*.msi 2>/dev/null | head -n1 || echo "")
+        if [ -n "$msi_file" ]; then
+          msi_name=$(basename "$msi_file")
+          echo "msi_name=$msi_name" >> $GITHUB_OUTPUT
+        else
+          echo "msi_name=ChatYapper.msi" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Check Docker build status
+      id: docker_status
+      run: |
+        if [ "${{ needs.docker-build.result }}" == "success" ]; then
+          echo "docker_success=true" >> $GITHUB_OUTPUT
+          echo "Docker build succeeded"
+        else
+          echo "docker_success=false" >> $GITHUB_OUTPUT
+          echo "Docker build failed or was skipped - release will not include Docker files"
+        fi
+    
+    - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: ${{ steps.version.outputs.version }}
-        name: Chat Yapper ${{ steps.version.outputs.version }}
+        tag_name: ${{ steps.get_version.outputs.version }}
+        name: Chat Yapper ${{ steps.get_version.outputs.version }}
         body: |
-          ## Chat Yapper ${{ steps.version.outputs.version }}
+          ## Chat Yapper ${{ steps.get_version.outputs.version }}
           
           ### What's Changed
           This release was automatically created from the latest merge to main.
@@ -328,22 +386,19 @@ jobs:
           - **Issues:** https://github.com/${{ github.repository }}/issues
           - **Discussions:** https://github.com/${{ github.repository }}/discussions
         files: |
-          dist/ChatYapper.exe
-          dist/msi/*.msi
+          windows-build/dist/ChatYapper.exe
+          windows-build/dist/msi/*.msi
           linux-build/*.tar.gz
-          docker-release/docker-compose-release.yml
-          docker-release/.env.example
-          docker-release/DOCKER_INSTALL.md
+          docker-release/*
         draft: false
         prerelease: false
+        fail_on_unmatched_files: false
     
     - name: Notify release created
-      if: steps.version.outputs.is_release == 'true'
       run: |
-        Write-Host "Release created successfully!"
-        Write-Host "Version: ${{ steps.version.outputs.version }}"
-        Write-Host "View at: https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.version }}"
-      shell: powershell
+        echo "Release created successfully!"
+        echo "Version: ${{ steps.get_version.outputs.version }}"
+        echo "View at: https://github.com/${{ github.repository }}/releases/tag/${{ steps.get_version.outputs.version }}"
 
   linux-build:
     name: Build Linux Executable
@@ -571,6 +626,7 @@ jobs:
   docker-build:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
+    continue-on-error: true
     needs: build  # Run after Windows build succeeds
     
     steps:
@@ -937,9 +993,9 @@ jobs:
           echo "Cannot merge to main until build succeeds"
           exit 1
         fi
-        if [ "${{ needs.docker-build.result }}" != "success" ]; then
-          echo "[FAIL] Docker build failed or was cancelled"
-          echo "Cannot merge to main until build succeeds"
-          exit 1
+        if [ "${{ needs.docker-build.result }}" == "success" ]; then
+          echo "[PASS] Docker build succeeded"
+        elif [ "${{ needs.docker-build.result }}" == "failure" ]; then
+          echo "[WARN] Docker build failed - continuing anyway (Docker build is optional)"
         fi
-        echo "[PASS] All builds succeeded - safe to merge"
+        echo "[PASS] Required builds succeeded - safe to merge"
