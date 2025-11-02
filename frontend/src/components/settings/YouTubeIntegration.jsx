@@ -153,9 +153,6 @@ function YouTubeIntegration({ settings, updateSettings, apiUrl = '' }) {
             <div className="flex items-center justify-between p-4 rounded-lg border bg-card">
               <div className="space-y-1">
                 <Label htmlFor="youtube-enabled" className="text-base">Enable Live Chat TTS</Label>
-                <p className="text-sm text-muted-foreground">
-                  Start reading live chat messages from your YouTube streams
-                </p>
               </div>
               <Switch
                 id="youtube-enabled"

@@ -2,6 +2,9 @@ import React from 'react'
 import { Label } from '../ui/label'
 import { Switch } from '../ui/switch'
 import { Slider } from '../ui/slider'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
+import { Sparkles } from 'lucide-react'
+import { hexColorWithOpacity } from '../../utils/colorUtils'
 
 export default function GlowEffectSettings({ settings, onUpdate }) {
   const glowEnabled = settings?.avatarGlowEnabled ?? true
@@ -26,14 +29,22 @@ export default function GlowEffectSettings({ settings, onUpdate }) {
   }
 
   return (
-    <div className="space-y-6">
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <Sparkles className="w-5 h-5" />
+          Glow Effect
+        </CardTitle>
+        <CardDescription>
+          Customize the glow effect for active speaking avatars
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
       {/* Enable/Disable Toggle */}
       <div className="flex items-center justify-between">
         <div className="space-y-0.5">
           <Label htmlFor="glow-enabled">Enable Glow Effect</Label>
-          <p className="text-sm text-muted-foreground">
-            Show a glow effect when avatars are speaking
-          </p>
+
         </div>
         <Switch
           id="glow-enabled"
@@ -63,9 +74,6 @@ export default function GlowEffectSettings({ settings, onUpdate }) {
             placeholder="#ffffff"
           />
         </div>
-        <p className="text-xs text-muted-foreground">
-          Choose the color of the glow effect around speaking avatars
-        </p>
       </div>
 
       {/* Opacity Slider */}
@@ -86,9 +94,7 @@ export default function GlowEffectSettings({ settings, onUpdate }) {
           disabled={!glowEnabled}
           className="w-full"
         />
-        <p className="text-xs text-muted-foreground">
-          Adjust the transparency of the glow effect (0% = invisible, 100% = fully opaque)
-        </p>
+
       </div>
 
       {/* Size Slider */}
@@ -109,9 +115,6 @@ export default function GlowEffectSettings({ settings, onUpdate }) {
           disabled={!glowEnabled}
           className="w-full"
         />
-        <p className="text-xs text-muted-foreground">
-          Adjust the spread/blur radius of the glow effect
-        </p>
       </div>
 
       {/* Preview */}
@@ -125,13 +128,14 @@ export default function GlowEffectSettings({ settings, onUpdate }) {
               borderRadius: '50%',
               backgroundColor: '#666',
               filter: glowEnabled
-                ? `brightness(1.25) drop-shadow(0 0 ${glowSize}px ${glowColor}${Math.round(glowOpacity * 255).toString(16).padStart(2, '0')})`
+                ? `brightness(1.25) drop-shadow(0 0 ${glowSize}px ${hexColorWithOpacity(glowColor, glowOpacity)})`
                 : 'drop-shadow(0 4px 8px rgba(0,0,0,0.3))',
               transition: 'filter 300ms ease-out'
             }}
           />
         </div>
       </div>
-    </div>
+      </CardContent>
+    </Card>
   )
 }

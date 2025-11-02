@@ -49,7 +49,7 @@ function TwitchIntegration({ settings, updateSettings, apiUrl = '' }) {
     const error = urlParams.get('error');
     
     if (error === 'twitch_not_configured') {
-      alert('⚠️ Twitch integration not configured!\n\nThe developer needs to set up Twitch OAuth credentials.\nSee TWITCH_SETUP.md for instructions.');
+      alert('Twitch integration not configured!\n\nThe developer needs to set up Twitch OAuth credentials.\nSee TWITCH_SETUP.md for instructions.');
       // Clear error from URL
       window.history.replaceState({}, document.title, window.location.pathname);
     }
@@ -153,9 +153,7 @@ function TwitchIntegration({ settings, updateSettings, apiUrl = '' }) {
             <div className="flex items-center justify-between p-4 rounded-lg border bg-card">
               <div className="space-y-1">
                 <Label htmlFor="twitch-enabled" className="text-base">Enable Chat TTS</Label>
-                <p className="text-sm text-muted-foreground">
-                  Start reading chat messages from your Twitch channel
-                </p>
+
               </div>
               <Switch
                 id="twitch-enabled"

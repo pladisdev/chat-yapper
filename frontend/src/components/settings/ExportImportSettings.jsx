@@ -236,9 +236,6 @@ export default function ExportImportSettings({ apiUrl = '' }) {
         <div className="space-y-3">
           <div>
             <Label className="text-base font-medium">Export Configuration</Label>
-            <p className="text-sm text-muted-foreground mt-1">
-              Download a complete backup of your settings, voices, and avatar images as a ZIP file
-            </p>
           </div>
           
           <Button
@@ -265,9 +262,6 @@ export default function ExportImportSettings({ apiUrl = '' }) {
         <div className="space-y-3">
           <div>
             <Label className="text-base font-medium">Import Configuration</Label>
-            <p className="text-sm text-muted-foreground mt-1">
-              Restore a previously exported configuration. This will replace your current settings.
-            </p>
           </div>
 
           <div className="border-2 border-dashed rounded-lg p-4 hover:border-primary transition-colors">
@@ -300,12 +294,6 @@ export default function ExportImportSettings({ apiUrl = '' }) {
 
         {/* Factory Reset Section */}
         <div className="space-y-3">
-          <div>
-            <Label className="text-base font-medium text-red-600 dark:text-red-400">Factory Reset</Label>
-            <p className="text-sm text-muted-foreground mt-1">
-              Delete all settings, voices, avatars, and data. This will reset the application to its default state.
-            </p>
-          </div>
 
           {!showResetConfirm ? (
             <Button

@@ -50,6 +50,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Frontend build artifacts (will be built fresh in Docker)
+backend/public/
+
 # IDE
 .vscode/
 .idea/

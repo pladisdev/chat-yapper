@@ -54,9 +54,7 @@ export default function AudioFiltersSettings({ settings, updateSettings }) {
         <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/50">
           <div className="space-y-1">
             <Label className="text-base font-semibold">Enable Effects</Label>
-            <p className="text-sm text-muted-foreground">
-              Apply audio effects to all TTS messages
-            </p>
+
           </div>
           <Switch
             checked={audioFilters.enabled}

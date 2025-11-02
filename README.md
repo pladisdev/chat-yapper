@@ -22,10 +22,6 @@ If you have suggestions I would love to hear them! Feel free to use the **Discus
 
 Its in the **Releases** section, to the top right of this page. Click the latest release, scroll down to the **Assets** section, and download the **ChatYapper-X.X.X.msi**. Then just run it!
 
-It will install the same executable file found in the releases section. You can follow the instructions below after installation.
-
-### Running the Executable
-
 1. **Run** the executable - it will:
    - Start a local web server
    - Automatically open your browser to the  [Settings Page](http://localhost:8008/settings)
@@ -35,15 +31,53 @@ It will install the same executable file found in the releases section. You can 
 
 > **Important**: Keep the console window open while using Chat Yapper. Closing it will stop the application.
 
-### Linux - Use Docker Installation (Works Docker Desktop as well)
+### Linux
 
-Chat Yapper supports Docker for easy deployment with automatic setup and persistent data storage.
+#### Option 1: Standalone Executable (Recommended)
 
-Donwload the repo locally, then go into the docker folder. Open a terminal and make sure docker is installed. Run the command below.
+Download the latest Linux build from the **Releases** section.
+
+1. **Download** `ChatYapper-linux-x64-v{version}.tar.gz` from releases
+2. **Extract** the archive:
+   ```bash
+   tar -xzf ChatYapper-linux-x64-v*.tar.gz
+   cd ChatYapper-linux-x64-v*
+   ```
+3. **Run** the application:
+   ```bash
+   ./chatyapper.sh
+   ```
+4. **Access** the application at http://localhost:8008
+
+**Optional:** Install ffmpeg for audio filters:
+```bash
+sudo apt-get install ffmpeg
+```
+
+#### Option 2: Docker (Recommended for Servers)
+
+**Quick Start - No files needed:**
+```bash
+docker run -d --name chat-yapper -p 8069:8008 \
+  -v chat-yapper-data:/data \
+  -e TWITCH_CLIENT_ID=your_id \
+  -e TWITCH_CLIENT_SECRET=your_secret \
+  -e YOUTUBE_CLIENT_ID=your_yt_id \
+  -e YOUTUBE_CLIENT_SECRET=your_yt_secret \
+  --restart unless-stopped \
+  ghcr.io/pladisdev/chat-yapper:latest
+```
+Access at: http://localhost:8069
+
+**Or using Docker Compose:**
+
+Download the repo locally, then go into the docker folder. Open a terminal and make sure docker is installed. Run:
 
 ```bash
 docker-compose up -d
 ```
+
+See the [Docker documentation](docker/README.md) for more options.
 
 ### First-Time Setup
 
@@ -51,13 +85,24 @@ docker-compose up -d
 2. **Voice Provider**: Choose and configure at least one TTS provider
 3. **Add an Avatar**: Upload an image for at least one Avatar
 
-### TTS Guide
- - Edge TTS is free, and has many nice voices
- - Google TTS requires a [Google Cloud Account](https://console.cloud.google.com). You will need to create an API key and enable it.
- - Polly TTS requires an [AWS Account](https://aws.amazon.com/) from Amazon. You will need an Access Key ID and a Secret Access Key. AWS Region you can leave default. Brian from Polly is the Default TTS you hear in most streams!
- - Monster TTS requires a [TTS Mounter Account](https://tts.monster/). You will need an API key.
+### TTS Provider Guide
 
- > **Note**: Most of the rated TTS above are free for X amount of messages. And its quite a bit for most of them. Please read the terms carefully.
+Chat Yapper supports multiple TTS providers. Choose based on your needs:
+
+| Provider | Cost | Setup Complexity | Voice Quality | Notes |
+|----------|------|------------------|---------------|-------|
+| **Edge TTS** | Free | None | Good | no API key needed |
+| **Monster TTS** | Free tier available | Easy | Meh | Requires API key from [tts.monster](https://tts.monster/). Takes seconds to process audio. |
+| **Google Cloud TTS** | Free then Pay-as-you-go | Annoying | Excellent | Requires [Google Cloud Account](https://console.cloud.google.com) and API key |
+| **Amazon Polly** | Free then Pay-as-you-go | Annoying | Excellent | Requires [AWS Account](https://aws.amazon.com/). Brian voice is popular! |
+
+**Setup Instructions:**
+1. Go to Settings → TTS Providers
+2. Select your provider
+3. Enter credentials (if required)
+4. Test a voice to verify setup
+
+> **Note**: Most providers offer free tiers or credits. Edge TTS is completely free with no limits. Check each provider's pricing before extensive use.
 
 ## Configuration Guide
 
@@ -180,11 +225,25 @@ chat-yapper/
 
 ## Changelog
 
-### v1.1.2 (Latest)
-- Stabiltiy fixes
-- msi installation for windows for easier support
-- Light mode
-- Cleaned up settings
+### v1.2.0 (Latest)
+- **New Features:**
+  - Chat bubbles above avatars
+  - Pop-up mode for avatars
+  - Linux standalone build (x64)
+  - Improved audio quality (reduced crackling)
+  - Docker multi-architecture support (amd64, arm64)
+  
+- **Improvements:**
+  - Better audio preloading and buffering
+  - High-quality ffmpeg audio processing
+  - GitHub Container Registry (GHCR) for Docker images
+  - Automated cross-platform builds via GitHub Actions
+
+### v1.1.2
+- Stability fixes
+- MSI installation for Windows
+- Light mode theme
+- Cleaned up settings UI
 
 ### v1.0.0
 - GIF and WebP support for animated avatars
@@ -196,22 +255,21 @@ chat-yapper/
 - Docker Support
 
 ### v0.1.0
+- Initial release
 - Avatars page
 - Settings page
-- TTS Selection
+- TTS selection
 - Avatar positioning
-- Basic Twitch Integration
+- Basic Twitch integration
 
 ---
 
+## Experimental Features
+- **YouTube Integration** - Connect to YouTube live chat (beta)
+- **Import/Export** - Backup and restore configuration
+- **Factory Reset** - Reset to default settings
+
 ## TODO
-
-### In Testing
-- import/export feature
-- Youtube Integration
-- Factory Reset
-
-### Features
 - Discord integration
 - Better placement of avatars in UI
 - Allow mapping of voices to avatars
@@ -223,13 +281,13 @@ chat-yapper/
 - Statistics
 - More TTS options
 - Select scenes
-
 - Waveform visualization in settings UI
 - Better error recovery for TTS provider failure, network issues, and db corruption
 - Memory Management
 
-### Bugs
-- None lmao
+## Known Issues
+- YouTube integration is experimental and may have occasional connection issues
+- Audio crackling on some systems (improved in v1.2.0, please report if you still experience issues)
 
 ## Acknowledgments
 
