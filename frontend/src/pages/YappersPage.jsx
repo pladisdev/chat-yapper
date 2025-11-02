@@ -54,6 +54,7 @@ export default function YappersPage() {
           avatarRows: 2,
           avatarRowConfig: [6, 6],
           avatarSize: 60,
+          avatarActiveOffset: 2.5,
           popupDirection: 'bottom',
           popupFixedEdge: false,
           popupRotateToDirection: false
@@ -281,11 +282,6 @@ export default function YappersPage() {
   }, [dimensions.width, dimensions.height, checkOverlap]) // Only depend on dimensions since we use settingsRef.current for settings
   
   // Helper function to get random avatar from available avatars
-  const getRandomAvatar = useCallback(() => {
-    if (!avatarSlots || avatarSlots.length === 0) return null
-    const randomIndex = Math.floor(Math.random() * avatarSlots.length)
-    return avatarSlots[randomIndex]
-  }, [avatarSlots])
   
   // Helper function to create a new popup avatar instance
   const createPopupAvatar = useCallback((audioElement, avatarData, message) => {
@@ -1146,7 +1142,6 @@ export default function YappersPage() {
           popupAvatars.map((popupAvatar, index) => {
             const baseSize = settings?.avatarSize || 60
             const scaleMultiplier = 1.1
-            const effectiveSize = baseSize * scaleMultiplier
             const { id, position, avatarData, isActive } = popupAvatar
             const { xPercent, yPercent } = position
             const popupDirection = settings?.popupDirection || 'bottom'
@@ -1243,6 +1238,7 @@ export default function YappersPage() {
                 minWidth: '120px',
                 maxWidth: '300px',
                 padding: '8px 12px',
+                background: hexColorWithOpacity(bgColor, opacity),
                 background: hexColorWithOpacity(bgColor, opacity),
                 color: settings?.bubbleFontColor || '#ffffff',
                 borderRadius: (settings?.bubbleRounded ?? true) ? '12px' : '4px',

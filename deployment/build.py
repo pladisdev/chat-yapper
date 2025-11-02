@@ -4,6 +4,7 @@ Run this to create a distributable .exe file
 """
 import os
 import sys
+import platform
 import shutil
 import subprocess
 import logging
