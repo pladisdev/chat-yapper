@@ -377,7 +377,8 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install -r deployment/requirements-build.txt
+        # Use PyInstaller 5.13.2 to avoid wheel aliasing issues in v6.x on Linux
+        pip install pyinstaller==5.13.2 pillow python-dotenv
     
     - name: Get version from backend/version.py
       id: get_version
