@@ -1,6 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import logger from '../utils/logger'
 
+// Audio playback constants
+const AUDIO_READY_TIMEOUT_MS = 5000 // 5 seconds timeout for audio readiness check
+const READY_STATE_HAVE_FUTURE_DATA = 3 // HTMLMediaElement.HAVE_FUTURE_DATA
+
 export default function YappersPage() {
   const [settings, setSettings] = useState(null)
   const [settingsLoaded, setSettingsLoaded] = useState(false)
@@ -836,12 +840,12 @@ export default function YappersPage() {
           
           // Fallback timeout in case canplaythrough never fires
           setTimeout(() => {
-            if (audio.readyState < 3) {
+            if (audio.readyState < READY_STATE_HAVE_FUTURE_DATA) {
               logger.warn(`Audio still not ready after 5s for ${msg.user}, attempting to play anyway`)
               audio.removeEventListener('canplaythrough', canPlayHandler)
               tryPlay()
             }
-          }, 5000)
+          }, AUDIO_READY_TIMEOUT_MS)
         }
       }
       
