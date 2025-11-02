@@ -187,7 +187,7 @@ function AvatarManagement({
           <Image className="w-5 h-5" />
           Avatar Management
         </CardTitle>
-        <CardDescription>Upload and manage avatar images (voices are randomly selected)</CardDescription>
+        <CardDescription>Upload and manage avatar images</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Upload Configuration */}

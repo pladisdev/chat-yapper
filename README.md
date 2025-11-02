@@ -180,6 +180,10 @@ chat-yapper/
 
 ## Changelog
 
+### v1.2.0 (Latest)
+- chat bubbles
+- pop-up mode
+
 ### v1.1.2 (Latest)
 - Stabiltiy fixes
 - msi installation for windows for easier support
@@ -204,14 +208,14 @@ chat-yapper/
 
 ---
 
-## TODO
-
-### In Testing
+## Beta features
 - import/export feature
 - Youtube Integration
 - Factory Reset
+- chat bubbles
+- pop-up mode
 
-### Features
+## TODO
 - Discord integration
 - Better placement of avatars in UI
 - Allow mapping of voices to avatars
@@ -223,13 +227,12 @@ chat-yapper/
 - Statistics
 - More TTS options
 - Select scenes
-
 - Waveform visualization in settings UI
 - Better error recovery for TTS provider failure, network issues, and db corruption
 - Memory Management
 
-### Bugs
-- None lmao
+## Bugs
+- audio crackling sometimes
 
 ## Acknowledgments
 

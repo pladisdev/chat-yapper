@@ -40,8 +40,7 @@ function GeneralSettings({ settings, setSettings, updateSettings, apiUrl }) {
       <CardContent className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <Label className="text-base">Theme</Label>
-            <p className="text-sm text-muted-foreground">Choose between light and dark mode</p>
+            <Label className="text-base">Dark/Light Mode</Label>
           </div>
           <Button
             onClick={toggleTheme}

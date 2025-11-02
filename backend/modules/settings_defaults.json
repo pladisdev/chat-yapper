@@ -3,6 +3,10 @@
 },
 "audioFormat": "mp3",
 "volume": 1.0,
+"avatarMode": "grid",
+"popupDirection": "bottom",
+"popupFixedEdge": false,
+"popupRotateToDirection": false,
 "avatarRows": 3,
 "avatarRowConfig": [4, 4, 4],
 "avatarSize": 200,
@@ -13,6 +17,13 @@
 "avatarGlowColor": "#ffffff",
 "avatarGlowOpacity": 0.9,
 "avatarGlowSize": 20,
+"chatBubblesEnabled": true,
+"bubbleFontFamily": "Arial, sans-serif",
+"bubbleFontSize": 14,
+"bubbleFontColor": "#ffffff",
+"bubbleBackgroundColor": "#000000",
+"bubbleOpacity": 0.85,
+"bubbleRounded": true,
 "tts": {
 "monstertts": {
 "apiKey": ""

@@ -2,13 +2,112 @@ import React from 'react'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { Button } from '../ui/button'
+import { Switch } from '../ui/switch'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
+import { LayoutGrid } from 'lucide-react'
 import logger from '../../utils/logger'
 
 function AvatarPlacementSettings({ settings, updateSettings, apiUrl }) {
+  const avatarMode = settings.avatarMode || 'grid'
+  
   return (
-    <div className="space-y-6">
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <LayoutGrid className="w-5 h-5" />
+          Avatar Placement
+        </CardTitle>
+        <CardDescription>
+          Configure avatar size, layout mode, and positioning
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
       <div className="space-y-2">
-        <Label htmlFor="avatarRows">Number of Avatar Rows</Label>
+        <Label htmlFor="avatarSize">Avatar Size (px)</Label>
+        <Input
+          id="avatarSize"
+          type="number"
+          min="20"
+          max="200"
+          value={settings.avatarSize || 60}
+          onChange={e => updateSettings({ avatarSize: parseInt(e.target.value) || 60 })}
+        />
+      </div>
+      <div className="pt-4 border-t">
+        <Label>Avatar Display Mode</Label>
+        <div className="flex gap-2">
+          <Button
+            variant={avatarMode === 'grid' ? 'default' : 'outline'}
+            onClick={() => updateSettings({ avatarMode: 'grid' })}
+            className="flex-1"
+          >
+            Grid Layout
+          </Button>
+          <Button
+            variant={avatarMode === 'popup' ? 'default' : 'outline'}
+            onClick={() => updateSettings({ avatarMode: 'popup' })}
+            className="flex-1"
+          >
+            Pop-up Mode
+          </Button>
+        </div>
+
+      </div>
+
+      {avatarMode === 'popup' && (
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="popupDirection">Popup Direction</Label>
+            <select
+              id="popupDirection"
+              value={settings.popupDirection || 'bottom'}
+              onChange={e => updateSettings({ popupDirection: e.target.value })}
+              className="w-full h-10 px-3 py-2 bg-background border border-input rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+            >
+              <option value="bottom">Bottom</option>
+              <option value="top">Top</option>
+              <option value="left">Left</option>
+              <option value="right">Right</option>
+            </select>
+            <p className="text-sm text-muted-foreground">
+              Direction from which avatars will appear
+            </p>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="popupFixedEdge">Spawn at Border</Label>
+              <p className="text-sm text-muted-foreground">
+                Should the avatar appear at the edge or at a random position
+              </p>
+            </div>
+            <Switch
+              id="popupFixedEdge"
+              checked={settings.popupFixedEdge || false}
+              onCheckedChange={checked => updateSettings({ popupFixedEdge: checked })}
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="popupRotateToDirection">Rotate to Match Direction</Label>
+              <p className="text-sm text-muted-foreground">
+                Rotate avatars to face the direction they're coming from
+              </p>
+            </div>
+            <Switch
+              id="popupRotateToDirection"
+              checked={settings.popupRotateToDirection || false}
+              onCheckedChange={checked => updateSettings({ popupRotateToDirection: checked })}
+            />
+          </div>
+        </div>
+      )}
+
+      {avatarMode === 'grid' && (
+        <>
+          <div className="space-y-2">
+            <Label htmlFor="avatarRows">Number of Avatar Rows</Label>
         <Input
           id="avatarRows"
           type="number"
@@ -56,18 +155,6 @@ function AvatarPlacementSettings({ settings, updateSettings, apiUrl }) {
         </p>
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="avatarSize">Avatar Size (px)</Label>
-        <Input
-          id="avatarSize"
-          type="number"
-          min="20"
-          max="200"
-          value={settings.avatarSize || 60}
-          onChange={e => updateSettings({ avatarSize: parseInt(e.target.value) || 60 })}
-        />
-      </div>
-
       <div className="grid md:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="avatarSpacingX">Horizontal Spacing (px)</Label>
@@ -93,34 +180,37 @@ function AvatarPlacementSettings({ settings, updateSettings, apiUrl }) {
         </div>
       </div>
 
-      <div className="pt-4 border-t">
-        <div className="flex items-center justify-between">
-          <div>
-            <Label className="text-base">Avatar Assignment</Label>
-            <p className="text-sm text-muted-foreground">Randomly reassign avatars to different positions</p>
+          <div className="pt-4 border-t">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-base">Avatar Assignment</Label>
+                <p className="text-sm text-muted-foreground">Randomly reassign avatars to different positions</p>
+              </div>
+              <Button
+                onClick={async () => {
+                  try {
+                    const response = await fetch(`${apiUrl}/api/avatars/re-randomize`, { method: 'POST' })
+                    const result = await response.json()
+                    if (result.success) {
+                      logger.info('Avatar re-randomization triggered')
+                    } else {
+                      console.error('Avatar re-randomization failed:', result.error)
+                    }
+                  } catch (error) {
+                    console.error('Failed to trigger avatar re-randomization:', error)
+                  }
+                }}
+                variant="outline"
+                size="sm"
+              >
+                Re-randomize Avatars
+              </Button>
+            </div>
           </div>
-          <Button
-            onClick={async () => {
-              try {
-                const response = await fetch(`${apiUrl}/api/avatars/re-randomize`, { method: 'POST' })
-                const result = await response.json()
-                if (result.success) {
-                  logger.info('Avatar re-randomization triggered')
-                } else {
-                  console.error('Avatar re-randomization failed:', result.error)
-                }
-              } catch (error) {
-                console.error('Failed to trigger avatar re-randomization:', error)
-              }
-            }}
-            variant="outline"
-            size="sm"
-          >
-            Re-randomize Avatars
-          </Button>
-        </div>
-      </div>
-    </div>
+        </>
+      )}
+      </CardContent>
+    </Card>
   )
 }
 

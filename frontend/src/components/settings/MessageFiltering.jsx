@@ -300,7 +300,6 @@ function MessageFiltering({ settings, updateSettings, apiUrl }) {
           <div className="flex items-center justify-between p-4 rounded-lg border bg-card">
             <div className="space-y-1">
               <Label htmlFor="filtering-enabled" className="text-base">Enable Message Filtering</Label>
-              <p className="text-sm text-muted-foreground">Filter messages before TTS processing</p>
             </div>
             <Switch
               id="filtering-enabled"
@@ -541,7 +540,7 @@ function MessageFiltering({ settings, updateSettings, apiUrl }) {
                             Ignore New Messages from Speaking User
                           </Label>
                           <p className="text-sm text-muted-foreground">
-                            When a user's message is currently playing TTS, ignore any new messages from that same user until the current message finishes. This prevents interrupting or queueing multiple messages from one person.
+                            A user will only have one message be read at a time. Otherwise one user can spam multiple messages to be read.
                           </p>
                         </div>
                       </div>
@@ -595,7 +594,6 @@ function MessageFiltering({ settings, updateSettings, apiUrl }) {
                             })}
                             placeholder="beep"
                           />
-                          <p className="text-xs text-muted-foreground">Text to replace filtered words with</p>
                         </div>
 
                         <div className="space-y-2">

@@ -457,9 +457,7 @@ function ClearChatTester({ onTest }) {
           <Shield className="w-5 h-5" />
           Moderation Event Tester
         </CardTitle>
-        <CardDescription>
-          Test Twitch CLEARCHAT events (bans/timeouts) to verify TTS cancellation works correctly
-        </CardDescription>
+
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid md:grid-cols-2 gap-4">
@@ -471,9 +469,7 @@ function ClearChatTester({ onTest }) {
               value={targetUser} 
               onChange={e => setTargetUser(e.target.value)}
             />
-            <p className="text-xs text-muted-foreground">
-              User whose TTS will be cancelled
-            </p>
+
           </div>
           
           <div className="space-y-2">
@@ -509,17 +505,7 @@ function ClearChatTester({ onTest }) {
             </p>
           </div>
         )}
-        
-        <div className="bg-muted/50 border border-border rounded-lg p-4 space-y-2">
-          <p className="text-sm font-medium">What this tests:</p>
-          <ul className="text-sm text-muted-foreground space-y-1 ml-4 list-disc">
-            <li>Cancels any active TTS for the target user</li>
-            <li>Removes queued messages from the target user</li>
-            <li>Releases avatar slot if user is currently speaking</li>
-            <li>Simulates real Twitch moderation events</li>
-          </ul>
-        </div>
-        
+              
         <div className="flex justify-center pt-2">
           <Button 
             size="lg"
