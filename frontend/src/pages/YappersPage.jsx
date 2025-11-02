@@ -53,6 +53,7 @@ export default function YappersPage() {
           avatarRows: 2,
           avatarRowConfig: [6, 6],
           avatarSize: 60,
+          avatarActiveOffset: 2.5,
           popupDirection: 'bottom',
           popupFixedEdge: false,
           popupRotateToDirection: false
@@ -992,6 +993,7 @@ export default function YappersPage() {
           const glowColor = settings?.avatarGlowColor ?? '#ffffff'
           const glowOpacity = settings?.avatarGlowOpacity ?? 0.9
           const glowSize = settings?.avatarGlowSize ?? 20
+          const activeOffset = settings?.avatarActiveOffset ?? 2.5
           
           // Convert hex color to rgba for glow effect
           const hexToRgba = (hex, opacity) => {
@@ -1015,7 +1017,7 @@ export default function YappersPage() {
                 bottom: `${y - baseSize/2}px`,
                 width: `${baseSize}px`,
                 height: `${baseSize}px`,
-                transform: activeSlots[slot.id] ? 'translateY(-2.5px)' : 'translateY(0)',
+                transform: activeSlots[slot.id] ? `translateY(-${activeOffset}px)` : 'translateY(0)',
                 zIndex: 10 + index,
                 transition: 'all 300ms ease-out',
                 pointerEvents: 'none'
