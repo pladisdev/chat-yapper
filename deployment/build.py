@@ -529,15 +529,17 @@ exe = EXE(
         f.write(spec_content)
     
     # Build with PyInstaller using Python module execution (most reliable)
+    # Note: When using a .spec file, all configuration must be in the spec file itself
+    # Command-line options like --exclude-module are not allowed with .spec files
     print("Running PyInstaller...")
     try:
-        # First try as a Python module (most reliable method) with additional exclusions
-        cmd = "python -m PyInstaller --clean --exclude-module matplotlib --exclude-module numpy --exclude-module pandas ChatYapper.spec"
+        # First try as a Python module (most reliable method)
+        cmd = "python -m PyInstaller --clean ChatYapper.spec"
         run_command(cmd)
     except:
         try:
-            # Try direct command with exclusions
-            run_command("pyinstaller --clean --exclude-module matplotlib --exclude-module numpy --exclude-module pandas ChatYapper.spec")
+            # Try direct command
+            run_command("pyinstaller --clean ChatYapper.spec")
         except:
             try:
                 # Try with pip show to find the scripts directory
@@ -557,14 +559,15 @@ exe = EXE(
                 sys.exit(1)
     
     # Check if the executable was created successfully
-    exe_path = Path("dist/ChatYapper.exe")
+    # On Windows it's .exe, on Linux it has no extension
+    exe_path = Path("dist/ChatYapper.exe") if sys.platform == "win32" else Path("dist/ChatYapper")
     if exe_path.exists():
         file_size = exe_path.stat().st_size / (1024 * 1024)  # Size in MB
         logger.info(f"Executable created successfully: {exe_path} ({file_size:.1f} MB)")
-        print(f"Executable created: dist/ChatYapper.exe ({file_size:.1f} MB)")
+        print(f"Executable created: {exe_path} ({file_size:.1f} MB)")
     else:
-        logger.error("Executable not found after build process completed")
-        print("Executable not found after build")
+        logger.error(f"Executable not found after build process completed (expected: {exe_path})")
+        print(f"Executable not found after build (expected: {exe_path})")
         sys.exit(1)
     
     # Clean up build artifacts (optional)
