@@ -1127,7 +1127,6 @@ export default function YappersPage() {
           popupAvatars.map((popupAvatar, index) => {
             const baseSize = settings?.avatarSize || 60
             const scaleMultiplier = 1.1
-            const effectiveSize = baseSize * scaleMultiplier
             const { id, position, avatarData, isActive } = popupAvatar
             const { xPercent, yPercent } = position
             const popupDirection = settings?.popupDirection || 'bottom'
