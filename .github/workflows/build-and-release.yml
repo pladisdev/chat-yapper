@@ -621,7 +621,6 @@ jobs:
         tags: |
           type=raw,value=${{ steps.docker_version.outputs.docker_tag }}
           type=raw,value=latest,enable=${{ steps.docker_version.outputs.is_release == 'true' }}
-          type=sha,prefix={{branch}}-
     
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
