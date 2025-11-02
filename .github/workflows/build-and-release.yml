@@ -297,12 +297,19 @@ jobs:
     - name: Get MSI filename
       id: msi_info
       run: |
-        msi_file=$(ls windows-build/dist/msi/*.msi 2>/dev/null | head -n1 || echo "")
+        # List all files to debug artifact structure
+        echo "Windows build artifact contents:"
+        ls -la windows-build/ || echo "windows-build directory not found"
+        
+        # Try to find MSI file
+        msi_file=$(ls windows-build/*.msi 2>/dev/null | head -n1 || echo "")
         if [ -n "$msi_file" ]; then
           msi_name=$(basename "$msi_file")
           echo "msi_name=$msi_name" >> $GITHUB_OUTPUT
+          echo "Found MSI: $msi_name"
         else
           echo "msi_name=ChatYapper.msi" >> $GITHUB_OUTPUT
+          echo "MSI file not found, using default name"
         fi
     
     - name: Check Docker build status
@@ -386,8 +393,8 @@ jobs:
           - **Issues:** https://github.com/${{ github.repository }}/issues
           - **Discussions:** https://github.com/${{ github.repository }}/discussions
         files: |
-          windows-build/dist/ChatYapper.exe
-          windows-build/dist/msi/*.msi
+          windows-build/ChatYapper.exe
+          windows-build/*.msi
           linux-build/*.tar.gz
           docker-release/*
         draft: false
