@@ -275,11 +275,6 @@ export default function YappersPage() {
   }, [dimensions.width, dimensions.height, checkOverlap]) // Only depend on dimensions since we use settingsRef.current for settings
   
   // Helper function to get random avatar from available avatars
-  const getRandomAvatar = useCallback(() => {
-    if (!avatarSlots || avatarSlots.length === 0) return null
-    const randomIndex = Math.floor(Math.random() * avatarSlots.length)
-    return avatarSlots[randomIndex]
-  }, [avatarSlots])
   
   // Helper function to create a new popup avatar instance
   const createPopupAvatar = useCallback((audioElement, avatarData, message) => {
