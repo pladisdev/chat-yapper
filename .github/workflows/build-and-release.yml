@@ -10,6 +10,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  packages: write  # Required for pushing to GitHub Container Registry
 
 jobs:
   build:
@@ -218,7 +219,7 @@ jobs:
           const msiStats = msiFile ? fs.statSync(path.join(msiDir, msiFile)) : null;
           const msiSizeMB = msiStats ? (msiStats.size / (1024 * 1024)).toFixed(2) : 'N/A';
           
-          const comment = `## ✅ Build Successful
+          const comment = `## ✅ Windows Build Successful
           
           **Executable:** \`ChatYapper.exe\` (${exeSizeMB} MB)
           **MSI Installer:** \`${msiFile || 'Not found'}\` (${msiSizeMB} MB)
@@ -226,7 +227,11 @@ jobs:
           **Build ID:** \`${{ steps.version.outputs.version }}\`
           **Commit:** ${{ github.sha }}
           
-          Both the standalone executable and MSI installer have been built and are ready for testing.
+          ### Build Status
+          - ✅ Windows executable & MSI installer
+          - 🔄 Linux build (check separate job)
+          - 🔄 Docker image (check separate job)
+          
           Download the artifacts from the workflow run to test before merging.
           
           Once merged to \`main\`, an official release will be created automatically with tag \`v${{ steps.get_version.outputs.app_version }}\`.`;
@@ -237,6 +242,20 @@ jobs:
             repo: context.repo.repo,
             body: comment
           });
+    
+    - name: Download Docker artifacts
+      if: steps.version.outputs.is_release == 'true'
+      uses: actions/download-artifact@v4
+      with:
+        name: docker-release-files
+        path: ./docker-release
+    
+    - name: Download Linux build
+      if: steps.version.outputs.is_release == 'true'
+      uses: actions/download-artifact@v4
+      with:
+        name: linux-build
+        path: ./linux-build
     
     - name: Create Release (on merge to main)
       if: steps.version.outputs.is_release == 'true'
@@ -256,34 +275,54 @@ jobs:
           
           ### Download
           Choose one of the following installation methods:
-          
-          #### MSI Installer (Recommended)
+         
+          #### MSI Installer (Windows - Recommended)
           - Download `${{ steps.msi_info.outputs.msi_name }}` for a traditional Windows installation
           - Double-click to install to Program Files
           - Creates Start Menu and Desktop shortcuts
           - Easily uninstall via Windows Settings
           
-          #### Standalone Executable
+          #### Standalone Executable (Windows - Portable)
           - Download `ChatYapper.exe` for a portable version
           - No installation required
           - Run directly from any location
           
-          ### Installation
+          #### Linux Standalone (x64)
+          - Download `ChatYapper-linux-x64-v${{ steps.get_version.outputs.app_version }}.tar.gz`
+          - Extract and run: `./chatyapper.sh`
+          - No installation required, all dependencies bundled
+          - Requires ffmpeg for audio filters (optional)
+
+          #### Docker (Cross-Platform, Recommended for Servers)
+          **Quick Start - No files needed:**
+          ```bash
+          docker run -d --name chat-yapper -p 8069:8008 \
+            -e TWITCH_CLIENT_ID=your_id \
+            -e TWITCH_CLIENT_SECRET=your_secret \
+            -e YOUTUBE_CLIENT_ID=your_yt_id \
+            -e YOUTUBE_CLIENT_SECRET=your_yt_secret \
+            ghcr.io/${{ github.repository_owner }}/chat-yapper:latest
+          ```         
+          Access at: http://localhost:8069
           
+          **Optional:** Download `docker-compose-release.yml` and `.env.example` for easier management
+          - **Tags:** `latest`, `v${{ steps.get_version.outputs.app_version }}`
+          - **Platforms:** linux/amd64, linux/arm64
+          - See `DOCKER_INSTALL.md` for advanced configuration
+ 
+          ### Installation
+
           **MSI Installer:**
           1. Download the `.msi` file below
           2. Double-click to run the installer
           3. Follow the installation wizard
           4. Launch from Start Menu or Desktop shortcut
-          
-          **Standalone Executable:**
-          1. Download `ChatYapper.exe`
-          2. Run the executable
-          3. The application will start on `http://localhost:8008`
-          
-          ### System Requirements
-          - Windows 10 or later
-          - No additional dependencies required (all bundled)
+   
+          **Linux Standalone:**
+          1. Download `ChatYapper-linux-x64-v${{ steps.get_version.outputs.app_version }}.tar.gz`
+          2. Extract: `tar -xzf ChatYapper-linux-x64-v${{ steps.get_version.outputs.app_version }}.tar.gz`
+          3. Run: `./chatyapper.sh`
+          4. Access at `http://localhost:8008`
           
           ### Support
           - **Issues:** https://github.com/${{ github.repository }}/issues
@@ -291,6 +330,10 @@ jobs:
         files: |
           dist/ChatYapper.exe
           dist/msi/*.msi
+          linux-build/*.tar.gz
+          docker-release/docker-compose-release.yml
+          docker-release/.env.example
+          docker-release/DOCKER_INSTALL.md
         draft: false
         prerelease: false
     
@@ -302,19 +345,601 @@ jobs:
         Write-Host "View at: https://github.com/${{ github.repository }}/releases/tag/${{ steps.version.outputs.version }}"
       shell: powershell
 
+  linux-build:
+    name: Build Linux Executable
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg
+    
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r deployment/requirements-build.txt
+    
+    - name: Get version from backend/version.py
+      id: get_version
+      run: |
+        if [ -f "backend/version.py" ]; then
+          version=$(grep -oP '__version__\s*=\s*["\047]\K[^"\047]+' backend/version.py || echo "1.0.0")
+          echo "Found version in backend/version.py: $version"
+        else
+          version="1.0.0"
+          echo "backend/version.py not found, using default: $version"
+        fi
+        
+        echo "app_version=$version" >> $GITHUB_OUTPUT
+        echo "VITE_APP_VERSION=$version" >> $GITHUB_ENV
+        
+        # Update backend/version.py
+        echo "__version__ = \"$version\"" > backend/version.py
+    
+    - name: Create .env file for build
+      run: |
+        echo "TWITCH_CLIENT_ID=${{ secrets.TWITCH_CLIENT_ID }}" > .env
+        echo "TWITCH_CLIENT_SECRET=${{ secrets.TWITCH_CLIENT_SECRET }}" >> .env
+        echo "YOUTUBE_CLIENT_ID=${{ secrets.YOUTUBE_CLIENT_ID }}" >> .env
+        echo "YOUTUBE_CLIENT_SECRET=${{ secrets.YOUTUBE_CLIENT_SECRET }}" >> .env
+        echo "VITE_APP_VERSION=${{ steps.get_version.outputs.app_version }}" >> .env
+    
+    - name: Build frontend
+      working-directory: ./frontend
+      run: |
+        npm install
+        npm run build
+      env:
+        VITE_APP_VERSION: ${{ steps.get_version.outputs.app_version }}
+    
+    - name: Run build script
+      run: python deployment/build.py
+      env:
+        TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
+        TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
+        YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+        YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+        VITE_APP_VERSION: ${{ steps.get_version.outputs.app_version }}
+    
+    - name: Verify executable exists
+      run: |
+        if [ ! -f "dist/ChatYapper" ]; then
+          echo "Build failed: ChatYapper executable not found in dist directory"
+          exit 1
+        fi
+        echo "[SUCCESS] Build successful: ChatYapper found"
+        size=$(du -h dist/ChatYapper | cut -f1)
+        echo "Executable size: $size"
+        
+        # Make executable
+        chmod +x dist/ChatYapper
+    
+    - name: Create launcher script
+      run: |
+        cat > dist/chatyapper.sh << 'EOFSH'
+        #!/bin/bash
+        # Chat Yapper Linux Launcher
+        
+        # Get the directory where this script is located
+        SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+        
+        # Change to script directory
+        cd "$SCRIPT_DIR"
+        
+        # Check if ffmpeg is installed
+        if ! command -v ffmpeg &> /dev/null; then
+            echo "Warning: ffmpeg is not installed. Audio filters will not work."
+            echo "Install with: sudo apt-get install ffmpeg"
+        fi
+        
+        # Run the application
+        ./ChatYapper "$@"
+        EOFSH
+        
+        chmod +x dist/chatyapper.sh
+        
+        echo "Created launcher script: chatyapper.sh"
+    
+    - name: Create README for Linux build
+      run: |
+        cat > dist/README-LINUX.txt << 'EOFREADME'
+        # Chat Yapper - Linux Build
+        
+        ## Quick Start
+        
+        1. Extract this archive to a directory of your choice
+        2. Open a terminal in that directory
+        3. Run: ./chatyapper.sh
+        4. Open http://localhost:8008 in your browser
+        
+        ## Requirements
+        
+        - Linux x86_64 (64-bit)
+        - ffmpeg (optional, for audio filters)
+          Install with: sudo apt-get install ffmpeg
+        
+        ## Running
+        
+        Option 1 - Using the launcher script (recommended):
+        ./chatyapper.sh
+        
+        Option 2 - Direct execution:
+        ./ChatYapper
+        
+        The application will start on http://localhost:8008
+        
+        ## First Run
+        
+        On first run, the application will:
+        - Create a database at ~/.chatyapper/app.db
+        - Create audio directory at ~/.chatyapper/audio
+        - Start the web server on port 8008
+        
+        ## Configuration
+        
+        All settings are managed through the web interface at:
+        http://localhost:8008/settings
+        
+        ## Troubleshooting
+        
+        If you get "permission denied":
+        chmod +x ChatYapper
+        chmod +x chatyapper.sh
+        
+        If port 8008 is already in use:
+        PORT=8009 ./chatyapper.sh
+        
+        ## System Requirements
+        
+        - Linux kernel 3.10 or later
+        - 512MB RAM minimum, 1GB recommended
+        - 500MB disk space
+        
+        ## Support
+        
+        - Issues: https://github.com/${{ github.repository }}/issues
+        - Discussions: https://github.com/${{ github.repository }}/discussions
+        EOFREADME
+    
+    - name: Create tarball
+      run: |
+        cd dist
+        tar -czf ChatYapper-linux-x64-v${{ steps.get_version.outputs.app_version }}.tar.gz \
+          ChatYapper \
+          chatyapper.sh \
+          README-LINUX.txt
+        
+        echo "Created tarball: ChatYapper-linux-x64-v${{ steps.get_version.outputs.app_version }}.tar.gz"
+        ls -lh ChatYapper-linux-x64-v${{ steps.get_version.outputs.app_version }}.tar.gz
+    
+    - name: Get version info
+      id: version
+      run: |
+        app_version="${{ steps.get_version.outputs.app_version }}"
+        short_sha=$(echo "${{ github.sha }}" | cut -c1-7)
+        
+        if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          version="v$app_version"
+          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "is_release=true" >> $GITHUB_OUTPUT
+          echo "Release version: $version"
+        else
+          date=$(date +%Y.%m.%d)
+          version="build-v$app_version-$date-$short_sha"
+          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "is_release=false" >> $GITHUB_OUTPUT
+          echo "PR build version: $version"
+        fi
+    
+    - name: Upload artifact for PR
+      if: github.event_name == 'pull_request'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ChatYapper-Linux-${{ steps.version.outputs.version }}
+        path: dist/ChatYapper-linux-x64-*.tar.gz
+        retention-days: 7
+    
+    - name: Upload Linux build for release
+      if: steps.version.outputs.is_release == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-build
+        path: dist/ChatYapper-linux-x64-*.tar.gz
+        retention-days: 90
+
+  docker-build:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    needs: build  # Run after Windows build succeeds
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Get version from backend/version.py
+      id: docker_version
+      run: |
+        # Extract version from backend/version.py
+        if [ -f "backend/version.py" ]; then
+          version=$(grep -oP '__version__\s*=\s*["\047]\K[^"\047]+' backend/version.py || echo "1.0.0")
+          echo "Found version in backend/version.py: $version"
+        else
+          version="1.0.0"
+          echo "backend/version.py not found, using default: $version"
+        fi
+        
+        echo "app_version=$version" >> $GITHUB_OUTPUT
+        
+        # Determine if this is a release or PR build
+        if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          echo "is_release=true" >> $GITHUB_OUTPUT
+          echo "docker_tag=v$version" >> $GITHUB_OUTPUT
+        else
+          short_sha=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "is_release=false" >> $GITHUB_OUTPUT
+          echo "docker_tag=pr-$short_sha" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Extract metadata for Docker
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ghcr.io/${{ github.repository_owner }}/chat-yapper
+        tags: |
+          type=raw,value=${{ steps.docker_version.outputs.docker_tag }}
+          type=raw,value=latest,enable=${{ steps.docker_version.outputs.is_release == 'true' }}
+          type=sha,prefix={{branch}}-
+    
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./docker/Dockerfile
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        platforms: linux/amd64,linux/arm64
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        build-args: |
+          APP_VERSION=${{ steps.docker_version.outputs.app_version }}
+    
+    - name: Generate docker-compose.yml for release
+      if: steps.docker_version.outputs.is_release == 'true'
+      run: |
+        cat > docker-compose-release.yml << 'EOF'
+        # Chat Yapper - Docker Compose Configuration
+        # Version: ${{ steps.docker_version.outputs.app_version }}
+        # 
+        # Quick Start:
+        # 1. Create a .env file with your configuration (see .env.example)
+        # 2. Run: docker-compose up -d
+        # 3. Access at: http://localhost:8069
+        
+        services:
+          chat-yapper:
+            image: ghcr.io/${{ github.repository_owner }}/chat-yapper:${{ steps.docker_version.outputs.docker_tag }}
+            container_name: chat-yapper
+            restart: unless-stopped
+            
+            ports:
+              - "8069:8008"
+            
+            volumes:
+              - chat-yapper-data:/data
+              - ./audio:/app/audio
+            
+            environment:
+              - HOST=0.0.0.0
+              - PORT=8008
+              - DEBUG=false
+              - DB_PATH=/data/app.db
+              - AUDIO_DIR=/app/audio
+              - TWITCH_CLIENT_ID=${TWITCH_CLIENT_ID:-}
+              - TWITCH_CLIENT_SECRET=${TWITCH_CLIENT_SECRET:-}
+              - YOUTUBE_CLIENT_ID=${YOUTUBE_CLIENT_ID:-}
+              - YOUTUBE_CLIENT_SECRET=${YOUTUBE_CLIENT_SECRET:-}
+              - FRONTEND_PORT=5173
+            
+            env_file:
+              - .env
+            
+            network_mode: bridge
+        
+        volumes:
+          chat-yapper-data:
+            driver: local
+        EOF
+        
+        cat > .env.example << 'EOF'
+        # Chat Yapper Environment Configuration
+        # Copy this file to .env and fill in your values
+        
+        # Twitch OAuth Configuration
+        # Get credentials from: https://dev.twitch.tv/console/apps
+        TWITCH_CLIENT_ID=your_twitch_client_id_here
+        TWITCH_CLIENT_SECRET=your_twitch_client_secret_here
+        
+        # YouTube OAuth Configuration
+        # Get credentials from: https://console.cloud.google.com/apis/credentials
+        YOUTUBE_CLIENT_ID=your_youtube_client_id_here
+        YOUTUBE_CLIENT_SECRET=your_youtube_client_secret_here
+        
+        # Optional: TTS Provider API Keys
+        # MonsterTTS API Key (if using MonsterTTS)
+        # MONSTERTTS_API_KEY=your_monstertts_api_key_here
+        
+        # Google Cloud TTS API Key (if using Google TTS)
+        # GOOGLE_TTS_API_KEY=your_google_api_key_here
+        
+        # AWS Polly Credentials (if using AWS Polly)
+        # AWS_ACCESS_KEY_ID=your_aws_access_key
+        # AWS_SECRET_ACCESS_KEY=your_aws_secret_key
+        # AWS_REGION=us-east-1
+        EOF
+    
+    - name: Create Docker installation guide
+      if: steps.docker_version.outputs.is_release == 'true'
+      run: |
+        cat > DOCKER_INSTALL.md << 'EOF'
+        # Chat Yapper - Docker Installation Guide
+        
+        ## Prerequisites
+        - Docker Desktop (Windows/Mac) or Docker Engine (Linux)
+        - That's it! No files needed for basic usage.
+        
+        ## Quick Start
+        
+        ### Option 1: Simple Docker Run (Recommended)
+        
+        **One command to get started:**
+        
+        ```bash
+        docker run -d \
+          --name chat-yapper \
+          -p 8069:8008 \
+          -v chat-yapper-data:/data \
+          -e TWITCH_CLIENT_ID=your_client_id \
+          -e TWITCH_CLIENT_SECRET=your_client_secret \
+          -e YOUTUBE_CLIENT_ID=your_youtube_id \
+          -e YOUTUBE_CLIENT_SECRET=your_youtube_secret \
+          --restart unless-stopped \
+          ghcr.io/${{ github.repository_owner }}/chat-yapper:latest
+        ```
+        
+        Replace the credentials with your actual values and you're done!
+        
+        **Access:** Open http://localhost:8069 in your browser
+        
+        **Optional audio volume:** Add `-v $(pwd)/audio:/app/audio` to access audio files on host
+        
+        ### Option 2: Using Docker Compose (For easier management)
+        
+        If you prefer using Docker Compose for easier configuration management:
+        
+        1. **Download the release files:**
+           - `docker-compose-release.yml`
+           - `.env.example`
+        
+        2. **Create your environment file:**
+           ```bash
+           cp .env.example .env
+           # Edit .env with your credentials using your preferred editor
+           ```
+        
+        3. **Start the application:**
+           ```bash
+           docker-compose -f docker-compose-release.yml up -d
+           ```
+        
+        4. **Access:** http://localhost:8069
+        
+        ## Configuration
+        
+        ### Environment Variables
+        
+        | Variable | Description | Required |
+        |----------|-------------|----------|
+        | `TWITCH_CLIENT_ID` | Twitch OAuth Client ID | Yes (if using Twitch) |
+        | `TWITCH_CLIENT_SECRET` | Twitch OAuth Client Secret | Yes (if using Twitch) |
+        | `YOUTUBE_CLIENT_ID` | YouTube OAuth Client ID | Yes (if using YouTube) |
+        | `YOUTUBE_CLIENT_SECRET` | YouTube OAuth Client Secret | Yes (if using YouTube) |
+        | `DB_PATH` | Database file path | No (default: /data/app.db) |
+        | `AUDIO_DIR` | Audio files directory | No (default: /app/audio) |
+        | `HOST` | Server host | No (default: 0.0.0.0) |
+        | `PORT` | Server port | No (default: 8008) |
+        | `DEBUG` | Debug mode | No (default: false) |
+        
+        ### Persistent Data
+        
+        The Docker image stores data in two locations:
+        - **Database & Settings:** `/data` volume (persistent)
+        - **Audio Files:** `/app/audio` volume (can be mounted to host)
+        
+        ### Port Configuration
+        
+        The container exposes port 8008 internally, mapped to 8069 on the host by default.
+        To change the host port, modify the docker-compose file:
+        
+        ```yaml
+        ports:
+          - "YOUR_PORT:8008"
+        ```
+        
+        ## Managing the Container
+        
+        ### View Logs
+        ```bash
+        docker logs -f chat-yapper
+        ```
+        
+        ### Stop the Container
+        ```bash
+        docker-compose -f docker-compose-release.yml down
+        ```
+        
+        ### Update to Latest Version
+        ```bash
+        # Pull the latest image
+        docker-compose -f docker-compose-release.yml pull
+        
+        # Restart with new image
+        docker-compose -f docker-compose-release.yml up -d
+        ```
+        
+        ### Backup Data
+        ```bash
+        # Backup the data volume
+        docker run --rm \
+          -v chat-yapper-data:/data \
+          -v $(pwd):/backup \
+          alpine tar czf /backup/chat-yapper-backup.tar.gz /data
+        ```
+        
+        ### Restore Data
+        ```bash
+        # Restore from backup
+        docker run --rm \
+          -v chat-yapper-data:/data \
+          -v $(pwd):/backup \
+          alpine tar xzf /backup/chat-yapper-backup.tar.gz -C /
+        ```
+        
+        ## Troubleshooting
+        
+        ### Container won't start
+        - Check Docker Desktop is running
+        - Verify ports are not already in use: `netstat -ano | findstr :8069`
+        - Check logs: `docker logs chat-yapper`
+        
+        ### Can't access the application
+        - Ensure firewall allows port 8069
+        - Try accessing http://127.0.0.1:8069 instead of localhost
+        - Check container status: `docker ps`
+        
+        ### Permission errors
+        - On Linux, ensure the mounted volumes have correct permissions
+        - Try running with sudo or adjust volume ownership
+        
+        ## Multi-Architecture Support
+        
+        This image supports both:
+        - **linux/amd64** (x86_64)
+        - **linux/arm64** (ARM64/Apple Silicon)
+        
+        Docker will automatically pull the correct architecture for your system.
+        
+        ## Support
+        
+        For issues, questions, or feature requests:
+        - GitHub Issues: https://github.com/${{ github.repository }}/issues
+        - GitHub Discussions: https://github.com/${{ github.repository }}/discussions
+        EOF
+    
+    - name: Comment PR with Docker build status
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const shortSha = '${{ github.sha }}'.substring(0, 7);
+          const dockerTag = `pr-${shortSha}`;
+          const dockerImage = `ghcr.io/${{ github.repository_owner }}/chat-yapper:${dockerTag}`;
+          
+          const comment = `## 🐳 Docker Image Built Successfully
+          
+          **Image:** \`${dockerImage}\`
+          **Tag:** \`${dockerTag}\`
+          
+          ### Test this PR with Docker:
+          
+          \`\`\`bash
+          docker pull ${dockerImage}
+          
+          docker run -d \\
+            --name chat-yapper-pr \\
+            -p 8069:8008 \\
+            -e TWITCH_CLIENT_ID=your_id \\
+            -e TWITCH_CLIENT_SECRET=your_secret \\
+            ${dockerImage}
+          \`\`\`
+          
+          Access at: http://localhost:8069
+          
+          The Docker image will be published to the GitHub Container Registry when merged to \`main\`.`;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });
+    
+    - name: Upload Docker artifacts for release
+      if: steps.docker_version.outputs.is_release == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: docker-release-files
+        path: |
+          docker-compose-release.yml
+          .env.example
+          DOCKER_INSTALL.md
+        retention-days: 90
+
   # This job runs after build and prevents merge if build failed
   build-status-check:
     name: Build Status Check
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, linux-build, docker-build]
     if: always()
     
     steps:
     - name: Check build status
       run: |
         if [ "${{ needs.build.result }}" != "success" ]; then
-          echo "[FAIL] Build failed or was cancelled"
+          echo "[FAIL] Windows build failed or was cancelled"
           echo "Cannot merge to main until build succeeds"
           exit 1
         fi
-        echo "[PASS] Build succeeded - safe to merge"
+        if [ "${{ needs.linux-build.result }}" != "success" ]; then
+          echo "[FAIL] Linux build failed or was cancelled"
+          echo "Cannot merge to main until build succeeds"
+          exit 1
+        fi
+        if [ "${{ needs.docker-build.result }}" != "success" ]; then
+          echo "[FAIL] Docker build failed or was cancelled"
+          echo "Cannot merge to main until build succeeds"
+          exit 1
+        fi
+        echo "[PASS] All builds succeeded - safe to merge"

@@ -32,12 +32,14 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy backend application
+# Copy backend application (but exclude public directory to avoid copying old build)
 COPY backend/ ./backend/
 COPY main.py ./
 COPY assets/icon.ico ./assets/icon.ico
 
-# Copy built frontend from builder stage
+# Copy built frontend from builder stage (this ensures fresh build is used)
+# Remove any existing public directory first to ensure clean copy
+RUN rm -rf ./backend/public
 COPY --from=frontend-builder /app/backend/public ./backend/public/
 
 # Create directories for persistent data
