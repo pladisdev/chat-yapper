@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import logger from '../utils/logger'
+import { hexColorWithOpacity } from '../utils/colorUtils'
 
 export default function YappersPage() {
   const [settings, setSettings] = useState(null)
@@ -1032,7 +1033,7 @@ export default function YappersPage() {
                     minWidth: '120px',
                     maxWidth: '300px',
                     padding: '8px 12px',
-                    background: `${settings?.bubbleBackgroundColor || '#000000'}${Math.round((settings?.bubbleOpacity ?? 0.85) * 255).toString(16).padStart(2, '0')}`,
+                    background: hexColorWithOpacity(settings?.bubbleBackgroundColor || '#000000', settings?.bubbleOpacity ?? 0.85),
                     color: settings?.bubbleFontColor || '#ffffff',
                     borderRadius: (settings?.bubbleRounded ?? true) ? '12px' : '4px',
                     fontFamily: settings?.bubbleFontFamily || 'Arial, sans-serif',
@@ -1059,7 +1060,7 @@ export default function YappersPage() {
                       height: 0,
                       borderLeft: '6px solid transparent',
                       borderRight: '6px solid transparent',
-                      borderTop: `6px solid ${settings?.bubbleBackgroundColor || '#000000'}${Math.round((settings?.bubbleOpacity ?? 0.85) * 255).toString(16).padStart(2, '0')}`
+                      borderTop: `6px solid ${hexColorWithOpacity(settings?.bubbleBackgroundColor || '#000000', settings?.bubbleOpacity ?? 0.85)}`
                     }}
                   />
                 </div>
@@ -1223,14 +1224,12 @@ export default function YappersPage() {
               const bubbleOffset = 10 // Distance from avatar
               const bgColor = settings?.bubbleBackgroundColor || '#000000'
               const opacity = settings?.bubbleOpacity ?? 0.85
-              const hexOpacity = Math.round(opacity * 255).toString(16).padStart(2, '0')
-              
               const baseStyle = {
                 position: 'absolute',
                 minWidth: '120px',
                 maxWidth: '300px',
                 padding: '8px 12px',
-                background: `${bgColor}${hexOpacity}`,
+                background: hexColorWithOpacity(bgColor, opacity),
                 color: settings?.bubbleFontColor || '#ffffff',
                 borderRadius: (settings?.bubbleRounded ?? true) ? '12px' : '4px',
                 fontFamily: settings?.bubbleFontFamily || 'Arial, sans-serif',
@@ -1292,8 +1291,7 @@ export default function YappersPage() {
             const getChatBubbleTail = () => {
               const bgColor = settings?.bubbleBackgroundColor || '#000000'
               const opacity = settings?.bubbleOpacity ?? 0.85
-              const hexOpacity = Math.round(opacity * 255).toString(16).padStart(2, '0')
-              const tailColor = `${bgColor}${hexOpacity}`
+              const tailColor = hexColorWithOpacity(bgColor, opacity)
               
               switch (popupDirection) {
                 case 'bottom':

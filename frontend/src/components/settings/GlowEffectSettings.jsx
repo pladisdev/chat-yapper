@@ -4,6 +4,7 @@ import { Switch } from '../ui/switch'
 import { Slider } from '../ui/slider'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
 import { Sparkles } from 'lucide-react'
+import { hexColorWithOpacity } from '../../utils/colorUtils'
 
 export default function GlowEffectSettings({ settings, onUpdate }) {
   const glowEnabled = settings?.avatarGlowEnabled ?? true
@@ -127,7 +128,7 @@ export default function GlowEffectSettings({ settings, onUpdate }) {
               borderRadius: '50%',
               backgroundColor: '#666',
               filter: glowEnabled
-                ? `brightness(1.25) drop-shadow(0 0 ${glowSize}px ${glowColor}${Math.round(glowOpacity * 255).toString(16).padStart(2, '0')})`
+                ? `brightness(1.25) drop-shadow(0 0 ${glowSize}px ${hexColorWithOpacity(glowColor, glowOpacity)})`
                 : 'drop-shadow(0 4px 8px rgba(0,0,0,0.3))',
               transition: 'filter 300ms ease-out'
             }}
