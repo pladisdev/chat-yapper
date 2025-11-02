@@ -2,10 +2,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import logger from '../utils/logger'
 import { hexColorWithOpacity, hexToRgba } from '../utils/colorUtils'
 
-// Constants
-const AUDIO_READY_TIMEOUT_MS = 5000
-const READY_STATE_HAVE_FUTURE_DATA = 3
-const ACTIVE_AVATAR_LIFT_OFFSET = -2.5
+// Audio playback constants
+const AUDIO_READY_TIMEOUT_MS = 5000 // 5 seconds timeout for audio readiness check
+const READY_STATE_HAVE_FUTURE_DATA = 3 // HTMLMediaElement.HAVE_FUTURE_DATA
+const ACTIVE_AVATAR_LIFT_OFFSET = -2.5 // Pixel offset for active avatar lift animation
 
 export default function YappersPage() {
   const [settings, setSettings] = useState(null)
@@ -668,6 +668,17 @@ export default function YappersPage() {
         }
       }
       
+      // Reusable cleanup function for audio tracking references
+      const cleanupAudioTracking = () => {
+        const username = msg.user?.toLowerCase()
+        if (username && activeAudioRef.current.get(username) === audio) {
+          activeAudioRef.current.delete(username)
+        }
+        if (audio) {
+          allActiveAudioRef.current.delete(audio)
+        }
+      }
+      
       // Check current avatar mode
       const currentAvatarMode = settingsRef.current?.avatarMode || 'grid'
       
@@ -679,34 +690,21 @@ export default function YappersPage() {
           // Pop-up mode: Create a new independent avatar instance
           logger.info('Pop-up mode: Creating new avatar instance')
           
-          // Use a ref object so the cleanup can access the latest popupId value
-          const popupIdRef = { current: null }
-          
-          audio.addEventListener('play', () => {
-            logger.info('Audio started playing - creating popup avatar')
-            popupIdRef.current = createPopupAvatar(audio, selectedAvatar, msg.message)
-          })
+          // Create popup avatar immediately to avoid race condition
+          // This ensures popupId is always set before any cleanup handlers run
+          const popupId = createPopupAvatar(audio, selectedAvatar, msg.message)
+          logger.info('Created popup avatar with ID:', popupId)
           
           let cleanedUp = false
           popupCleanup = () => {
             if (cleanedUp) return
             cleanedUp = true
             
-            logger.info('Audio ended - removing popup avatar')
-            if (popupIdRef.current) {
-              removePopupAvatar(popupIdRef.current)
-            } else {
-              logger.warn('Popup avatar was removed before popupId was set')
-            }
+            logger.info('Audio ended - removing popup avatar:', popupId)
+            removePopupAvatar(popupId)
             
             // Clean up audio tracking
-            const username = msg.user?.toLowerCase()
-            if (username && activeAudioRef.current.get(username) === audio) {
-              activeAudioRef.current.delete(username)
-            }
-            if (audio) {
-              allActiveAudioRef.current.delete(audio)
-            }
+            cleanupAudioTracking()
           }
           audio.addEventListener('ended', popupCleanup)
           audio.addEventListener('pause', popupCleanup)
@@ -740,13 +738,7 @@ export default function YappersPage() {
             notifySlotEnded(targetSlot.id)
             
             // Clean up audio tracking
-            const username = msg.user?.toLowerCase()
-            if (username && activeAudioRef.current.get(username) === audio) {
-              activeAudioRef.current.delete(username)
-            }
-            if (audio) {
-              allActiveAudioRef.current.delete(audio)
-            }
+            cleanupAudioTracking()
           }
           audio.addEventListener('ended', end)
           audio.addEventListener('pause', end)
@@ -786,7 +778,11 @@ export default function YappersPage() {
           .catch(error => {
             console.error('Failed to load Web Speech instructions:', error)
             // CRITICAL: Clean up on fetch failure to prevent backend thinking slot is occupied
-            end()
+            if (targetSlot) {
+              notifySlotError(targetSlot.id, error.message || 'Failed to load Web Speech instructions')
+              deactivateSlot(targetSlot.id)
+              notifySlotEnded(targetSlot.id)
+            }
           })
       } else {
         // Handle regular audio file
@@ -799,19 +795,14 @@ export default function YappersPage() {
           // CRITICAL: Clean up on error to prevent backend thinking slot is occupied
           if (targetSlot) {
             notifySlotError(targetSlot.id, audio.error?.message || 'Audio loading error')
+            deactivateSlot(targetSlot.id)
+            notifySlotEnded(targetSlot.id)
           }
-          // Clean up audio tracking references to prevent memory leaks
+          // Clean up audio tracking to prevent memory leaks
           if (popupCleanup) {
             popupCleanup()
           } else {
-            // For grid mode or when popup cleanup isn't available
-            const username = msg.user?.toLowerCase()
-            if (username && activeAudioRef.current.get(username) === audio) {
-              activeAudioRef.current.delete(username)
-            }
-            if (audio) {
-              allActiveAudioRef.current.delete(audio)
-            }
+            cleanupAudioTracking()
           }
         })
         
@@ -828,19 +819,10 @@ export default function YappersPage() {
                 // For popup mode, call the cleanup function
                 popupCleanup()
               } else if (targetSlot) {
-                const end = () => {
-                  logger.info('Audio ended (from play error) - deactivating avatar:', targetSlot.id)
-                  deactivateSlot(targetSlot.id)
-                  notifySlotEnded(targetSlot.id)
-                  const username = msg.user?.toLowerCase()
-                  if (username && activeAudioRef.current.get(username) === audio) {
-                    activeAudioRef.current.delete(username)
-                  }
-                  if (audio) {
-                    allActiveAudioRef.current.delete(audio)
-                  }
-                }
-                end()
+                logger.info('Audio ended (from play error) - deactivating avatar:', targetSlot.id)
+                deactivateSlot(targetSlot.id)
+                notifySlotEnded(targetSlot.id)
+                cleanupAudioTracking()
               }
             })
         }
@@ -1010,6 +992,7 @@ export default function YappersPage() {
           const glowColor = settings?.avatarGlowColor ?? '#ffffff'
           const glowOpacity = settings?.avatarGlowOpacity ?? 0.9
           const glowSize = settings?.avatarGlowSize ?? 20
+          const activeOffset = settings?.avatarActiveOffset ?? 2.5
           
           // Build filter based on glow settings
           const activeFilter = glowEnabled
