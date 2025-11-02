@@ -7,6 +7,7 @@ import sys
 import shutil
 import subprocess
 import logging
+import platform
 from datetime import datetime
 from pathlib import Path
 
@@ -560,7 +561,7 @@ exe = EXE(
     
     # Check if the executable was created successfully
     # On Windows it's .exe, on Linux it has no extension
-    exe_path = Path("dist/ChatYapper.exe") if sys.platform == "win32" else Path("dist/ChatYapper")
+    exe_path = Path("dist/ChatYapper.exe") if platform.system() == "Windows" else Path("dist/ChatYapper")
     if exe_path.exists():
         file_size = exe_path.stat().st_size / (1024 * 1024)  # Size in MB
         logger.info(f"Executable created successfully: {exe_path} ({file_size:.1f} MB)")

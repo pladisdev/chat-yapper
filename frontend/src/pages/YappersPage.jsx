@@ -1,5 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import logger from '../utils/logger'
+import { hexColorWithOpacity, hexToRgba } from '../utils/colorUtils'
+
+// Constants
+const AUDIO_READY_TIMEOUT_MS = 5000
+const READY_STATE_HAVE_FUTURE_DATA = 3
+const ACTIVE_AVATAR_LIFT_OFFSET = -2.5
 
 export default function YappersPage() {
   const [settings, setSettings] = useState(null)
@@ -669,6 +675,9 @@ export default function YappersPage() {
       // Check current avatar mode
       const currentAvatarMode = settingsRef.current?.avatarMode || 'grid'
       
+      // Define cleanup function early so it's available for all error handlers
+      let popupCleanup = null
+      
       if (!isWebSpeech) {
         if (currentAvatarMode === 'popup') {
           // Pop-up mode: Create a new independent avatar instance
@@ -683,7 +692,7 @@ export default function YappersPage() {
           })
           
           let cleanedUp = false
-          const end = () => {
+          popupCleanup = () => {
             if (cleanedUp) return
             cleanedUp = true
             
@@ -703,11 +712,11 @@ export default function YappersPage() {
               allActiveAudioRef.current.delete(audio)
             }
           }
-          audio.addEventListener('ended', end)
-          audio.addEventListener('pause', end)
+          audio.addEventListener('ended', popupCleanup)
+          audio.addEventListener('pause', popupCleanup)
           audio.addEventListener('error', (e) => {
             console.error('Audio error:', e)
-            end()
+            popupCleanup()
           })
           
         } else if (targetSlot) {
@@ -795,6 +804,19 @@ export default function YappersPage() {
           if (targetSlot) {
             notifySlotError(targetSlot.id, audio.error?.message || 'Audio loading error')
           }
+          // Clean up audio tracking references to prevent memory leaks
+          if (popupCleanup) {
+            popupCleanup()
+          } else {
+            // For grid mode or when popup cleanup isn't available
+            const username = msg.user?.toLowerCase()
+            if (username && activeAudioRef.current.get(username) === audio) {
+              activeAudioRef.current.delete(username)
+            }
+            if (audio) {
+              allActiveAudioRef.current.delete(audio)
+            }
+          }
         })
         
         // Wait for audio to be ready before playing to prevent crackling from premature playback
@@ -806,9 +828,9 @@ export default function YappersPage() {
             .catch((error) => {
               console.error(`Audio play() failed for ${msg.user}:`, error)
               // CRITICAL: Clean up on play failure to prevent backend thinking slot is occupied
-              if (currentAvatarMode === 'popup') {
-                // For popup mode, use the cleanup from the earlier event listeners
-                // The 'error' event listener will handle cleanup
+              if (currentAvatarMode === 'popup' && popupCleanup) {
+                // For popup mode, call the cleanup function
+                popupCleanup()
               } else if (targetSlot) {
                 const end = () => {
                   logger.info('Audio ended (from play error) - deactivating avatar:', targetSlot.id)
@@ -828,7 +850,7 @@ export default function YappersPage() {
         }
         
         // Check if audio is ready
-        if (audio.readyState >= 3) {
+        if (audio.readyState >= READY_STATE_HAVE_FUTURE_DATA) {
           // HAVE_FUTURE_DATA or better - safe to play
           tryPlay()
         } else {
@@ -841,12 +863,12 @@ export default function YappersPage() {
           
           // Fallback timeout in case canplaythrough never fires
           setTimeout(() => {
-            if (audio.readyState < 3) {
-              logger.warn(`Audio still not ready after 5s for ${msg.user}, attempting to play anyway`)
+            if (audio.readyState < READY_STATE_HAVE_FUTURE_DATA) {
+              logger.warn(`Audio still not ready after ${AUDIO_READY_TIMEOUT_MS / 1000}s for ${msg.user}, attempting to play anyway`)
               audio.removeEventListener('canplaythrough', canPlayHandler)
               tryPlay()
             }
-          }, 5000)
+          }, AUDIO_READY_TIMEOUT_MS)
         }
       }
       
@@ -993,14 +1015,6 @@ export default function YappersPage() {
           const glowOpacity = settings?.avatarGlowOpacity ?? 0.9
           const glowSize = settings?.avatarGlowSize ?? 20
           
-          // Convert hex color to rgba for glow effect
-          const hexToRgba = (hex, opacity) => {
-            const r = parseInt(hex.slice(1, 3), 16)
-            const g = parseInt(hex.slice(3, 5), 16)
-            const b = parseInt(hex.slice(5, 7), 16)
-            return `rgba(${r},${g},${b},${opacity})`
-          }
-          
           // Build filter based on glow settings
           const activeFilter = glowEnabled
             ? `brightness(1.25) drop-shadow(0 0 ${glowSize}px ${hexToRgba(glowColor, glowOpacity)})`
@@ -1015,7 +1029,7 @@ export default function YappersPage() {
                 bottom: `${y - baseSize/2}px`,
                 width: `${baseSize}px`,
                 height: `${baseSize}px`,
-                transform: activeSlots[slot.id] ? 'translateY(-2.5px)' : 'translateY(0)',
+                transform: activeSlots[slot.id] ? `translateY(${ACTIVE_AVATAR_LIFT_OFFSET}px)` : 'translateY(0)',
                 zIndex: 10 + index,
                 transition: 'all 300ms ease-out',
                 pointerEvents: 'none'
@@ -1032,7 +1046,7 @@ export default function YappersPage() {
                     minWidth: '120px',
                     maxWidth: '300px',
                     padding: '8px 12px',
-                    background: `${settings?.bubbleBackgroundColor || '#000000'}${Math.round((settings?.bubbleOpacity ?? 0.85) * 255).toString(16).padStart(2, '0')}`,
+                    background: hexColorWithOpacity(settings?.bubbleBackgroundColor || '#000000', settings?.bubbleOpacity ?? 0.85),
                     color: settings?.bubbleFontColor || '#ffffff',
                     borderRadius: (settings?.bubbleRounded ?? true) ? '12px' : '4px',
                     fontFamily: settings?.bubbleFontFamily || 'Arial, sans-serif',
@@ -1059,7 +1073,7 @@ export default function YappersPage() {
                       height: 0,
                       borderLeft: '6px solid transparent',
                       borderRight: '6px solid transparent',
-                      borderTop: `6px solid ${settings?.bubbleBackgroundColor || '#000000'}${Math.round((settings?.bubbleOpacity ?? 0.85) * 255).toString(16).padStart(2, '0')}`
+                      borderTop: `6px solid ${hexColorWithOpacity(settings?.bubbleBackgroundColor || '#000000', settings?.bubbleOpacity ?? 0.85)}`
                     }}
                   />
                 </div>
@@ -1223,14 +1237,13 @@ export default function YappersPage() {
               const bubbleOffset = 10 // Distance from avatar
               const bgColor = settings?.bubbleBackgroundColor || '#000000'
               const opacity = settings?.bubbleOpacity ?? 0.85
-              const hexOpacity = Math.round(opacity * 255).toString(16).padStart(2, '0')
               
               const baseStyle = {
                 position: 'absolute',
                 minWidth: '120px',
                 maxWidth: '300px',
                 padding: '8px 12px',
-                background: `${bgColor}${hexOpacity}`,
+                background: hexColorWithOpacity(bgColor, opacity),
                 color: settings?.bubbleFontColor || '#ffffff',
                 borderRadius: (settings?.bubbleRounded ?? true) ? '12px' : '4px',
                 fontFamily: settings?.bubbleFontFamily || 'Arial, sans-serif',
@@ -1292,8 +1305,7 @@ export default function YappersPage() {
             const getChatBubbleTail = () => {
               const bgColor = settings?.bubbleBackgroundColor || '#000000'
               const opacity = settings?.bubbleOpacity ?? 0.85
-              const hexOpacity = Math.round(opacity * 255).toString(16).padStart(2, '0')
-              const tailColor = `${bgColor}${hexOpacity}`
+              const tailColor = hexColorWithOpacity(bgColor, opacity)
               
               switch (popupDirection) {
                 case 'bottom':
