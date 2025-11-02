@@ -667,6 +667,17 @@ export default function YappersPage() {
         }
       }
       
+      // Reusable cleanup function for audio tracking references
+      const cleanupAudioTracking = () => {
+        const username = msg.user?.toLowerCase()
+        if (username && activeAudioRef.current.get(username) === audio) {
+          activeAudioRef.current.delete(username)
+        }
+        if (audio) {
+          allActiveAudioRef.current.delete(audio)
+        }
+      }
+      
       // Check current avatar mode
       const currentAvatarMode = settingsRef.current?.avatarMode || 'grid'
       
@@ -689,13 +700,7 @@ export default function YappersPage() {
             removePopupAvatar(popupId)
             
             // Clean up audio tracking
-            const username = msg.user?.toLowerCase()
-            if (username && activeAudioRef.current.get(username) === audio) {
-              activeAudioRef.current.delete(username)
-            }
-            if (audio) {
-              allActiveAudioRef.current.delete(audio)
-            }
+            cleanupAudioTracking()
           }
           audio.addEventListener('ended', end)
           audio.addEventListener('pause', end)
@@ -729,13 +734,7 @@ export default function YappersPage() {
             notifySlotEnded(targetSlot.id)
             
             // Clean up audio tracking
-            const username = msg.user?.toLowerCase()
-            if (username && activeAudioRef.current.get(username) === audio) {
-              activeAudioRef.current.delete(username)
-            }
-            if (audio) {
-              allActiveAudioRef.current.delete(audio)
-            }
+            cleanupAudioTracking()
           }
           audio.addEventListener('ended', end)
           audio.addEventListener('pause', end)
@@ -775,7 +774,11 @@ export default function YappersPage() {
           .catch(error => {
             console.error('Failed to load Web Speech instructions:', error)
             // CRITICAL: Clean up on fetch failure to prevent backend thinking slot is occupied
-            end()
+            if (targetSlot) {
+              notifySlotError(targetSlot.id, error.message || 'Failed to load Web Speech instructions')
+              deactivateSlot(targetSlot.id)
+              notifySlotEnded(targetSlot.id)
+            }
           })
       } else {
         // Handle regular audio file
@@ -788,7 +791,11 @@ export default function YappersPage() {
           // CRITICAL: Clean up on error to prevent backend thinking slot is occupied
           if (targetSlot) {
             notifySlotError(targetSlot.id, audio.error?.message || 'Audio loading error')
+            deactivateSlot(targetSlot.id)
+            notifySlotEnded(targetSlot.id)
           }
+          // Clean up audio tracking to prevent memory leaks
+          cleanupAudioTracking()
         })
         
         // Wait for audio to be ready before playing to prevent crackling from premature playback
@@ -810,19 +817,10 @@ export default function YappersPage() {
                   allActiveAudioRef.current.delete(audio)
                 }
               } else if (targetSlot) {
-                const end = () => {
-                  logger.info('Audio ended (from play error) - deactivating avatar:', targetSlot.id)
-                  deactivateSlot(targetSlot.id)
-                  notifySlotEnded(targetSlot.id)
-                  const username = msg.user?.toLowerCase()
-                  if (username && activeAudioRef.current.get(username) === audio) {
-                    activeAudioRef.current.delete(username)
-                  }
-                  if (audio) {
-                    allActiveAudioRef.current.delete(audio)
-                  }
-                }
-                end()
+                logger.info('Audio ended (from play error) - deactivating avatar:', targetSlot.id)
+                deactivateSlot(targetSlot.id)
+                notifySlotEnded(targetSlot.id)
+                cleanupAudioTracking()
               }
             })
         }
