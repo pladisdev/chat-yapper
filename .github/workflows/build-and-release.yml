@@ -297,12 +297,8 @@ jobs:
     - name: Get MSI filename
       id: msi_info
       run: |
-        # List all files to debug artifact structure
-        echo "Windows build artifact contents:"
-        ls -la windows-build/ || echo "windows-build directory not found"
-        
-        # Try to find MSI file
-        msi_file=$(ls windows-build/*.msi 2>/dev/null | head -n1 || echo "")
+        # Try to find MSI file in msi subdirectory
+        msi_file=$(ls windows-build/msi/*.msi 2>/dev/null | head -n1 || echo "")
         if [ -n "$msi_file" ]; then
           msi_name=$(basename "$msi_file")
           echo "msi_name=$msi_name" >> $GITHUB_OUTPUT
@@ -394,9 +390,8 @@ jobs:
           - **Discussions:** https://github.com/${{ github.repository }}/discussions
         files: |
           windows-build/ChatYapper.exe
-          windows-build/*.msi
+          windows-build/msi/*.msi
           linux-build/*.tar.gz
-          docker-release/*
         draft: false
         prerelease: false
         fail_on_unmatched_files: false
