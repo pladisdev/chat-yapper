@@ -1,4 +1,8 @@
 /**
+ * Color utility functions for Chat Yapper frontend
+ */
+
+/**
  * Converts a hex color and opacity value to a hex color with alpha channel
  * @param {string} hexColor - Hex color code (e.g., '#ffffff')
  * @param {number} opacity - Opacity value between 0 and 1
@@ -41,3 +45,5 @@ export function hexToRgba(hex, opacity) {
   const b = parseInt(hex.slice(5, 7), 16)
   return `rgba(${r},${g},${b},${clampedOpacity})`
 }
+
+export default { hexColorWithOpacity, hexToRgba }
