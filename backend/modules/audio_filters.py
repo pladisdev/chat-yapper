@@ -105,13 +105,38 @@ class AudioFilterProcessor:
         try:
             filter_complex = ",".join(filters)
             
+            # Determine output format and quality settings
+            input_ext = Path(input_path).suffix.lower()
+            output_ext = Path(output_path).suffix.lower()
+            
             command = [
                 "ffmpeg",
                 "-i", input_path,
                 "-af", filter_complex,
+            ]
+            
+            # Add format-specific quality settings to prevent crackling/artifacts
+            if output_ext == '.mp3':
+                # High quality MP3 settings
+                command.extend([
+                    "-codec:a", "libmp3lame",
+                    "-q:a", "2",  # Variable bitrate, high quality (equivalent to ~190 kbps)
+                    "-ar", "44100"  # Standard sample rate
+                ])
+            elif output_ext == '.wav':
+                # High quality WAV settings
+                command.extend([
+                    "-codec:a", "pcm_s16le",  # 16-bit PCM
+                    "-ar", "44100"  # Standard sample rate
+                ])
+            else:
+                # Default to high quality for other formats
+                command.extend(["-ar", "44100"])
+            
+            command.extend([
                 "-y",  # Overwrite output file
                 output_path
-            ]
+            ])
             
             logger.debug(f"Running ffmpeg command: {' '.join(command)}")
             

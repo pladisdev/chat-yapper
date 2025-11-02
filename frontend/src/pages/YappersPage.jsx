@@ -638,6 +638,10 @@ export default function YappersPage() {
       if (!isWebSpeech) {
         audio = new Audio(msg.audioUrl)
         
+        // Configure audio element to prevent crackling and improve playback quality
+        audio.preload = 'auto'  // Preload the audio file to avoid playback interruptions
+        audio.crossOrigin = 'anonymous'  // Enable CORS for audio processing
+        
         // Set volume from settings (0.0 to 1.0)
         // Use settingsRef to get the LATEST value immediately, avoiding React state update delays
         const currentSettings = settingsRef.current || settings
@@ -783,15 +787,67 @@ export default function YappersPage() {
         // Handle regular audio file
         logger.info(`Attempting to play audio for ${msg.user}... (${allActiveAudioRef.current.size} total active)`)
         logger.info(`Audio volume just before play: ${Math.round(audio.volume * 100)}%`)
-        audio.play()
-          .then(() => {
-            logger.info(`Audio play() successful for ${msg.user} (parallel audio supported) - final volume: ${Math.round(audio.volume * 100)}%`)
-          })
-          .catch((error) => {
-            console.error(`Audio play() failed for ${msg.user}:`, error)
-            // CRITICAL: Clean up on play failure to prevent backend thinking slot is occupied
-            end()
-          })
+        
+        // Add error handler for loading issues that could cause crackling
+        audio.addEventListener('error', (e) => {
+          logger.error(`Audio loading error for ${msg.user}:`, e, audio.error)
+          // CRITICAL: Clean up on error to prevent backend thinking slot is occupied
+          if (targetSlot) {
+            notifySlotError(targetSlot.id, audio.error?.message || 'Audio loading error')
+          }
+        })
+        
+        // Wait for audio to be ready before playing to prevent crackling from premature playback
+        const tryPlay = () => {
+          audio.play()
+            .then(() => {
+              logger.info(`Audio play() successful for ${msg.user} (parallel audio supported) - final volume: ${Math.round(audio.volume * 100)}%`)
+            })
+            .catch((error) => {
+              console.error(`Audio play() failed for ${msg.user}:`, error)
+              // CRITICAL: Clean up on play failure to prevent backend thinking slot is occupied
+              if (currentAvatarMode === 'popup') {
+                // For popup mode, use the cleanup from the earlier event listeners
+                // The 'error' event listener will handle cleanup
+              } else if (targetSlot) {
+                const end = () => {
+                  logger.info('Audio ended (from play error) - deactivating avatar:', targetSlot.id)
+                  deactivateSlot(targetSlot.id)
+                  notifySlotEnded(targetSlot.id)
+                  const username = msg.user?.toLowerCase()
+                  if (username && activeAudioRef.current.get(username) === audio) {
+                    activeAudioRef.current.delete(username)
+                  }
+                  if (audio) {
+                    allActiveAudioRef.current.delete(audio)
+                  }
+                }
+                end()
+              }
+            })
+        }
+        
+        // Check if audio is ready
+        if (audio.readyState >= 3) {
+          // HAVE_FUTURE_DATA or better - safe to play
+          tryPlay()
+        } else {
+          // Wait for canplaythrough event to ensure smooth playback
+          const canPlayHandler = () => {
+            audio.removeEventListener('canplaythrough', canPlayHandler)
+            tryPlay()
+          }
+          audio.addEventListener('canplaythrough', canPlayHandler)
+          
+          // Fallback timeout in case canplaythrough never fires
+          setTimeout(() => {
+            if (audio.readyState < 3) {
+              logger.warn(`Audio still not ready after 5s for ${msg.user}, attempting to play anyway`)
+              audio.removeEventListener('canplaythrough', canPlayHandler)
+              tryPlay()
+            }
+          }, 5000)
+        }
       }
       
       setLog(l => [{

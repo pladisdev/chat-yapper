@@ -232,7 +232,7 @@ chat-yapper/
 - Memory Management
 
 ## Bugs
-- audio crackling sometimes
+- audio crackling sometimes (Potential fix is in, need to test further)
 
 ## Acknowledgments
 

@@ -41,7 +41,7 @@ function AvatarPlacementSettings({ settings, updateSettings, apiUrl }) {
             onClick={() => updateSettings({ avatarMode: 'grid' })}
             className="flex-1"
           >
-            Grid Layout
+            Crowd Mode
           </Button>
           <Button
             variant={avatarMode === 'popup' ? 'default' : 'outline'}
