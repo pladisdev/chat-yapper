@@ -808,8 +808,14 @@ export default function YappersPage() {
               console.error(`Audio play() failed for ${msg.user}:`, error)
               // CRITICAL: Clean up on play failure to prevent backend thinking slot is occupied
               if (currentAvatarMode === 'popup') {
-                // For popup mode, use the cleanup from the earlier event listeners
-                // The 'error' event listener will handle cleanup
+                // Clean up audio tracking for popup mode
+                const username = msg.user?.toLowerCase()
+                if (username && activeAudioRef.current.get(username) === audio) {
+                  activeAudioRef.current.delete(username)
+                }
+                if (audio) {
+                  allActiveAudioRef.current.delete(audio)
+                }
               } else if (targetSlot) {
                 const end = () => {
                   logger.info('Audio ended (from play error) - deactivating avatar:', targetSlot.id)
