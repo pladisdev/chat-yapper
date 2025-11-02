@@ -5,6 +5,7 @@ import { Slider } from '../ui/slider'
 import { Input } from '../ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
 import { MessageSquare } from 'lucide-react'
+import { hexColorWithOpacity } from '../../utils/colorUtils'
 
 const FONT_OPTIONS = [
   { value: 'Arial, sans-serif', label: 'Arial' },
@@ -213,7 +214,7 @@ function ChatBubbleSettings({ settings, onUpdate }) {
               <div 
                 className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 whitespace-nowrap"
                 style={{
-                  backgroundColor: `${bubbleBackgroundColor}${Math.round(bubbleOpacity * 255).toString(16).padStart(2, '0')}`,
+                  backgroundColor: hexColorWithOpacity(bubbleBackgroundColor, bubbleOpacity),
                   borderRadius: bubbleRounded ? '12px' : '4px',
                   fontFamily: bubbleFontFamily,
                   fontSize: `${bubbleFontSize}px`,
@@ -227,7 +228,7 @@ function ChatBubbleSettings({ settings, onUpdate }) {
                   style={{
                     borderLeft: '6px solid transparent',
                     borderRight: '6px solid transparent',
-                    borderTop: `6px solid ${bubbleBackgroundColor}${Math.round(bubbleOpacity * 255).toString(16).padStart(2, '0')}`
+                    borderTop: `6px solid ${hexColorWithOpacity(bubbleBackgroundColor, bubbleOpacity)}`
                   }}
                 />
               </div>
