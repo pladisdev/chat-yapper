@@ -675,25 +675,18 @@ export default function YappersPage() {
           // Pop-up mode: Create a new independent avatar instance
           logger.info('Pop-up mode: Creating new avatar instance')
           
-          // Use a ref object so the cleanup can access the latest popupId value
-          const popupIdRef = { current: null }
-          
-          audio.addEventListener('play', () => {
-            logger.info('Audio started playing - creating popup avatar')
-            popupIdRef.current = createPopupAvatar(audio, selectedAvatar, msg.message)
-          })
+          // Create popup avatar immediately to avoid race condition
+          // This ensures popupId is always set before any cleanup handlers run
+          const popupId = createPopupAvatar(audio, selectedAvatar, msg.message)
+          logger.info('Created popup avatar with ID:', popupId)
           
           let cleanedUp = false
           const end = () => {
             if (cleanedUp) return
             cleanedUp = true
             
-            logger.info('Audio ended - removing popup avatar')
-            if (popupIdRef.current) {
-              removePopupAvatar(popupIdRef.current)
-            } else {
-              logger.warn('Popup avatar was removed before popupId was set')
-            }
+            logger.info('Audio ended - removing popup avatar:', popupId)
+            removePopupAvatar(popupId)
             
             // Clean up audio tracking
             const username = msg.user?.toLowerCase()
