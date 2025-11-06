@@ -79,6 +79,12 @@ export default function SettingsPage() {
     // Load settings
     fetch(`${apiUrl}/api/settings`).then(r => r.json()).then(data => {
       setSettings(data)
+      // Apply text size setting globally on load
+      if (data.textSize === 'large') {
+        document.documentElement.classList.add('text-large')
+      } else {
+        document.documentElement.classList.remove('text-large')
+      }
     })
     
     // Load voices from database

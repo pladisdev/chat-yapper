@@ -3,6 +3,7 @@
 },
 "audioFormat": "mp3",
 "volume": 1.0,
+"textSize": "normal",
 "avatarMode": "grid",
 "popupDirection": "bottom",
 "popupFixedEdge": false,
@@ -43,7 +44,11 @@
 "enabled": false,
 "channel": "",
 "token": "",
-"nick": ""
+"nick": "",
+"redeemFilter": {
+"enabled": false,
+"allowedRedeemNames": []
+}
 },
 "youtube": {
 "enabled": false,

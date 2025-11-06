@@ -5,20 +5,148 @@ import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { Switch } from '../ui/switch'
 import { Button } from '../ui/button'
+import { useWebSocket } from '../../WebSocketContext'
 import { 
   Zap, 
-  CheckCircle2
+  CheckCircle2,
+  AlertTriangle
 } from 'lucide-react'
+
+function RedeemNamesManager({ redeemNames, onUpdate }) {
+  const [newRedeem, setNewRedeem] = useState('')
+
+  const addRedeem = () => {
+    const redeemName = newRedeem.trim()
+    if (!redeemName) return
+    
+    if (redeemNames.some(name => name.toLowerCase() === redeemName.toLowerCase())) {
+      alert('This redeem name is already in the list')
+      return
+    }
+    
+    onUpdate([...redeemNames, redeemName])
+    setNewRedeem('')
+  }
+
+  const removeRedeem = (redeemToRemove) => {
+    onUpdate(redeemNames.filter(name => name !== redeemToRemove))
+  }
+
+  const clearAllRedeems = () => {
+    if (redeemNames.length === 0) return
+    if (confirm(`Are you sure you want to remove all ${redeemNames.length} redeem names?`)) {
+      onUpdate([])
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex gap-2">
+        <Input
+          placeholder="Enter redeem name..."
+          value={newRedeem}
+          onChange={e => setNewRedeem(e.target.value)}
+          onKeyPress={e => e.key === 'Enter' && addRedeem()}
+        />
+        <Button
+          onClick={addRedeem}
+          disabled={!newRedeem.trim()}
+        >
+          Add
+        </Button>
+      </div>
+
+      {redeemNames.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium">
+              Allowed Redeems ({redeemNames.length})
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearAllRedeems}
+              className="h-auto py-1 px-2 text-xs text-destructive hover:text-destructive"
+            >
+              Clear All
+            </Button>
+          </div>
+          
+          <div className="max-h-32 overflow-y-auto space-y-1">
+            {redeemNames.map((name, index) => (
+              <div key={index} className="flex items-center justify-between p-2 rounded-lg border bg-card">
+                <span className="text-sm">{name}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => removeRedeem(name)}
+                  className="h-auto py-1 px-2 text-destructive hover:text-destructive"
+                  title={`Remove ${name}`}
+                >
+                  ✕
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {redeemNames.length === 0 && (
+        <p className="text-xs text-muted-foreground text-center py-2">
+          No redeem names added yet
+        </p>
+      )}
+    </div>
+  )
+}
 
 function TwitchIntegration({ settings, updateSettings, apiUrl = '' }) {
   const [twitchStatus, setTwitchStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [channelInput, setChannelInput] = useState('');
+  const [authError, setAuthError] = useState(null);
+  const { addListener } = useWebSocket();
 
-  // Check Twitch connection status on component mount
+  // Check Twitch connection status and auth errors on component mount
   useEffect(() => {
     checkTwitchStatus();
+    checkAuthError();
   }, []);
+
+  const checkAuthError = async () => {
+    try {
+      logger.info('=== CHECKING FOR AUTH ERRORS ===');
+      const response = await fetch(`${apiUrl}/api/twitch/auth-error`);
+      const result = await response.json();
+      logger.info('Auth error check result:', result);
+      
+      if (result.has_error && result.error) {
+        logger.error('=== PENDING AUTH ERROR FOUND ===');
+        logger.error('Auth error details:', result.error);
+        setAuthError(result.error.message);
+        setTwitchStatus({ connected: false });
+      } else {
+        logger.info('No auth error found');
+      }
+    } catch (error) {
+      logger.error('Failed to check for auth errors:', error);
+    }
+  };
+
+  // Listen for WebSocket messages including auth errors
+  useEffect(() => {
+    const removeListener = addListener((data) => {
+      logger.info('WebSocket message received in TwitchIntegration:', data.type);
+      if (data.type === 'twitch_auth_error') {
+        logger.error('Twitch authentication error received:', data.message);
+        setAuthError(data.message);
+        // Also update the status to disconnected
+        setTwitchStatus({ connected: false });
+      }
+    });
+
+    return removeListener;
+  }, [addListener]);
 
   // Sync channel input with settings
   useEffect(() => {
@@ -32,6 +160,51 @@ function TwitchIntegration({ settings, updateSettings, apiUrl = '' }) {
       const response = await fetch(`${apiUrl}/api/twitch/status`);
       const status = await response.json();
       setTwitchStatus(status);
+      
+      // If connected, test the actual connection to detect auth issues
+      if (status.connected && settings.twitch?.enabled) {
+        logger.info('Twitch shows connected, testing actual connection...');
+        try {
+          const testResponse = await fetch(`${apiUrl}/api/twitch/test-connection`, {
+            method: 'POST'
+          });
+          const testResult = await testResponse.json();
+          
+          if (!testResult.success) {
+            logger.warning('Twitch connection test failed:', testResult.error);
+            // Don't override the status here, let the test function handle auth errors
+            // The WebSocket listener will catch any auth errors that are broadcast
+          } else {
+            logger.info('Twitch connection test passed');
+            // Clear any existing auth errors since connection is working
+            if (authError) {
+              setAuthError(null);
+              try {
+                await fetch(`${apiUrl}/api/twitch/auth-error`, { method: 'DELETE' });
+              } catch (error) {
+                logger.error('Failed to clear auth error on backend:', error);
+              }
+            }
+          }
+        } catch (testError) {
+          logger.error('Failed to test Twitch connection:', testError);
+        }
+      }
+      
+      // Clear auth error if we're now connected
+      else if (status.connected && authError) {
+        setAuthError(null);
+        // Also clear it on the backend
+        try {
+          await fetch(`${apiUrl}/api/twitch/auth-error`, { method: 'DELETE' });
+        } catch (error) {
+          logger.error('Failed to clear auth error on backend:', error);
+        }
+      }
+      // If not connected, also check for auth errors
+      else if (!status.connected) {
+        await checkAuthError();
+      }
     } catch (error) {
       logger.error('Failed to check Twitch status:', error);
       setTwitchStatus({ connected: false });
@@ -105,6 +278,51 @@ function TwitchIntegration({ settings, updateSettings, apiUrl = '' }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Authentication Error Display */}
+        {authError && (
+          <div className="flex items-center gap-3 p-4 rounded-lg border bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800">
+            <AlertTriangle className="w-5 h-5 text-red-500" />
+            <div className="flex-1">
+              <p className="font-medium text-red-900 dark:text-red-100">Authentication Failed</p>
+              <p className="text-sm text-red-700 dark:text-red-200">{authError}</p>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  setAuthError(null);
+                  // Clear the error on the backend too
+                  try {
+                    await fetch(`${apiUrl}/api/twitch/auth-error`, { method: 'DELETE' });
+                  } catch (error) {
+                    logger.error('Failed to clear auth error on backend:', error);
+                  }
+                }}
+                className="border-red-300 text-red-700 hover:bg-red-100 dark:border-red-700 dark:text-red-200 dark:hover:bg-red-900"
+              >
+                Dismiss
+              </Button>
+              <Button
+                size="sm"
+                onClick={async () => {
+                  setAuthError(null);
+                  // Clear the error on the backend too
+                  try {
+                    await fetch(`${apiUrl}/api/twitch/auth-error`, { method: 'DELETE' });
+                  } catch (error) {
+                    logger.error('Failed to clear auth error on backend:', error);
+                  }
+                  connectToTwitch();
+                }}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                Reconnect
+              </Button>
+            </div>
+          </div>
+        )}
+
         {!twitchStatus?.connected ? (
           <div className="text-center space-y-4 py-8">
             <div className="space-y-2">
@@ -158,14 +376,27 @@ function TwitchIntegration({ settings, updateSettings, apiUrl = '' }) {
               <Switch
                 id="twitch-enabled"
                 checked={!!settings.twitch?.enabled}
-                onCheckedChange={checked => updateSettings({ 
-                  twitch: { 
-                    ...settings.twitch, 
-                    enabled: checked,
-                    // Set the connected username as the channel by default
-                    channel: checked && !settings.twitch?.channel ? twitchStatus.username : settings.twitch?.channel
-                  } 
-                })}
+                onCheckedChange={async (checked) => {
+                  // Update settings first
+                  await updateSettings({ 
+                    twitch: { 
+                      ...settings.twitch, 
+                      enabled: checked,
+                      // Set the connected username as the channel by default
+                      channel: checked && !settings.twitch?.channel ? twitchStatus.username : settings.twitch?.channel
+                    } 
+                  });
+                  
+                  // If enabling, check for auth errors after a short delay to let backend start
+                  if (checked) {
+                    setTimeout(async () => {
+                      await checkAuthError();
+                    }, 2000); // Give the backend time to attempt connection and fail
+                  } else {
+                    // If disabling, clear any existing auth error
+                    setAuthError(null);
+                  }
+                }}
               />
             </div>
 
@@ -194,6 +425,54 @@ function TwitchIntegration({ settings, updateSettings, apiUrl = '' }) {
                   <p className="text-sm text-muted-foreground">
                     Usually your own channel: <code>{twitchStatus.username}</code>
                   </p>
+                </div>
+
+                {/* Channel Point Redeem Filter */}
+                <div className="p-4 rounded-lg border bg-card space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-1">
+                      <Label htmlFor="redeem-filter-enabled" className="text-base">
+                        Channel Point Redeem Messages Only
+                      </Label>
+                    </div>
+                    <Switch
+                      id="redeem-filter-enabled"
+                      checked={!!settings.twitch?.redeemFilter?.enabled}
+                      onCheckedChange={checked => updateSettings({
+                        twitch: {
+                          ...settings.twitch,
+                          redeemFilter: {
+                            ...settings.twitch?.redeemFilter,
+                            enabled: checked
+                          }
+                        }
+                      })}
+                    />
+                  </div>
+
+                  {settings.twitch?.redeemFilter?.enabled && (
+                    <div className="space-y-2">
+                      <Label htmlFor="allowed-redeems">
+                        Channel Point Reward Names
+                      </Label>
+                      <RedeemNamesManager
+                        redeemNames={settings.twitch?.redeemFilter?.allowedRedeemNames || []}
+                        onUpdate={(names) => updateSettings({
+                          twitch: {
+                            ...settings.twitch,
+                            redeemFilter: {
+                              ...settings.twitch?.redeemFilter,
+                              allowedRedeemNames: names
+                            }
+                          }
+                        })}
+                      />
+                      <p className="text-sm text-muted-foreground">
+                        Enter the exact names of your channel point rewards. Names are case-insensitive. 
+                        You can find reward names in your Twitch Dashboard under Channel Points.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -251,13 +530,13 @@ function SpecialEventVoices({ settings, updateSettings, allVoices }) {
 }
 
 // Export both components individually for flexibility, and a combined component as default
-export { TwitchIntegration, SpecialEventVoices }
+export { TwitchIntegration, SpecialEventVoices, RedeemNamesManager }
 
 export default function TwitchIntegrationTab({ settings, updateSettings, allVoices, apiUrl }) {
   return (
     <div className="space-y-6">
       <TwitchIntegration settings={settings} updateSettings={updateSettings} apiUrl={apiUrl} />
-      <SpecialEventVoices settings={settings} updateSettings={updateSettings} allVoices={allVoices} />
+      {/* <SpecialEventVoices settings={settings} updateSettings={updateSettings} allVoices={allVoices} /> */}
     </div>
   )
 }

@@ -64,6 +64,29 @@ function GeneralSettings({ settings, setSettings, updateSettings, apiUrl }) {
 
         <div className="flex items-center justify-between">
           <div>
+            <Label className="text-base">Font Size</Label>
+          </div>
+          <Button
+            onClick={() => {
+              const newSize = settings.textSize === 'large' ? 'normal' : 'large'
+              updateSettings({ textSize: newSize })
+              // Apply text size class globally to the html element
+              if (newSize === 'large') {
+                document.documentElement.classList.add('text-large')
+              } else {
+                document.documentElement.classList.remove('text-large')
+              }
+            }}
+            variant="outline"
+            size="sm"
+            className="gap-2"
+          >
+            {settings.textSize === 'large' ? 'Large Text' : 'Normal Text'}
+          </Button>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
             <Label className="text-base">TTS Control</Label>
             <p className="text-sm text-muted-foreground">Stop all TTS and prevent new messages from being spoken</p>
           </div>

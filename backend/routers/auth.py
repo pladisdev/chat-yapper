@@ -5,6 +5,7 @@ import asyncio
 import secrets
 import time
 import urllib.parse
+from datetime import datetime, timedelta
 from typing import Dict, Any
 
 import aiohttp
@@ -120,6 +121,12 @@ async def twitch_auth_status():
     try:
         auth = get_auth()
         if auth:
+            # Clear any pending auth error since we're now connected
+            import app
+            if hasattr(app, 'twitch_auth_error') and app.twitch_auth_error:
+                logger.info("Clearing Twitch auth error - user is now connected")
+                app.twitch_auth_error = None
+            
             return {
                 "connected": True,
                 "username": auth.username,
@@ -171,6 +178,180 @@ async def api_test_twitch():
         return {"success": True, "message": f"Twitch connection test initiated for {token_info['username']} -> #{channel}"}
     except Exception as e:
         logger.error(f"Twitch test failed: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+@router.post("/api/twitch/test-auth-error")
+async def test_auth_error():
+    """Test endpoint to simulate an auth error for debugging"""
+    try:
+        # Import here to avoid circular imports
+        from app import hub, twitch_auth_error
+        
+        # Set the global auth error
+        import app
+        app.twitch_auth_error = {
+            "type": "twitch_auth_error",
+            "message": "Test authentication error. Please reconnect your account.",
+            "error": "Simulated authentication failure"
+        }
+        
+        # Broadcast to all connected clients
+        await hub.broadcast(app.twitch_auth_error)
+        
+        logger.info(f"Test auth error sent to {len(hub.clients)} clients")
+        return {"success": True, "message": f"Test auth error sent to {len(hub.clients)} clients"}
+    except Exception as e:
+        logger.error(f"Failed to send test auth error: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+@router.get("/api/twitch/auth-error")
+async def get_auth_error():
+    """Get any pending authentication error"""
+    logger.info("=== AUTH ERROR ENDPOINT CALLED ===")
+    try:
+        import app
+        logger.info(f"App module imported, checking for twitch_auth_error attribute")
+        logger.info(f"Has twitch_auth_error attribute: {hasattr(app, 'twitch_auth_error')}")
+        
+        if hasattr(app, 'twitch_auth_error'):
+            logger.info(f"twitch_auth_error value: {app.twitch_auth_error}")
+            
+        if hasattr(app, 'twitch_auth_error') and app.twitch_auth_error:
+            error = app.twitch_auth_error.copy()
+            # Don't clear the error automatically - let frontend decide when to clear it
+            logger.info("=== RETURNING AUTH ERROR TO FRONTEND ===")
+            logger.info(f"Error: {error}")
+            return {"has_error": True, "error": error}
+        
+        logger.info("No auth error found, returning has_error: False")
+        return {"has_error": False}
+    except Exception as e:
+        logger.error(f"Error checking auth error: {e}", exc_info=True)
+        return {"has_error": False, "error": str(e)}
+
+@router.delete("/api/twitch/auth-error")
+async def clear_auth_error():
+    """Clear any pending authentication error"""
+    try:
+        import app
+        if hasattr(app, 'twitch_auth_error') and app.twitch_auth_error:
+            app.twitch_auth_error = None
+            logger.info("Cleared pending auth error")
+            return {"success": True, "message": "Auth error cleared"}
+        return {"success": True, "message": "No auth error to clear"}
+    except Exception as e:
+        logger.error(f"Error clearing auth error: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+@router.post("/api/twitch/refresh-token")
+async def refresh_token_endpoint():
+    """Manually refresh the Twitch access token"""
+    try:
+        auth = get_auth()
+        if not auth:
+            return {"success": False, "error": "No Twitch account connected"}
+        
+        if not auth.refresh_token:
+            return {"success": False, "error": "No refresh token available - please reconnect your account"}
+        
+        logger.info("Manual token refresh requested")
+        refreshed_token_data = await refresh_twitch_token(auth.refresh_token)
+        
+        if refreshed_token_data:
+            # Get updated user info
+            user_info = await get_twitch_user_info(refreshed_token_data["access_token"])
+            if user_info:
+                # Store the refreshed token
+                await store_twitch_auth(user_info, refreshed_token_data)
+                logger.info("Successfully refreshed Twitch token manually")
+                
+                # Clear any auth errors since we have a fresh token
+                import app
+                if hasattr(app, 'twitch_auth_error') and app.twitch_auth_error:
+                    app.twitch_auth_error = None
+                    logger.info("Cleared auth error after manual token refresh")
+                
+                return {
+                    "success": True, 
+                    "message": f"Token refreshed successfully for {user_info['login']}"
+                }
+            else:
+                return {"success": False, "error": "Failed to get user info after token refresh"}
+        else:
+            return {"success": False, "error": "Failed to refresh token - may need to reconnect your account"}
+    
+    except Exception as e:
+        logger.error(f"Error refreshing token: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+@router.post("/api/twitch/test-connection")
+async def test_twitch_connection_endpoint():
+    """Test Twitch connection to detect auth issues proactively"""
+    try:
+        logger.info("Testing Twitch connection via API endpoint...")
+        
+        # Get current settings and token (this will auto-refresh if needed)
+        settings = get_settings()
+        if not settings.get("twitch", {}).get("enabled"):
+            return {"success": False, "error": "Twitch integration is disabled"}
+        
+        token_info = await get_twitch_token_for_bot()
+        if not token_info:
+            return {"success": False, "error": "No Twitch account connected"}
+        
+        # Import the test function from app
+        from app import test_twitch_connection
+        
+        # Run the connection test
+        connection_successful = await test_twitch_connection(token_info)
+        
+        if connection_successful:
+            # Clear any existing auth error since connection is working
+            import app
+            if hasattr(app, 'twitch_auth_error') and app.twitch_auth_error:
+                app.twitch_auth_error = None
+                logger.info("Connection test passed - cleared any existing auth errors")
+            
+            return {
+                "success": True, 
+                "message": f"Twitch connection successful for {token_info['username']}"
+            }
+        else:
+            return {
+                "success": False, 
+                "error": "Twitch connection test failed - check logs for details"
+            }
+    
+    except Exception as e:
+        logger.error(f"Error testing Twitch connection: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+@router.post("/api/twitch/test-auto-refresh")
+async def test_auto_refresh():
+    """Test the automatic token refresh functionality"""
+    try:
+        # Reset the refresh attempt tracking to allow testing
+        import app
+        if hasattr(app, 'twitch_refresh_attempted'):
+            old_value = app.twitch_refresh_attempted
+            app.twitch_refresh_attempted = False
+            logger.info(f"Reset twitch_refresh_attempted from {old_value} to False for testing")
+        
+        # Simulate an auth error to trigger the refresh logic
+        from app import handle_twitch_task_creation_error
+        test_error = Exception("Authentication failed: invalid access token")
+        
+        # This will attempt the automatic refresh
+        await handle_twitch_task_creation_error(test_error, "manual_test")
+        
+        return {
+            "success": True,
+            "message": "Auto-refresh test completed - check logs for details",
+            "refresh_attempted": getattr(app, 'twitch_refresh_attempted', False)
+        }
+    
+    except Exception as e:
+        logger.error(f"Error testing auto-refresh: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
 
 # Helper functions for OAuth
@@ -231,14 +412,87 @@ async def store_twitch_auth(user_info: Dict[str, Any], token_data: Dict[str, Any
         logger.error(f"Error storing Twitch auth: {e}")
         raise
 
-async def get_twitch_token_for_bot():
-    """Get current Twitch token for bot connection"""
+async def refresh_twitch_token(refresh_token: str) -> Dict[str, Any]:
+    """Refresh an expired Twitch access token"""
     try:
-        return get_twitch_token()
+        data = {
+            "client_id": TWITCH_CLIENT_ID,
+            "client_secret": TWITCH_CLIENT_SECRET,
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post("https://id.twitch.tv/oauth2/token", data=data) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    logger.info("Successfully refreshed Twitch token")
+                    return result
+                else:
+                    error_text = await response.text()
+                    logger.error(f"Token refresh failed: {response.status} - {error_text}")
+                    return None
+    except Exception as e:
+        logger.error(f"Error refreshing Twitch token: {e}")
+        return None
+
+async def get_twitch_token_for_bot():
+    """Get current Twitch token for bot connection with automatic refresh"""
+    try:
+        auth = get_auth()
+        if not auth:
+            return None
+            
+        # Check if token needs refresh (if expires_at is set and in the past)
+        needs_refresh = False
+        if auth.expires_at:
+            try:
+                expires_at = datetime.fromisoformat(auth.expires_at)
+                # Add 5-minute buffer to refresh before actual expiration
+                buffer_time = expires_at - timedelta(minutes=5)
+                if datetime.now() >= buffer_time:
+                    needs_refresh = True
+                    logger.info(f"Twitch token expires at {expires_at}, refreshing with 5-minute buffer")
+            except ValueError as e:
+                logger.warning(f"Invalid expires_at format: {auth.expires_at}, will attempt refresh: {e}")
+                needs_refresh = True
+        
+        # Attempt token refresh if needed and refresh token is available
+        if needs_refresh and auth.refresh_token:
+            logger.info("Attempting to refresh Twitch token...")
+            
+            refreshed_token_data = await refresh_twitch_token(auth.refresh_token)
+            if refreshed_token_data:
+                # Get updated user info to ensure account is still valid
+                user_info = await get_twitch_user_info(refreshed_token_data["access_token"])
+                if user_info:
+                    # Store the refreshed token
+                    await store_twitch_auth(user_info, refreshed_token_data)
+                    logger.info("Successfully refreshed and stored new Twitch token")
+                    
+                    # Return the new token info
+                    return {
+                        "token": refreshed_token_data["access_token"],
+                        "username": user_info["login"],
+                        "user_id": user_info["id"]
+                    }
+                else:
+                    logger.error("Failed to get user info after token refresh")
+            else:
+                logger.error("Failed to refresh Twitch token - may need to re-authenticate")
+                # Could set a flag here to notify frontend that re-auth is needed
+                return None
+        
+        # Return current token if no refresh needed or no refresh token available
+        return {
+            "token": auth.access_token,
+            "username": auth.username,
+            "user_id": auth.twitch_user_id
+        }
+        
     except Exception as e:
         logger.error(f"Error getting Twitch token: {e}")
-    
-    return None
+        return None
 
 
 # YouTube OAuth Endpoints

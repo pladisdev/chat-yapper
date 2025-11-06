@@ -228,6 +228,9 @@ chat-yapper/
 ### v1.2.1 (Latest)
 - **New Features:**
  - usernames for chatbubbles
+ - text size adjustment
+ - Toggle for only allowing redeem messages for twitch
+ - twitch token refresh (should fix auth issues)
 
 ### v1.2.0
 - Chat bubbles above avatars
