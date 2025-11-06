@@ -173,7 +173,7 @@ export default function YappersPage() {
   const popupIdCounter = useRef(0)
   
   // Track chat messages for both grid and popup modes
-  const [chatMessages, setChatMessages] = useState({}) // slotId/popupId -> message text
+  const [chatMessages, setChatMessages] = useState({}) // slotId/popupId -> { message: string, username: string }
   
   // Helper function to check if two positions overlap
   const checkOverlap = useCallback((pos1, pos2, avatarSize) => {
@@ -283,7 +283,7 @@ export default function YappersPage() {
   // Helper function to get random avatar from available avatars
   
   // Helper function to create a new popup avatar instance
-  const createPopupAvatar = useCallback((audioElement, avatarData, message) => {
+  const createPopupAvatar = useCallback((audioElement, avatarData, message, username) => {
     const id = `popup_${popupIdCounter.current++}`
     
     // Get existing avatar positions to avoid overlaps
@@ -308,9 +308,9 @@ export default function YappersPage() {
         audio: audioElement
       }
       
-      // Store the chat message
+      // Store the chat message with username
       if (message) {
-        setChatMessages(prev => ({ ...prev, [id]: message }))
+        setChatMessages(prev => ({ ...prev, [id]: { message, username: username || 'Unknown' } }))
       }
       
       // Activate after a brief delay to trigger animation
@@ -348,10 +348,10 @@ export default function YappersPage() {
   }, [])
   
   // Helper function to activate slot with random position for GRID mode only
-  const activateSlot = useCallback((slotId, message) => {
+  const activateSlot = useCallback((slotId, message, username) => {
     setActiveSlots(slots => ({...slots, [slotId]: true}))
     if (message) {
-      setChatMessages(prev => ({ ...prev, [slotId]: message }))
+      setChatMessages(prev => ({ ...prev, [slotId]: { message, username: username || 'Unknown' } }))
     }
     logger.info(`Activated slot ${slotId}`)
   }, [])
@@ -400,7 +400,7 @@ export default function YappersPage() {
       if (nextSpeech.targetSlot) {
         utterance.addEventListener('start', () => {
           logger.info('Web Speech started - activating avatar:', nextSpeech.targetSlot.id)
-          activateSlot(nextSpeech.targetSlot.id, nextSpeech.data.text)
+          activateSlot(nextSpeech.targetSlot.id, nextSpeech.data.text, nextSpeech.data.user)
         })
         
         const end = () => {
@@ -688,7 +688,7 @@ export default function YappersPage() {
           
           // Create popup avatar immediately to avoid race condition
           // This ensures popupId is always set before any cleanup handlers run
-          const popupId = createPopupAvatar(audio, selectedAvatar, msg.message)
+          const popupId = createPopupAvatar(audio, selectedAvatar, msg.message, msg.user)
           logger.info('Created popup avatar with ID:', popupId)
           
           let cleanedUp = false
@@ -719,7 +719,7 @@ export default function YappersPage() {
           
           audio.addEventListener('play', () => {
             logger.info('Audio started playing - activating avatar:', targetSlot.id)
-            activateSlot(targetSlot.id, msg.message)
+            activateSlot(targetSlot.id, msg.message, msg.user)
           })
           
           let cleanedUp = false
@@ -1030,37 +1030,65 @@ export default function YappersPage() {
                     transform: 'translate(-50%, -100%)',
                     minWidth: '120px',
                     maxWidth: '300px',
-                    padding: '8px 12px',
-                    background: hexColorWithOpacity(settings?.bubbleBackgroundColor || '#000000', settings?.bubbleOpacity ?? 0.85),
-                    color: settings?.bubbleFontColor || '#ffffff',
-                    borderRadius: (settings?.bubbleRounded ?? true) ? '12px' : '4px',
-                    fontFamily: settings?.bubbleFontFamily || 'Arial, sans-serif',
-                    fontSize: `${settings?.bubbleFontSize ?? 14}px`,
-                    lineHeight: '1.4',
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-word',
                     pointerEvents: 'none',
                     zIndex: 1,
                     opacity: activeSlots[slot.id] ? 1 : 0,
-                    transition: 'opacity 300ms ease-out',
-                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)'
+                    transition: 'opacity 300ms ease-out'
                   }}
                 >
-                  {chatMessages[slot.id]}
-                  {/* Speech bubble tail */}
+                  {/* Username label */}
+                  {(settings?.bubbleShowUsername ?? true) && chatMessages[slot.id].username && (
+                    <div
+                      style={{
+                        paddingLeft: '8px',
+                        paddingRight: '8px',
+                        paddingBottom: '1px',
+                        fontFamily: settings?.bubbleFontFamily || 'Arial, sans-serif',
+                        fontSize: `${Math.max(10, (settings?.bubbleFontSize ?? 14) - 2)}px`,
+                        color: settings?.bubbleUsernameColor || '#ffffff',
+                        fontWeight: '600',
+                        opacity: 0.9,
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        maxWidth: '300px'
+                      }}
+                    >
+                      {chatMessages[slot.id].username}
+                    </div>
+                  )}
+                  
+                  {/* Message bubble */}
                   <div
                     style={{
-                      position: 'absolute',
-                      bottom: '-6px',
-                      left: '50%',
-                      transform: 'translateX(-50%)',
-                      width: 0,
-                      height: 0,
-                      borderLeft: '6px solid transparent',
-                      borderRight: '6px solid transparent',
-                      borderTop: `6px solid ${hexColorWithOpacity(settings?.bubbleBackgroundColor || '#000000', settings?.bubbleOpacity ?? 0.85)}`
+                      padding: '8px 12px',
+                      background: hexColorWithOpacity(settings?.bubbleBackgroundColor || '#000000', settings?.bubbleOpacity ?? 0.85),
+                      color: settings?.bubbleFontColor || '#ffffff',
+                      borderRadius: (settings?.bubbleRounded ?? true) ? '12px' : '4px',
+                      fontFamily: settings?.bubbleFontFamily || 'Arial, sans-serif',
+                      fontSize: `${settings?.bubbleFontSize ?? 14}px`,
+                      lineHeight: '1.4',
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)'
                     }}
-                  />
+                  >
+                    {chatMessages[slot.id].message}
+                    {/* Speech bubble tail */}
+                    <div
+                      style={{
+                        position: 'absolute',
+                        bottom: '-6px',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        width: 0,
+                        height: 0,
+                        borderLeft: '6px solid transparent',
+                        borderRight: '6px solid transparent',
+                        borderTop: `6px solid ${hexColorWithOpacity(settings?.bubbleBackgroundColor || '#000000', settings?.bubbleOpacity ?? 0.85)}`
+                      }}
+                    />
+                  </div>
                 </div>
               )}
               
@@ -1359,8 +1387,38 @@ export default function YappersPage() {
                 >
                   {/* Chat bubble for popup mode */}
                   {settings?.chatBubblesEnabled !== false && chatMessages[id] && (
-                    <div style={getChatBubbleStyle()}>
-                      {chatMessages[id]}
+                    <div style={{
+                      ...getChatBubbleStyle(),
+                      padding: '0' // Remove padding from container, apply to inner elements
+                    }}>
+                      {/* Username label */}
+                      {(settings?.bubbleShowUsername ?? true) && chatMessages[id].username && (
+                        <div
+                          style={{
+                            paddingLeft: '12px',
+                            paddingRight: '12px',
+                            paddingTop: '6px',
+                            paddingBottom: '1px',
+                            fontFamily: settings?.bubbleFontFamily || 'Arial, sans-serif',
+                            fontSize: `${Math.max(10, (settings?.bubbleFontSize ?? 14) - 2)}px`,
+                            color: settings?.bubbleUsernameColor || '#ffffff',
+                            fontWeight: '600',
+                            opacity: 0.9,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis'
+                          }}
+                        >
+                          {chatMessages[id].username}
+                        </div>
+                      )}
+                      {/* Message text */}
+                      <div style={{
+                        padding: '8px 12px',
+                        paddingTop: (settings?.bubbleShowUsername ?? true) && chatMessages[id].username ? '4px' : '8px'
+                      }}>
+                        {chatMessages[id].message}
+                      </div>
                       {/* Speech bubble tail */}
                       <div
                         style={{

@@ -225,19 +225,20 @@ chat-yapper/
 
 ## Changelog
 
-### v1.2.0 (Latest)
+### v1.2.1 (Latest)
 - **New Features:**
-  - Chat bubbles above avatars
-  - Pop-up mode for avatars
-  - Linux standalone build (x64)
-  - Improved audio quality (reduced crackling)
-  - Docker multi-architecture support (amd64, arm64)
-  
-- **Improvements:**
-  - Better audio preloading and buffering
-  - High-quality ffmpeg audio processing
-  - GitHub Container Registry (GHCR) for Docker images
-  - Automated cross-platform builds via GitHub Actions
+ - usernames for chatbubbles
+
+### v1.2.0
+- Chat bubbles above avatars
+- Pop-up mode for avatars
+- Linux standalone build (x64)
+- Improved audio quality (reduced crackling)
+- Docker multi-architecture support (amd64, arm64) 
+- Better audio preloading and buffering
+- High-quality ffmpeg audio processing
+- GitHub Container Registry (GHCR) for Docker images
+- Automated cross-platform builds via GitHub Actions
 
 ### v1.1.2
 - Stability fixes

@@ -24,6 +24,8 @@
 "bubbleBackgroundColor": "#000000",
 "bubbleOpacity": 0.85,
 "bubbleRounded": true,
+"bubbleShowUsername": true,
+"bubbleUsernameColor": "#ffffff",
 "tts": {
 "monstertts": {
 "apiKey": ""
