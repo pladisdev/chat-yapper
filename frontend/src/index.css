@@ -24,6 +24,17 @@
     --input: 0 0% 89.8%;
     --ring: 0 0% 3.9%;
     --radius: 0.5rem;
+    
+    /* Text size scaling variables */
+    --text-scale: 1;
+    --text-xs: calc(0.75rem * var(--text-scale));
+    --text-sm: calc(0.875rem * var(--text-scale));
+    --text-base: calc(1rem * var(--text-scale));
+    --text-lg: calc(1.125rem * var(--text-scale));
+    --text-xl: calc(1.25rem * var(--text-scale));
+    --text-2xl: calc(1.5rem * var(--text-scale));
+    --text-3xl: calc(1.875rem * var(--text-scale));
+    --text-4xl: calc(2.25rem * var(--text-scale));
   }
 
   .dark {
@@ -47,6 +58,11 @@
     --input: 0 0% 14.9%;
     --ring: 0 0% 83.1%;
   }
+
+  /* Large text mode */
+  .text-large {
+    --text-scale: 1.25;
+  }
 }
 
 @layer base {
@@ -55,8 +71,19 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-size: var(--text-base);
   }
 }
+
+/* Override Tailwind text sizes to use our CSS variables */
+.text-xs { font-size: var(--text-xs) !important; }
+.text-sm { font-size: var(--text-sm) !important; }
+.text-base { font-size: var(--text-base) !important; }
+.text-lg { font-size: var(--text-lg) !important; }
+.text-xl { font-size: var(--text-xl) !important; }
+.text-2xl { font-size: var(--text-2xl) !important; }
+.text-3xl { font-size: var(--text-3xl) !important; }
+.text-4xl { font-size: var(--text-4xl) !important; }
 
 html, body, #root { 
   height: 100%; 

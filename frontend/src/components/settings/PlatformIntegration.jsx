@@ -1,7 +1,7 @@
 import React from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
-import { TwitchIntegration, SpecialEventVoices } from './TwitchIntegration'
+import { TwitchIntegration } from './TwitchIntegration'
 import YouTubeIntegration from './YouTubeIntegration'
 import { Zap, Youtube } from 'lucide-react'
 
@@ -32,11 +32,6 @@ function PlatformIntegration({ settings, updateSettings, allVoices, apiUrl }) {
               settings={settings} 
               updateSettings={updateSettings} 
               apiUrl={apiUrl} 
-            />
-            <SpecialEventVoices 
-              settings={settings} 
-              updateSettings={updateSettings} 
-              allVoices={allVoices} 
             />
           </TabsContent>
 

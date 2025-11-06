@@ -29,6 +29,8 @@ function ChatBubbleSettings({ settings, onUpdate }) {
   const bubbleBackgroundColor = settings?.bubbleBackgroundColor ?? '#000000'
   const bubbleOpacity = settings?.bubbleOpacity ?? 0.85
   const bubbleRounded = settings?.bubbleRounded ?? true
+  const bubbleShowUsername = settings?.bubbleShowUsername ?? true
+  const bubbleUsernameColor = settings?.bubbleUsernameColor ?? '#ffffff'
 
   const handleToggle = (enabled) => {
     onUpdate({ chatBubblesEnabled: enabled })
@@ -56,6 +58,14 @@ function ChatBubbleSettings({ settings, onUpdate }) {
 
   const handleRoundedToggle = (rounded) => {
     onUpdate({ bubbleRounded: rounded })
+  }
+
+  const handleShowUsernameToggle = (show) => {
+    onUpdate({ bubbleShowUsername: show })
+  }
+
+  const handleUsernameColorChange = (e) => {
+    onUpdate({ bubbleUsernameColor: e.target.value })
   }
 
   return (
@@ -145,6 +155,48 @@ function ChatBubbleSettings({ settings, onUpdate }) {
               </div>
             </div>
 
+            {/* Show Username Toggle */}
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="bubble-show-username" className="text-sm font-medium">
+                  Show Username
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Display the user's name above the message
+                </p>
+              </div>
+              <Switch
+                id="bubble-show-username"
+                checked={bubbleShowUsername}
+                onCheckedChange={handleShowUsernameToggle}
+              />
+            </div>
+
+            {/* Username Color */}
+            {bubbleShowUsername && (
+              <div className="space-y-2">
+                <Label htmlFor="bubble-username-color" className="text-sm font-medium">
+                  Username Color
+                </Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="bubble-username-color"
+                    type="color"
+                    value={bubbleUsernameColor}
+                    onChange={handleUsernameColorChange}
+                    className="w-20 h-10 cursor-pointer"
+                  />
+                  <Input
+                    type="text"
+                    value={bubbleUsernameColor}
+                    onChange={handleUsernameColorChange}
+                    className="flex-1"
+                    placeholder="#ffffff"
+                  />
+                </div>
+              </div>
+            )}
+
             {/* Background Color */}
             <div className="space-y-2">
               <Label htmlFor="bubble-bg-color" className="text-sm font-medium">
@@ -199,6 +251,10 @@ function ChatBubbleSettings({ settings, onUpdate }) {
                 onCheckedChange={handleRoundedToggle}
               />
             </div>
+
+            
+
+            
           </>
         )}
 
@@ -212,25 +268,46 @@ function ChatBubbleSettings({ settings, onUpdate }) {
             {/* Example chat bubble */}
             {chatBubblesEnabled && (
               <div 
-                className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 whitespace-nowrap"
+                className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2"
                 style={{
-                  backgroundColor: hexColorWithOpacity(bubbleBackgroundColor, bubbleOpacity),
-                  borderRadius: bubbleRounded ? '12px' : '4px',
-                  fontFamily: bubbleFontFamily,
-                  fontSize: `${bubbleFontSize}px`,
-                  color: bubbleFontColor,
-                  lineHeight: '1.4'
+                  minWidth: '120px'
                 }}
               >
-                Hello, World!
+                {bubbleShowUsername && (
+                  <div 
+                    className="px-2 py-0.5 mb-0.5"
+                    style={{
+                      fontFamily: bubbleFontFamily,
+                      fontSize: `${Math.max(10, bubbleFontSize - 2)}px`,
+                      color: bubbleUsernameColor,
+                      fontWeight: '600',
+                      opacity: 0.9
+                    }}
+                  >
+                    Username
+                  </div>
+                )}
                 <div 
-                  className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0"
+                  className="px-3 py-2 whitespace-nowrap"
                   style={{
-                    borderLeft: '6px solid transparent',
-                    borderRight: '6px solid transparent',
-                    borderTop: `6px solid ${hexColorWithOpacity(bubbleBackgroundColor, bubbleOpacity)}`
+                    backgroundColor: hexColorWithOpacity(bubbleBackgroundColor, bubbleOpacity),
+                    borderRadius: bubbleRounded ? '12px' : '4px',
+                    fontFamily: bubbleFontFamily,
+                    fontSize: `${bubbleFontSize}px`,
+                    color: bubbleFontColor,
+                    lineHeight: '1.4'
                   }}
-                />
+                >
+                  Hello, World!
+                  <div 
+                    className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0"
+                    style={{
+                      borderLeft: '6px solid transparent',
+                      borderRight: '6px solid transparent',
+                      borderTop: `6px solid ${hexColorWithOpacity(bubbleBackgroundColor, bubbleOpacity)}`
+                    }}
+                  />
+                </div>
               </div>
             )}
           </div>

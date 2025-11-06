@@ -339,4 +339,13 @@ async def run_twitch_bot(token: str, nick: str, channel: str, on_event: Callable
                 bot_logger.error(f"Twitch bot startup failed: {e}", exc_info=True)
         except Exception:
             pass
+        
+        # Check if this is an authentication error
+        error_str = str(e).lower()
+        if "authentication" in error_str or "unauthorized" in error_str or "invalid" in error_str:
+            # Re-raise with a more specific error type that we can catch
+            from twitchio.errors import AuthenticationError
+            if isinstance(e, AuthenticationError) or "access token" in error_str:
+                raise AuthenticationError("Invalid or unauthorized Access Token") from e
+        
         raise
