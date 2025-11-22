@@ -48,7 +48,7 @@ def _is_vip_from(message, tags: Dict[str, Any]) -> bool:
     return "vip/" in badges or badges == "vip"
 
 class TwitchBot(commands.Bot):
-    def __init__(self, token: str, nick: str, channel: str, on_event: Callable[[Dict[str, Any]], None]):
+    def __init__(self, token: str, nick: str, channel: str, on_event: Callable[[Dict[str, Any]], None], user_id: str = None):
         # Handle both access-token and oauth: formats
         if token and not token.startswith("oauth:"):
             token = f"oauth:{token}"
@@ -68,20 +68,21 @@ class TwitchBot(commands.Bot):
                     client_id = TWITCH_CLIENT_ID or ""
                     client_secret = TWITCH_CLIENT_SECRET or ""
                 except ImportError:
-                    # Fallback for embedded builds
+                    # Fallback for embedded builds with fixed client ID
                     try:
                         import embedded_config
-                        client_id = getattr(embedded_config, 'TWITCH_CLIENT_ID', '')
+                        client_id = getattr(embedded_config, 'TWITCH_CLIENT_ID', 'pker88pnps6l8ku90u7ggwvt9dmz2f')
                         client_secret = getattr(embedded_config, 'TWITCH_CLIENT_SECRET', '')
                     except ImportError:
-                        client_id = ""
+                        client_id = "pker88pnps6l8ku90u7ggwvt9dmz2f"
                         client_secret = ""
                 
                 # Validate that we have required credentials for TwitchIO 3.x
                 if not client_id or not client_secret:
                     raise ValueError(f"TwitchIO 3.x requires TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET, but they are not configured. client_id={'present' if client_id else 'missing'}, client_secret={'present' if client_secret else 'missing'}")
                 
-                bot_id = nick
+                # For TwitchIO 3.x, bot_id should be the user ID, not the username
+                bot_id = user_id or nick
                 
                 super().__init__(
                     token=token,
@@ -108,17 +109,18 @@ class TwitchBot(commands.Bot):
                 except ImportError:
                     try:
                         import embedded_config
-                        client_id = getattr(embedded_config, 'TWITCH_CLIENT_ID', '')
+                        client_id = getattr(embedded_config, 'TWITCH_CLIENT_ID', 'pker88pnps6l8ku90u7ggwvt9dmz2f')
                         client_secret = getattr(embedded_config, 'TWITCH_CLIENT_SECRET', '')
                     except ImportError:
-                        client_id = ""
+                        client_id = "pker88pnps6l8ku90u7ggwvt9dmz2f"
                         client_secret = ""
                 
                 # Validate that we have required credentials for TwitchIO 3.x
                 if not client_id or not client_secret:
                     raise ValueError(f"TwitchIO 3.x requires TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET, but they are not configured. client_id={'present' if client_id else 'missing'}, client_secret={'present' if client_secret else 'missing'}")
                 
-                bot_id = nick
+                # For TwitchIO 3.x, bot_id should be the user ID, not the username  
+                bot_id = user_id or nick
                 super().__init__(
                     token=token,
                     client_id=client_id,
@@ -263,7 +265,7 @@ class TwitchBot(commands.Bot):
         self._emit_clearchat(channel, tags)
 
 
-async def run_twitch_bot(token: str, nick: str, channel: str, on_event: Callable[[Dict[str, Any]], None]):
+async def run_twitch_bot(token: str, nick: str, channel: str, on_event: Callable[[Dict[str, Any]], None], user_id: str = None):
     bot_logger = None
     bot = None
     try:
@@ -282,7 +284,7 @@ async def run_twitch_bot(token: str, nick: str, channel: str, on_event: Callable
         pass
 
     try:
-        bot = TwitchBot(token, nick, channel, on_event)
+        bot = TwitchBot(token, nick, channel, on_event, user_id)
         if bot_logger:
             bot_logger.info("Twitch bot instance created, connecting...")
 
