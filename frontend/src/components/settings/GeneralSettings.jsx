@@ -3,11 +3,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { Button } from '../ui/button'
-import { Settings, Sun, Moon } from 'lucide-react'
+import { Switch } from '../ui/switch'
+import { Settings, Sun, Moon, Plus, Minus, Infinity } from 'lucide-react'
 import logger from '../../utils/logger'
 
 function GeneralSettings({ settings, setSettings, updateSettings, apiUrl }) {
   const [tempVolume, setTempVolume] = useState(Math.round((settings.volume !== undefined ? settings.volume : 1.0) * 100))
+  const [customLimit, setCustomLimit] = useState('')
+  const [isCustomMode, setIsCustomMode] = useState(false)
   const [theme, setTheme] = useState(() => {
     // Get theme from localStorage or default to 'dark'
     return localStorage.getItem('theme') || 'dark'
@@ -24,6 +27,20 @@ function GeneralSettings({ settings, setSettings, updateSettings, apiUrl }) {
     localStorage.setItem('theme', theme)
   }, [theme])
 
+  useEffect(() => {
+    // Sync custom mode state with current settings
+    const currentLimit = settings.parallelMessageLimit
+    const presetValues = [1, 2, 3, 4, 5, 6, 8, 10, 15, 20, null]
+    
+    if (currentLimit !== null && !presetValues.includes(currentLimit)) {
+      setIsCustomMode(true)
+      setCustomLimit(currentLimit.toString())
+    } else {
+      setIsCustomMode(false)
+      setCustomLimit('')
+    }
+  }, [settings.parallelMessageLimit])
+
   const toggleTheme = () => {
     setTheme(prevTheme => prevTheme === 'dark' ? 'light' : 'dark')
   }
@@ -35,7 +52,7 @@ function GeneralSettings({ settings, setSettings, updateSettings, apiUrl }) {
           <Settings className="w-5 h-5" />
           General Settings
         </CardTitle>
-        <CardDescription>Configure TTS control and audio volume</CardDescription>
+        <CardDescription>Configure TTS control, audio volume, and message limits</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="flex items-center justify-between">
@@ -85,36 +102,7 @@ function GeneralSettings({ settings, setSettings, updateSettings, apiUrl }) {
           </Button>
         </div>
 
-        <div className="flex items-center justify-between">
-          <div>
-            <Label className="text-base">TTS Control</Label>
-            <p className="text-sm text-muted-foreground">Stop all TTS and prevent new messages from being spoken</p>
-          </div>
-          <Button
-            onClick={async () => {
-              try {
-                // Toggle TTS state in backend
-                const response = await fetch(`${apiUrl}/api/tts/toggle`, { method: 'POST' })
-                const result = await response.json()
-                if (result.success) {
-                  // Backend is now the source of truth - refetch settings to get accurate state
-                  const settingsResponse = await fetch(`${apiUrl}/api/settings`)
-                  const settingsData = await settingsResponse.json()
-                  setSettings(settingsData)
-                  logger.info(`TTS ${result.tts_enabled ? 'enabled' : 'disabled'}`)
-                } else {
-                  console.error('TTS toggle failed:', result.error)
-                }
-              } catch (error) {
-                console.error('Failed to toggle TTS:', error)
-              }
-            }}
-            variant={settings.ttsControl?.enabled !== false ? "destructive" : "default"}
-            size="sm"
-          >
-            {settings.ttsControl?.enabled !== false ? 'Stop TTS' : 'Resume TTS'}
-          </Button>
-        </div>
+
 
         <div className="space-y-2">
           <Label htmlFor="volume">Audio Volume</Label>
@@ -156,6 +144,114 @@ function GeneralSettings({ settings, setSettings, updateSettings, apiUrl }) {
               {tempVolume}%
             </span>
           </div>
+        </div>
+
+        <div className="space-y-3">
+          <Label>Yapper Limit</Label>
+
+          <p className="text-sm text-muted-foreground">
+            Set the maximum number of messages that can be spoken simultaneously
+          </p>
+          
+          <div className="flex items-center gap-4">
+            {/* No Limit Toggle */}
+            <Button
+              onClick={() => {
+                const isUnlimited = settings.parallelMessageLimit === null
+                const newValue = isUnlimited ? 5 : null
+                updateSettings({ parallelMessageLimit: newValue })
+                logger.info(`Parallel message limit changed to ${isUnlimited ? '5' : 'unlimited'}`)
+              }}
+              variant={settings.parallelMessageLimit === null ? "default" : "outline"}
+              className="gap-2 h-10"
+            >
+              <Infinity className="size-4" />
+              No Limit
+            </Button>
+            
+            {/* Button Group with Input and +/- Controls */}
+            <div 
+              role="group" 
+              className="flex w-fit items-stretch [&>*]:focus-visible:z-10 [&>*]:focus-visible:relative [&>input]:flex-1 [&>*:not(:first-child)]:rounded-l-none [&>*:not(:first-child)]:border-l-0 [&>*:not(:last-child)]:rounded-r-none"
+            >
+              <Input
+                type="number"
+                min="1"
+                max="999"
+                value={settings.parallelMessageLimit === null ? '' : (settings.parallelMessageLimit || 5)}
+                onChange={e => {
+                  const value = e.target.value
+                  if (value === '' || value === '0') {
+                    // Don't update on empty or zero
+                    return
+                  }
+                  const numValue = parseInt(value)
+                  if (numValue >= 1 && numValue <= 999) {
+                    updateSettings({ parallelMessageLimit: numValue })
+                    logger.info(`Parallel message limit changed to ${numValue}`)
+                  }
+                }}
+                placeholder="Inf"
+                className="!w-20 font-mono text-center h-10 [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [-moz-appearance:textfield]"
+                disabled={settings.parallelMessageLimit === null}
+              />
+              
+              <Button
+                type="button"
+                variant="outline"
+                className="w-10 h-10 shrink-0"
+                onClick={() => {
+                  const current = settings.parallelMessageLimit
+                  if (current === null) return // Can't decrement from unlimited
+                  const newValue = Math.max(1, (current || 5) - 1)
+                  updateSettings({ parallelMessageLimit: newValue })
+                  logger.info(`Parallel message limit decreased to ${newValue}`)
+                }}
+                disabled={settings.parallelMessageLimit === null || settings.parallelMessageLimit <= 1}
+                aria-label="Decrease limit"
+              >
+                <Minus className="size-4" />
+              </Button>
+              
+              <Button
+                type="button"
+                variant="outline"
+                className="w-10 h-10 shrink-0"
+                onClick={() => {
+                  const current = settings.parallelMessageLimit
+                  if (current === null) return // Can't increment from unlimited
+                  const newValue = Math.min(999, (current || 5) + 1)
+                  updateSettings({ parallelMessageLimit: newValue })
+                  logger.info(`Parallel message limit increased to ${newValue}`)
+                }}
+                disabled={settings.parallelMessageLimit === null || settings.parallelMessageLimit >= 999}
+                aria-label="Increase limit"
+              >
+                <Plus className="size-4" />
+              </Button>
+            </div>
+          </div>
+
+
+          
+          
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <Label htmlFor="queueOverflow" className="text-base">Queue Overflow Messages</Label>
+            <p className="text-sm text-muted-foreground">
+              When limit is reached, queue messages instead of ignoring them
+            </p>
+          </div>
+          <Switch
+            id="queueOverflow"
+            checked={settings.queueOverflowMessages !== false}
+            onCheckedChange={checked => {
+              updateSettings({ queueOverflowMessages: checked })
+              logger.info(`Queue overflow messages: ${checked ? 'enabled' : 'disabled'}`)
+            }}
+          />
         </div>
       </CardContent>
     </Card>

@@ -47,9 +47,36 @@ last_selected_voice_id = None  # Track last voice to prevent consecutive repeats
 # 1. Global TTS stop button (stops all)
 # 2. Individual user ban/timeout (stops only that user)
 # 3. New TTS from same user is ignored if their previous TTS is still playing
-# Track active TTS tasks for cancellation only
+# Track active TTS tasks for cancellation only (simplified - no timers)
 # username -> {"task": asyncio.Task, "message": str}
 active_tts_jobs = {}
+total_active_tts_count = 0  # Total count of active TTS jobs (for parallel limiting)
+parallel_message_queue = []  # Queue for messages when parallel limit is reached
+
+def increment_tts_count():
+    """Increment the TTS count for parallel limiting"""
+    global total_active_tts_count
+    total_active_tts_count += 1
+
+def decrement_tts_count():
+    """Safely decrement the TTS count, preventing negative values"""
+    global total_active_tts_count
+    if total_active_tts_count > 0:
+        total_active_tts_count -= 1
+
+# sync_tts_count function removed - using simple audio duration-based limiting
+
+def force_reset_tts_counter():
+    """Force reset TTS counter to 0 and clear active jobs (emergency reset)"""
+    global total_active_tts_count
+    old_count = total_active_tts_count
+    old_jobs = len(active_tts_jobs)
+    
+    total_active_tts_count = 0
+    active_tts_jobs.clear()
+    
+    print(f"FORCE RESET: TTS counter {old_count}→0, cleared {old_jobs} active jobs")
+    logger.warning(f"FORCE RESET: TTS counter {old_count}→0, cleared {old_jobs} active jobs")
 
 # Global TTS control
 tts_enabled = True  # Global flag to control TTS processing
@@ -87,6 +114,67 @@ def queue_avatar_message(message_data):
         "queued_time": time.time()
     })
     logger.info(f"Queued message for {message_data.get('user')} (queue length: {len(avatar_message_queue)})")
+
+def queue_parallel_message(message_data):
+    """Add a message to the parallel queue when limit is reached"""
+    global parallel_message_queue
+    
+    parallel_message_queue.append({
+        "message_data": message_data,
+        "queued_time": time.time()
+    })
+    logger.info(f"Queued message for {message_data.get('user')} (parallel queue length: {len(parallel_message_queue)})")
+
+def process_parallel_message_queue():
+    """Process queued messages if parallel slots become available"""
+    global parallel_message_queue, total_active_tts_count
+    
+    if not parallel_message_queue:
+        return
+    
+    settings = app_get_settings()
+    parallel_limit = settings.get("parallelMessageLimit", 5)
+    
+    # Check if we're under the limit now (or if there's no limit)
+    if parallel_limit is None or not isinstance(parallel_limit, (int, float)) or parallel_limit <= 0 or total_active_tts_count < parallel_limit:
+        # Try to process the oldest queued message
+        queued_item = parallel_message_queue[0]
+        message_data = queued_item["message_data"]
+        
+        # Check if message is too old (ignore messages older than 120 seconds)
+        if time.time() - queued_item["queued_time"] > 120:
+            parallel_message_queue.pop(0)
+            logger.info(f"Discarded old queued parallel message for {message_data.get('user')}")
+            # Try to process next message
+            if parallel_message_queue:
+                process_parallel_message_queue()
+            return
+        
+        # Remove from queue and process
+        parallel_message_queue.pop(0)
+        
+        # Reserve the slot by incrementing counter (check if replacing existing job)
+        username = message_data.get('user', 'unknown')
+        username_lower = username.lower()
+        replacing_existing = username_lower in active_tts_jobs
+        
+        if not replacing_existing:
+            total_active_tts_count += 1
+        
+        limit_text = "unlimited" if not parallel_limit or not isinstance(parallel_limit, (int, float)) or parallel_limit <= 0 else str(int(parallel_limit))
+        logger.info(f"Processing queued parallel message for {username} (active: {total_active_tts_count}/{limit_text}, replacing={replacing_existing})")
+        
+        # Process the queued message
+        async def process_queued():
+            try:
+                await process_tts_message(message_data)
+            except Exception as e:
+                # If processing fails, we need to decrement the counter
+                if not replacing_existing:
+                    decrement_tts_count()
+                logger.error(f"Failed to process queued TTS message for {username}: {e}")
+        
+        asyncio.create_task(process_queued())
 
 def process_avatar_message_queue():
     """Process queued messages if slots become available"""
@@ -234,8 +322,10 @@ else:
 
 # ---------- Global State ----------
 twitch_auth_error = None
+youtube_auth_error = None
 # Track if we've attempted a token refresh in this session to prevent infinite retries
 twitch_refresh_attempted = False
+youtube_refresh_attempted = False
 
 # ---------- WebSocket Hub ----------
 class Hub:
@@ -301,6 +391,7 @@ async def ws_endpoint(ws: WebSocket):
         if twitch_refresh_attempted:
             logger.info("Resetting token refresh attempt tracking due to new WebSocket connection (page refresh)")
             twitch_refresh_attempted = False
+            youtube_refresh_attempted = False
         
         # Send a welcome message to confirm connection
         welcome_msg = {
@@ -312,10 +403,13 @@ async def ws_endpoint(ws: WebSocket):
         logger.info(f"Sent welcome message to WebSocket client {client_info}")
         
         # Send any pending auth error to the new client
-        global twitch_auth_error
+        global twitch_auth_error, youtube_auth_error
         if twitch_auth_error:
             logger.info(f"Sending pending Twitch auth error to new client {client_info}")
             await ws.send_text(json.dumps(twitch_auth_error))
+        if youtube_auth_error:
+            logger.info(f"Sending pending YouTube auth error to new client {client_info}")
+            await ws.send_text(json.dumps(youtube_auth_error))
         
         while True:
             # Handle messages from frontend (avatar slot status updates, etc.)
@@ -349,7 +443,11 @@ async def handle_websocket_message(data: Dict[str, Any]):
     if message_type == "avatar_slot_ended":
         # Frontend reports that an avatar slot has finished playing
         slot_id = data.get("slot_id")
+        logger.info(f"Avatar slot ended: slot_id={slot_id}")
         if slot_id:
+            # DISABLED: WebSocket decrement to avoid conflict with auto-decrement
+            # The auto-decrement based on audio duration is more reliable
+            
             release_avatar_slot(slot_id)
             process_avatar_message_queue()
             logger.info(f"Avatar slot {slot_id} released by frontend")
@@ -357,7 +455,10 @@ async def handle_websocket_message(data: Dict[str, Any]):
     elif message_type == "avatar_slot_error":
         # Frontend reports an error with avatar slot playback
         slot_id = data.get("slot_id")
+        logger.info(f"Avatar slot error: slot_id={slot_id}")
         if slot_id:
+            # DISABLED: WebSocket decrement to avoid conflict with auto-decrement
+            
             release_avatar_slot(slot_id)
             process_avatar_message_queue()
             logger.info(f"Avatar slot {slot_id} released due to frontend error")
@@ -720,6 +821,61 @@ async def handle_twitch_task_creation_error(create_error: Exception, context_nam
         except Exception as broadcast_error:
             logger.error(f"Failed to broadcast auth error during {context_name}: {broadcast_error}")
 
+async def handle_youtube_auth_error():
+    """Handle YouTube authentication errors with automatic token refresh"""
+    logger.warning("=== YOUTUBE AUTHENTICATION ERROR ===")
+    
+    global youtube_refresh_attempted, youtube_auth_error
+    
+    try:
+        # Import here to avoid circular imports
+        from routers.auth import get_youtube_auth, refresh_youtube_token, get_youtube_channel_info, store_youtube_auth
+        
+        auth = get_youtube_auth()
+        if auth and auth.refresh_token:
+            logger.info("YouTube refresh token available, attempting refresh...")
+            refreshed_token_data = await refresh_youtube_token(auth.refresh_token)
+            
+            if refreshed_token_data:
+                # Get updated channel info to ensure account is still valid
+                channel_info = await get_youtube_channel_info(refreshed_token_data["access_token"])
+                if channel_info:
+                    # Store the refreshed token
+                    await store_youtube_auth(channel_info, refreshed_token_data)
+                    logger.info("Successfully refreshed YouTube token, attempting to restart YouTube bot...")
+                    
+                    # Clear any existing auth error since we have a fresh token
+                    youtube_auth_error = None
+                    
+                    # Try to restart the YouTube bot with current settings
+                    from modules.persistent_data import get_settings
+                    current_settings = get_settings()
+                    await restart_youtube_if_needed(current_settings)
+                    logger.info("YouTube bot restarted after token refresh")
+                    return
+                else:
+                    logger.error("Failed to get channel info after YouTube token refresh")
+            else:
+                logger.error("YouTube token refresh failed")
+        else:
+            logger.warning("No YouTube refresh token available for automatic refresh")
+    except Exception as refresh_error:
+        logger.error(f"Error during automatic YouTube token refresh: {refresh_error}")
+    
+    # If we reach here, refresh failed - store and broadcast error
+    youtube_auth_error = {
+        "type": "youtube_auth_error",
+        "message": "YouTube authentication failed. Please reconnect your YouTube account.",
+        "action": "reconnect"
+    }
+    
+    # Try to broadcast immediately
+    try:
+        await hub.broadcast(youtube_auth_error)
+        logger.info("YouTube auth error broadcast completed")
+    except Exception as broadcast_error:
+        logger.error(f"Failed to broadcast YouTube auth error: {broadcast_error}")
+
 async def test_twitch_connection(token_info: dict):
     """Test Twitch connection without starting the full bot to detect auth issues early"""
     logger.info("Testing Twitch connection...")
@@ -728,11 +884,88 @@ async def test_twitch_connection(token_info: dict):
         # Import TwitchIO for connection testing
         import twitchio
         from twitchio.ext import commands
+        from modules.twitch_listener import _ti_major
         
         # Create a minimal test bot that just connects and disconnects
         class TestBot(commands.Bot):
             def __init__(self, token, nick):
-                super().__init__(token=token, nick=nick, prefix='!', initial_channels=[])
+                # Handle both access-token and oauth: formats
+                if token and not token.startswith("oauth:"):
+                    token = f"oauth:{token}"
+                
+                major_version = _ti_major()
+                
+                # Build constructor kwargs compatible with 1.x, 2.x, and 3.x
+                try:
+                    if major_version >= 3:
+                        # TwitchIO 3.x requires client_id, client_secret, and bot_id
+                        try:
+                            from modules.persistent_data import TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET
+                            client_id = TWITCH_CLIENT_ID or ""
+                            client_secret = TWITCH_CLIENT_SECRET or ""
+                        except ImportError:
+                            # Fallback for embedded builds
+                            try:
+                                import embedded_config
+                                client_id = getattr(embedded_config, 'TWITCH_CLIENT_ID', '')
+                                client_secret = getattr(embedded_config, 'TWITCH_CLIENT_SECRET', '')
+                            except ImportError:
+                                client_id = ""
+                                client_secret = ""
+                        
+                        # Validate that we have required credentials for TwitchIO 3.x
+                        if not client_id or not client_secret:
+                            raise ValueError(f"TwitchIO 3.x requires TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET, but they are not configured. client_id={'present' if client_id else 'missing'}, client_secret={'present' if client_secret else 'missing'}")
+                        
+                        bot_id = nick
+                        
+                        super().__init__(
+                            token=token,
+                            client_id=client_id,
+                            client_secret=client_secret,
+                            bot_id=bot_id,
+                            prefix='!',
+                            initial_channels=[]
+                        )
+                    elif major_version >= 2:
+                        # TwitchIO 2.x
+                        super().__init__(token=token, prefix='!', initial_channels=[])
+                    else:
+                        # TwitchIO 1.x expects irc_token + nick
+                        super().__init__(irc_token=token, nick=nick, prefix='!', initial_channels=[])
+                except TypeError as e:
+                    # If we still get a TypeError, it might be version detection issue
+                    # Try the 3.x format as fallback
+                    if "client_id" in str(e) or "client_secret" in str(e) or "bot_id" in str(e):
+                        try:
+                            from modules.persistent_data import TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET
+                            client_id = TWITCH_CLIENT_ID or ""
+                            client_secret = TWITCH_CLIENT_SECRET or ""
+                        except ImportError:
+                            try:
+                                import embedded_config
+                                client_id = getattr(embedded_config, 'TWITCH_CLIENT_ID', '')
+                                client_secret = getattr(embedded_config, 'TWITCH_CLIENT_SECRET', '')
+                            except ImportError:
+                                client_id = ""
+                                client_secret = ""
+                        
+                        # Validate that we have required credentials for TwitchIO 3.x
+                        if not client_id or not client_secret:
+                            raise ValueError(f"TwitchIO 3.x requires TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET, but they are not configured. client_id={'present' if client_id else 'missing'}, client_secret={'present' if client_secret else 'missing'}")
+                        
+                        bot_id = nick
+                        super().__init__(
+                            token=token,
+                            client_id=client_id,
+                            client_secret=client_secret,
+                            bot_id=bot_id,
+                            prefix='!',
+                            initial_channels=[]
+                        )
+                    else:
+                        raise
+                
                 self.connection_successful = False
                 
             async def event_ready(self):
@@ -764,6 +997,13 @@ async def test_twitch_connection(token_info: dict):
         logger.error(f"Twitch connection test failed: {e}")
         logger.info(f"Connection test error type: {type(e).__name__}")
         
+        # Check if this is a TwitchIO 3.x configuration error
+        if "client_id" in str(e) or "client_secret" in str(e) or "bot_id" in str(e):
+            logger.error("*** TwitchIO 3.x CONFIGURATION ERROR ***")
+            logger.error("This error indicates TwitchIO 3.x is installed but TWITCH_CLIENT_ID/TWITCH_CLIENT_SECRET are not configured.")
+            logger.error("This can happen when the application is built on a different PC without the proper .env file.")
+            logger.error("To fix this, ensure TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET are properly configured in the build environment.")
+        
         # Check if this is an authentication error
         error_str = str(e).lower()
         is_auth_error = (
@@ -771,7 +1011,10 @@ async def test_twitch_connection(token_info: dict):
             "unauthorized" in error_str or 
             "invalid" in error_str or
             "access token" in error_str or
-            e.__class__.__name__ == "AuthenticationError"
+            e.__class__.__name__ == "AuthenticationError" or
+            "client_id" in error_str or
+            "client_secret" in error_str or
+            "bot_id" in error_str
         )
         
         if is_auth_error:
@@ -914,8 +1157,6 @@ def cancel_user_tts(username: str):
     """
     Cancel any active TTS for a specific user.
     """
-    global active_tts_jobs
-    
     username_lower = username.lower()
     logger.info(f"Attempting to cancel TTS for user: {username}")
     
@@ -926,6 +1167,10 @@ def cancel_user_tts(username: str):
             job_info["task"].cancel()
             logger.info(f"Cancelled active TTS for user: {username} (message: {job_info['message'][:50]}...)")
         del active_tts_jobs[username_lower]
+        # Note: Counter will be decremented by the cancelled task's exception handler
+        
+        # Process any queued parallel messages now that a slot is free
+        process_parallel_message_queue()
     else:
         logger.info(f"No active TTS found for user: {username}")
     
@@ -939,11 +1184,11 @@ def cancel_user_tts(username: str):
 
 def stop_all_tts():
     """
-    Stop all active TTS jobs
+    Stop all TTS jobs
     """
-    global active_tts_jobs, tts_enabled
+    global active_tts_jobs, tts_enabled, total_active_tts_count
     
-    logger.info(f"Stopping all TTS - {len(active_tts_jobs)} active jobs")
+    logger.info(f"Stopping all TTS - {total_active_tts_count} active jobs")
     
     # Cancel all active TTS jobs
     cancelled_count = 0
@@ -955,6 +1200,8 @@ def stop_all_tts():
     
     # Clear all data structures
     active_tts_jobs.clear()
+    parallel_message_queue.clear()  # Also clear parallel message queue
+    total_active_tts_count = 0
     
     # Disable TTS processing
     tts_enabled = False
@@ -1211,94 +1458,167 @@ def should_process_message(text: str, settings: Dict[str, Any], username: str = 
 # ---------- TTS Pipeline ----------
 
 async def handle_test_voice_event(evt: Dict[str, Any]):
-    """Handle test voice events - similar to handle_event but uses the provided test voice"""
+    """Handle test voice events - bypasses parallel limits for testing"""
     logger.info(f"Handling test voice event: {evt}")
-    settings = app_get_settings()
-    audio_format = settings.get("audioFormat", "mp3")
     
-    test_voice_data = evt.get("testVoice")
-    if not test_voice_data:
-        logger.info("No test voice data provided")
+    # Check if TTS is globally enabled
+    if not tts_enabled:
+        logger.info(f"TTS is disabled - skipping test voice message from {evt.get('user', 'unknown')}")
         return
     
-    # Create a temporary voice object for testing
-    class TestVoice:
-        def __init__(self, data):
-            self.id = "test"
-            self.name = data.get("name", "Test Voice")
-            self.provider = data.get("provider", "unknown")
-            self.voice_id = data.get("voice_id", "")
-            self.avatar_image = None
-            self.enabled = True
+    # Test voices bypass parallel limits (they're just for testing)
     
-    selected_voice = TestVoice(test_voice_data)
-    logger.info(f"Test voice: {selected_voice.name} ({selected_voice.provider})")
+    # After parallel limiting check passes, set up variables for TTS processing
+    username = evt.get('user', 'unknown')
+    username_lower = username.lower()
+    settings = app_get_settings()
+    
+    # Track this job for cancellation
+    task = asyncio.current_task()
+    
+    # Check if user already has an active job and cancel it
+    if username_lower in active_tts_jobs:
+        old_task = active_tts_jobs[username_lower].get("task")
+        if old_task and not old_task.done():
+            old_task.cancel()
+            logger.info(f"Cancelled previous TTS for test user {username}")
+    
+    active_tts_jobs[username_lower] = {
+        "task": task,
+        "message": evt.get('text', '')
+    }
+    
+    try:
+        audio_format = settings.get("audioFormat", "mp3")
+        
+        test_voice_data = evt.get("testVoice")
+        if not test_voice_data:
+            logger.info("No test voice data provided")
+            return
+        
+        # Create a temporary voice object for testing
+        class TestVoice:
+            def __init__(self, data):
+                self.id = "test"
+                self.name = data.get("name", "Test Voice")
+                self.provider = data.get("provider", "unknown")
+                self.voice_id = data.get("voice_id", "")
+                self.avatar_image = None
+                self.enabled = True
+        
+        selected_voice = TestVoice(test_voice_data)
+        logger.info(f"Test voice: {selected_voice.name} ({selected_voice.provider})")
 
-    # Get TTS configuration - Use hybrid provider that handles all providers
-    tts_config = settings.get("tts", {})
-    
-    # Get TTS provider configurations
-    monstertts_config = tts_config.get("monstertts", {})
-    monster_api_key = monstertts_config.get("apiKey", "")
-    
-    google_config = tts_config.get("google", {})
-    google_api_key = google_config.get("apiKey", "")
-    
-    polly_config = tts_config.get("polly", {})
-    
-    # Use hybrid provider
-    provider = await get_hybrid_provider(
-        monster_api_key=monster_api_key if monster_api_key else None,
-        monster_voice_id=selected_voice.voice_id if selected_voice.provider == "monstertts" else None,
-        edge_voice_id=selected_voice.voice_id if selected_voice.provider == "edge" else None,
-        fallback_voices=[selected_voice],  # Use test voice as fallback
-        google_api_key=google_api_key if google_api_key else None,
-        polly_config=polly_config if polly_config.get("accessKey") and polly_config.get("secretKey") else None
-    )
-    
-    # Create TTS job with the test voice
-    job = TTSJob(text=evt.get('text', '').strip(), voice=selected_voice.voice_id, audio_format=audio_format)
-    logger.info(f"Test TTS Job: text='{job.text}', voice='{selected_voice.name}' ({selected_voice.provider}:{selected_voice.voice_id}), format='{job.audio_format}'")
+        # Get TTS configuration
+        tts_config = settings.get("tts", {})
+        monstertts_config = tts_config.get("monstertts", {})
+        monster_api_key = monstertts_config.get("apiKey", "")
+        google_config = tts_config.get("google", {})
+        google_api_key = google_config.get("apiKey", "")
+        polly_config = tts_config.get("polly", {})
+        
+        # Use hybrid provider
+        provider = await get_hybrid_provider(
+            monster_api_key=monster_api_key if monster_api_key else None,
+            monster_voice_id=selected_voice.voice_id if selected_voice.provider == "monstertts" else None,
+            edge_voice_id=selected_voice.voice_id if selected_voice.provider == "edge" else None,
+            fallback_voices=[selected_voice],
+            google_api_key=google_api_key if google_api_key else None,
+            polly_config=polly_config if polly_config.get("accessKey") and polly_config.get("secretKey") else None
+        )
+        
+        # Create and process TTS job
+        job = TTSJob(text=evt.get('text', '').strip(), voice=selected_voice.voice_id, audio_format=audio_format)
+        logger.info(f"Test TTS Job: text='{job.text}', voice='{selected_voice.name}' ({selected_voice.provider}:{selected_voice.voice_id})")
 
-    # Fire-and-forget to allow overlap
-    async def _run():
-        try:
-            logger.info(f"Starting test TTS synthesis...")
-            path = await provider.synth(job)
-            logger.info(f"Test TTS generated: {path}")
-            
-            # Broadcast to clients to play
-            voice_info = {
-                "id": selected_voice.id,
-                "name": selected_voice.name,
-                "provider": selected_voice.provider,
-                "avatar": selected_voice.avatar_image
-            }
-            payload = {
-                "type": "play",
-                "user": evt.get("user"),
-                "message": evt.get("text"),
-                "eventType": evt.get("eventType", "chat"),
-                "voice": voice_info,
-                "audioUrl": f"/audio/{os.path.basename(path)}"
-            }
-            logger.info(f"Broadcasting test voice to {len(hub.clients)} clients: {payload}")
-            await hub.broadcast(payload)
-        except Exception as e:
-            logger.info(f"Test TTS synthesis error: {e}")
+        logger.info(f"Starting test TTS synthesis...")
+        path = await provider.synth(job)
+        logger.info(f"Test TTS generated: {path}")
+        
+        # Broadcast to clients
+        voice_info = {
+            "id": selected_voice.id,
+            "name": selected_voice.name,
+            "provider": selected_voice.provider,
+            "avatar": selected_voice.avatar_image
+        }
+        payload = {
+            "type": "play",
+            "user": evt.get("user"),
+            "message": evt.get("text"),
+            "eventType": evt.get("eventType", "chat"),
+            "voice": voice_info,
+            "audioUrl": f"/audio/{os.path.basename(path)}"
+        }
+        logger.info(f"Broadcasting test voice to {len(hub.clients)} clients")
+        await hub.broadcast(payload)
+        
+        # Clean up TTS job tracking (test voices don't affect counter)
+        if username_lower in active_tts_jobs:
+            del active_tts_jobs[username_lower]
+        logger.info(f"Test TTS complete. Counter unaffected: {total_active_tts_count}")
+        
+    except asyncio.CancelledError:
+        logger.info(f"Test TTS cancelled for user: {evt.get('user')}")
+        if username_lower in active_tts_jobs:
+            del active_tts_jobs[username_lower]
+        logger.info(f"Cleaned up cancelled test job. Counter unaffected: {total_active_tts_count}")
+        raise
+    except Exception as e:
+        logger.error(f"Test TTS error for {username_lower}: {e}", exc_info=True)
+        if username_lower in active_tts_jobs:
+            del active_tts_jobs[username_lower]
+        logger.info(f"Cleaned up failed test job. Counter unaffected: {total_active_tts_count}")
+        # Test voices don't affect parallel limit counter
 
-    asyncio.create_task(_run())
+async def check_parallel_limits_and_process(evt: Dict[str, Any], is_test_voice: bool = False):
+    """
+    Audio duration-based parallel limiting - simple and reliable.
+    No WebSocket dependencies, no job tracking complexity.
+    """
+    global total_active_tts_count
+    
+    username = evt.get('user', 'unknown')
+    settings = app_get_settings()
+    parallel_limit = settings.get("parallelMessageLimit", 5)
+    queue_overflow = settings.get("queueOverflowMessages", True)
+    current_active = total_active_tts_count
+    
+    # Check if we have a limit and if it's exceeded
+    if parallel_limit is not None and isinstance(parallel_limit, (int, float)) and parallel_limit > 0 and current_active >= parallel_limit:
+        logger.info(f"Parallel limit reached ({current_active}/{parallel_limit}) for {username}")
+        
+        if queue_overflow and not is_test_voice:  # Don't queue test voices
+            queue_parallel_message(evt)
+            logger.info(f"Message queued due to parallel limit (queue size: {len(parallel_message_queue)})")
+        else:
+            logger.info(f"Message from {username} ignored due to parallel limit")
+        return False
+    
+    # Accept message - increment counter and process
+    increment_tts_count()
+    
+    try:
+        await process_tts_message(evt)
+        return True
+    except Exception as e:
+        # If processing failed, decrement counter
+        decrement_tts_count()
+        logger.error(f"TTS processing failed for {username}: {e}", exc_info=True)
+        return False
 
 async def handle_event(evt: Dict[str, Any]):
+    """Handle regular chat events with message filtering and parallel limiting"""
+    print("*** HANDLE_EVENT CALLED ***")
     logger.info(f"Handling event: {evt}")
     
     # Check if TTS is globally enabled
     if not tts_enabled:
+        print("*** TTS DISABLED - EXITING ***")
         logger.info(f"TTS is disabled - skipping message from {evt.get('user', 'unknown')}")
         return
-    
+
     settings = app_get_settings()
-    
     # Apply message filtering
     original_text = evt.get('text', '').strip()
     username = evt.get('user', '')
@@ -1317,27 +1637,29 @@ async def handle_event(evt: Dict[str, Any]):
     evt_filtered = evt.copy()
     evt_filtered['text'] = filtered_text
     
-    # Process immediately - no queuing
-    username = evt.get('user', 'unknown')
-    logger.info(f"Message received from {username}: processing immediately")
+    # Check parallel limits and process if allowed (this handles the entire processing)
+    await check_parallel_limits_and_process(evt_filtered, is_test_voice=False)
+    
     if filtered_text != original_text:
         logger.info(f"Text after filtering: '{filtered_text}'")
-    await process_tts_message(evt_filtered)
+        raise
     return
 
 async def process_tts_message(evt: Dict[str, Any]):
-    """Process TTS message - voice selection, synthesis, and broadcast"""
+    """Process TTS message with simple audio duration-based limiting"""
     username = evt.get('user', 'unknown')
     username_lower = username.lower()
     
-    # Skip TTS if there's no text to speak (e.g., subscription notifications without messages)
+    # Skip TTS if there's no text to speak
     text = evt.get("text", "").strip()
     if not text:
         event_type = evt.get("eventType", "chat")
         logger.info(f"Skipping TTS for {username} - no text to speak (eventType: {event_type})")
+        # Counter was already incremented, so decrement it
+        decrement_tts_count()
         return
-    
-    # Track this job for cancellation
+
+    # Track this task for cancellation (simple - just task and message)
     task = asyncio.current_task()
     active_tts_jobs[username_lower] = {
         "task": task,
@@ -1542,23 +1864,42 @@ async def process_tts_message(evt: Dict[str, Any]):
             }
             await hub.broadcast(queue_notification)
         
-        # Clean up TTS job tracking
+        # Simple audio duration-based parallel limiting
+        # Schedule decrement after audio finishes (based on duration)
+        decrement_delay = audio_duration + 0.5 if audio_duration and audio_duration > 0 else 5.0
+        
+        async def decrement_after_audio():
+            await asyncio.sleep(decrement_delay)
+            decrement_tts_count()
+            # Process any queued messages now that a slot is free
+            process_parallel_message_queue()
+        
+        # Start the decrement timer (fire and forget - no tracking needed)
+        asyncio.create_task(decrement_after_audio())
+        
+        # Clean up job tracking (we only needed it for potential cancellation during processing)
         if username_lower in active_tts_jobs:
             del active_tts_jobs[username_lower]
-        logger.info(f"TTS processing complete. Active TTS jobs: {list(active_tts_jobs.keys())}")
+        
+        logger.info(f"TTS generation complete for {username}. Counter: {total_active_tts_count}")
             
     except asyncio.CancelledError:
-        logger.info(f"TTS synthesis cancelled for user: {evt.get('user')}")
+        logger.info(f"TTS synthesis cancelled for user: {username}")
+        # Clean up job tracking
         if username_lower in active_tts_jobs:
             del active_tts_jobs[username_lower]
-        logger.info(f"Cleaned up cancelled job. Remaining jobs: {len(active_tts_jobs)}")
+        # Counter was already incremented, so decrement it on cancellation
+        decrement_tts_count()
         raise  # Re-raise to properly handle cancellation
     except Exception as e:
-        logger.info(f"TTS Error: {e}")
-        logger.error(f"TTS synthesis error for {username_lower}: {e}", exc_info=True)
+        logger.error(f"TTS synthesis error for {username}: {e}", exc_info=True)
+        # Clean up job tracking
         if username_lower in active_tts_jobs:
             del active_tts_jobs[username_lower]
-        logger.info(f"Cleaned up failed job. Remaining jobs: {len(active_tts_jobs)}")
+        # Counter was already incremented, so decrement it on error
+        decrement_tts_count()
+        # Process any queued parallel messages now that a slot is free
+        process_parallel_message_queue()
 
 # ---------- Simulate messages (for local testing) ----------
 
@@ -1716,6 +2057,32 @@ async def startup():
                     except Exception as e:
                         logger.error(f"YouTube bot task failed: {e}", exc_info=True)
                         logger.info(f"ERROR: YouTube bot task failed: {e}")
+                        
+                        # Handle authentication errors
+                        error_message = str(e).lower()
+                        if "401" in error_message or "unauthorized" in error_message or "credential" in error_message:
+                            global youtube_auth_error, youtube_refresh_attempted
+                            
+                            # Check if we should attempt automatic token refresh
+                            if not youtube_refresh_attempted:
+                                youtube_refresh_attempted = True
+                                logger.info("YouTube authentication error detected, attempting automatic token refresh...")
+                                
+                                # Attempt token refresh in a separate task
+                                asyncio.create_task(handle_youtube_auth_error())
+                            else:
+                                logger.warning("YouTube token refresh already attempted, skipping automatic retry")
+                                
+                                # Set auth error for frontend notification
+                                youtube_auth_error = {
+                                    "type": "youtube_auth_error",
+                                    "message": "YouTube authentication failed. Please reconnect your YouTube account.",
+                                    "action": "reconnect"
+                                }
+                                
+                                # Broadcast to connected clients
+                                if hub:
+                                    asyncio.create_task(hub.broadcast(youtube_auth_error))
                 
                 yt.add_done_callback(handle_youtube_task_exception)
                 YouTubeTask = yt

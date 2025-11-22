@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import logger from '../utils/logger'
 
-export default function VoiceManager({ managedAvatars, apiUrl }) {
+export default function VoiceManager({ managedAvatars, apiUrl, onVoicesChange }) {
   const [voices, setVoices] = useState([])
   const [availableVoices, setAvailableVoices] = useState({ monstertts: [], google: [], polly: [], edge: [] })
   const [showAddForm, setShowAddForm] = useState(false)
@@ -192,6 +192,7 @@ export default function VoiceManager({ managedAvatars, apiUrl }) {
 
       if (response.ok) {
         loadVoices()
+        onVoicesChange?.() // Notify parent component
         setShowAddForm(false)
         setSelectedVoice('')
       }
@@ -221,6 +222,7 @@ export default function VoiceManager({ managedAvatars, apiUrl }) {
         method: 'DELETE'
       })
       loadVoices()
+      onVoicesChange?.() // Notify parent component
     } catch (error) {
       console.error('Failed to delete voice:', error)
     }

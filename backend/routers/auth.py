@@ -604,6 +604,41 @@ async def youtube_auth_status():
         logger.error(f"Error checking YouTube status: {e}")
         return {"connected": False, "error": str(e)}
 
+@router.post("/api/youtube/refresh-token")
+async def refresh_youtube_token_endpoint():
+    """Manually refresh the YouTube access token"""
+    try:
+        auth = get_youtube_auth()
+        if not auth:
+            return {"success": False, "error": "No YouTube account connected"}
+        
+        if not auth.refresh_token:
+            return {"success": False, "error": "No refresh token available - please reconnect your account"}
+        
+        logger.info("Manual YouTube token refresh requested")
+        refreshed_token_data = await refresh_youtube_token(auth.refresh_token)
+        
+        if refreshed_token_data:
+            # Get updated channel info
+            channel_info = await get_youtube_channel_info(refreshed_token_data["access_token"])
+            if channel_info:
+                # Store the refreshed token
+                await store_youtube_auth(channel_info, refreshed_token_data)
+                logger.info("Successfully refreshed YouTube token manually")
+                
+                return {
+                    "success": True, 
+                    "message": f"Token refreshed successfully for {channel_info.get('snippet', {}).get('title', 'Unknown')}"
+                }
+            else:
+                return {"success": False, "error": "Failed to get channel info after token refresh"}
+        else:
+            return {"success": False, "error": "Failed to refresh token - may need to reconnect your account"}
+    
+    except Exception as e:
+        logger.error(f"Error refreshing YouTube token: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
 @router.delete("/api/youtube/disconnect")
 async def youtube_disconnect():
     """Disconnect YouTube account"""
@@ -681,11 +716,96 @@ async def store_youtube_auth(channel_info: Dict[str, Any], token_data: Dict[str,
         logger.error(f"Error storing YouTube auth: {e}")
         raise
 
-async def get_youtube_token_for_bot():
-    """Get current YouTube token for bot connection"""
+async def refresh_youtube_token(refresh_token: str) -> Dict[str, Any]:
+    """Refresh an expired YouTube access token"""
     try:
-        return get_youtube_token()
+        data = {
+            "client_id": YOUTUBE_CLIENT_ID,
+            "client_secret": YOUTUBE_CLIENT_SECRET,
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post("https://oauth2.googleapis.com/token", data=data) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    logger.info("Successfully refreshed YouTube token")
+                    return result
+                else:
+                    error_text = await response.text()
+                    logger.error(f"YouTube token refresh failed: {response.status} - {error_text}")
+                    return None
+    except Exception as e:
+        logger.error(f"Error refreshing YouTube token: {e}")
+        return None
+
+async def get_youtube_token_for_bot():
+    """Get current YouTube token for bot connection with automatic refresh"""
+    try:
+        from google.oauth2.credentials import Credentials
+        
+        auth = get_youtube_auth()
+        if not auth:
+            return None
+            
+        # Check if token needs refresh (if expires_at is set and in the past)
+        needs_refresh = False
+        current_token = auth.access_token
+        current_refresh_token = auth.refresh_token
+        
+        if auth.expires_at:
+            try:
+                expires_at = datetime.fromisoformat(auth.expires_at)
+                # Add 5-minute buffer to refresh before actual expiration
+                buffer_time = expires_at - timedelta(minutes=5)
+                if datetime.now() >= buffer_time:
+                    needs_refresh = True
+                    logger.info(f"YouTube token expires at {expires_at}, refreshing with 5-minute buffer")
+            except ValueError as e:
+                logger.warning(f"Invalid expires_at format: {auth.expires_at}, will attempt refresh: {e}")
+                needs_refresh = True
+        
+        # Attempt token refresh if needed and refresh token is available
+        if needs_refresh and auth.refresh_token:
+            logger.info("Attempting to refresh YouTube token...")
+            
+            refreshed_token_data = await refresh_youtube_token(auth.refresh_token)
+            if refreshed_token_data:
+                # Get updated channel info to ensure account is still valid
+                channel_info = await get_youtube_channel_info(refreshed_token_data["access_token"])
+                if channel_info:
+                    # Store the refreshed token
+                    await store_youtube_auth(channel_info, refreshed_token_data)
+                    logger.info("Successfully refreshed and stored new YouTube token")
+                    
+                    # Use refreshed token data
+                    current_token = refreshed_token_data["access_token"]
+                    current_refresh_token = refreshed_token_data.get("refresh_token", auth.refresh_token)
+                else:
+                    logger.error("Failed to get channel info after YouTube token refresh")
+            else:
+                logger.error("Failed to refresh YouTube token - may need to re-authenticate")
+                return None
+        
+        # Create Google OAuth2 credentials object
+        credentials = Credentials(
+            token=current_token,
+            refresh_token=current_refresh_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=YOUTUBE_CLIENT_ID,
+            client_secret=YOUTUBE_CLIENT_SECRET
+        )
+        
+        # Return token info with credentials
+        return {
+            "access_token": current_token,
+            "refresh_token": current_refresh_token,
+            "channel_id": auth.channel_id,
+            "channel_name": auth.channel_name,
+            "credentials": credentials
+        }
+        
     except Exception as e:
         logger.error(f"Error getting YouTube token: {e}")
-    
-    return None
+        return None
