@@ -3,4 +3,4 @@ Version information for Chat Yapper
 This file is automatically updated during CI/CD builds
 """
 
-__version__ = "1.2.1"
+__version__ = "1.2.2"

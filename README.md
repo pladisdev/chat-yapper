@@ -225,8 +225,13 @@ chat-yapper/
 
 ## Changelog
 
-### v1.2.1 (Latest)
+### v1.2.2 (Latest)
 - **New Features:**
+ - Quick status view
+ - Limit concurrent TTS messages
+ - Some more twitch fixes and improved notifcations
+
+### v1.2.1
  - usernames for chatbubbles
  - text size adjustment
  - Toggle for only allowing redeem messages for twitch
