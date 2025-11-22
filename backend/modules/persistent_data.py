@@ -47,7 +47,8 @@ PUBLIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "publ
 os.makedirs(PERSISTENT_AVATARS_DIR, exist_ok=True)
 
 # Twitch OAuth Configuration - uses embedded config when running as executable
-TWITCH_CLIENT_ID = get_env_var("TWITCH_CLIENT_ID", "")
+# Fixed client ID for Chat Yapper bot
+TWITCH_CLIENT_ID = get_env_var("TWITCH_CLIENT_ID", "pker88pnps6l8ku90u7ggwvt9dmz2f")
 TWITCH_CLIENT_SECRET = get_env_var("TWITCH_CLIENT_SECRET", "")
 TWITCH_REDIRECT_URI = f"http://localhost:{os.environ.get('PORT', 8000)}/auth/twitch/callback"
 TWITCH_SCOPE = "chat:read"

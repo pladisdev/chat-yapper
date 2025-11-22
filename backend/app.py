@@ -888,7 +888,7 @@ async def test_twitch_connection(token_info: dict):
         
         # Create a minimal test bot that just connects and disconnects
         class TestBot(commands.Bot):
-            def __init__(self, token, nick):
+            def __init__(self, token, nick, user_id=None):
                 # Handle both access-token and oauth: formats
                 if token and not token.startswith("oauth:"):
                     token = f"oauth:{token}"
@@ -904,20 +904,21 @@ async def test_twitch_connection(token_info: dict):
                             client_id = TWITCH_CLIENT_ID or ""
                             client_secret = TWITCH_CLIENT_SECRET or ""
                         except ImportError:
-                            # Fallback for embedded builds
+                            # Fallback for embedded builds with fixed client ID
                             try:
                                 import embedded_config
-                                client_id = getattr(embedded_config, 'TWITCH_CLIENT_ID', '')
+                                client_id = getattr(embedded_config, 'TWITCH_CLIENT_ID', 'pker88pnps6l8ku90u7ggwvt9dmz2f')
                                 client_secret = getattr(embedded_config, 'TWITCH_CLIENT_SECRET', '')
                             except ImportError:
-                                client_id = ""
+                                client_id = "pker88pnps6l8ku90u7ggwvt9dmz2f"
                                 client_secret = ""
                         
                         # Validate that we have required credentials for TwitchIO 3.x
                         if not client_id or not client_secret:
                             raise ValueError(f"TwitchIO 3.x requires TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET, but they are not configured. client_id={'present' if client_id else 'missing'}, client_secret={'present' if client_secret else 'missing'}")
                         
-                        bot_id = nick
+                        # For TwitchIO 3.x, bot_id should be the user ID, not the username
+                        bot_id = user_id or nick
                         
                         super().__init__(
                             token=token,
@@ -944,17 +945,18 @@ async def test_twitch_connection(token_info: dict):
                         except ImportError:
                             try:
                                 import embedded_config
-                                client_id = getattr(embedded_config, 'TWITCH_CLIENT_ID', '')
+                                client_id = getattr(embedded_config, 'TWITCH_CLIENT_ID', 'pker88pnps6l8ku90u7ggwvt9dmz2f')
                                 client_secret = getattr(embedded_config, 'TWITCH_CLIENT_SECRET', '')
                             except ImportError:
-                                client_id = ""
+                                client_id = "pker88pnps6l8ku90u7ggwvt9dmz2f"
                                 client_secret = ""
                         
                         # Validate that we have required credentials for TwitchIO 3.x
                         if not client_id or not client_secret:
                             raise ValueError(f"TwitchIO 3.x requires TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET, but they are not configured. client_id={'present' if client_id else 'missing'}, client_secret={'present' if client_secret else 'missing'}")
                         
-                        bot_id = nick
+                        # For TwitchIO 3.x, bot_id should be the user ID, not the username  
+                        bot_id = user_id or nick
                         super().__init__(
                             token=token,
                             client_id=client_id,
@@ -974,8 +976,12 @@ async def test_twitch_connection(token_info: dict):
                 # Disconnect immediately after successful connection
                 await self.close()
         
-        # Create test bot instance
-        test_bot = TestBot(token=token_info["token"], nick=token_info["username"])
+        # Create test bot instance using authenticated username and user ID for compatibility
+        test_bot = TestBot(
+            token=token_info["token"], 
+            nick=token_info["username"],
+            user_id=token_info.get("user_id")
+        )
         
         # Run the test with a timeout
         try:
@@ -1041,11 +1047,13 @@ async def create_twitch_bot_task(token_info: dict, channel: str, route_twitch_ev
     """Create a Twitch bot task with consistent error handling"""
     try:
         # Create the task and monitor it for auth errors immediately
+        # Use the authenticated username for TwitchIO compatibility, display name handled separately
         task = asyncio.create_task(run_twitch_bot(
             token=token_info["token"],
             nick=token_info["username"],
             channel=channel,
-            on_event=lambda e: asyncio.create_task(route_twitch_event(e))
+            on_event=lambda e: asyncio.create_task(route_twitch_event(e)),
+            user_id=token_info.get("user_id")
         ))
         
         # Attach the error handler
@@ -1981,7 +1989,7 @@ async def startup():
             twitch_config = settings.get("twitch", {})
             channel = twitch_config.get("channel") or token_info["username"]
             
-            logger.info(f"Twitch config: channel={channel}, nick={token_info['username']}, token={'***' if token_info['token'] else 'None'}")
+            logger.info(f"Twitch config: channel={channel}, nick={token_info['username']} (displayed as Chat Yapper), token={'***' if token_info['token'] else 'None'}")
             
             # Test Twitch connection first to detect auth issues early
             connection_test_passed = await test_twitch_connection(token_info)
