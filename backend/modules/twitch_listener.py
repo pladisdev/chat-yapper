@@ -77,6 +77,10 @@ class TwitchBot(commands.Bot):
                         client_id = ""
                         client_secret = ""
                 
+                # Validate that we have required credentials for TwitchIO 3.x
+                if not client_id or not client_secret:
+                    raise ValueError(f"TwitchIO 3.x requires TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET, but they are not configured. client_id={'present' if client_id else 'missing'}, client_secret={'present' if client_secret else 'missing'}")
+                
                 bot_id = nick
                 
                 super().__init__(
@@ -109,6 +113,10 @@ class TwitchBot(commands.Bot):
                     except ImportError:
                         client_id = ""
                         client_secret = ""
+                
+                # Validate that we have required credentials for TwitchIO 3.x
+                if not client_id or not client_secret:
+                    raise ValueError(f"TwitchIO 3.x requires TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET, but they are not configured. client_id={'present' if client_id else 'missing'}, client_secret={'present' if client_secret else 'missing'}")
                 
                 bot_id = nick
                 super().__init__(

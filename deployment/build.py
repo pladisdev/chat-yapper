@@ -165,6 +165,31 @@ def create_embedded_env_config():
     logger.info(f"Found YouTube Client ID: {'Yes' if youtube_client_id else 'No'}")
     logger.info(f"Found YouTube Client Secret: {'Yes' if youtube_client_secret else 'No'}")
     
+    # Check TwitchIO version compatibility
+    try:
+        import twitchio
+        version_str = getattr(twitchio, "__version__", "unknown")
+        major_version = int(version_str.split('.')[0]) if version_str != "unknown" and version_str.split('.')[0].isdigit() else 0
+        
+        logger.info(f"Detected TwitchIO version: {version_str} (major: {major_version})")
+        
+        # Warn if TwitchIO 3.x is used without credentials
+        if major_version >= 3 and (not twitch_client_id or not twitch_client_secret):
+            logger.warning("*** IMPORTANT BUILD WARNING ***")
+            logger.warning("TwitchIO 3.x requires TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET")
+            logger.warning("But these credentials are missing from your .env file!")
+            logger.warning("The built executable may fail to connect to Twitch.")
+            logger.warning("Please add TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET to your .env file.")
+            print("\n*** BUILD WARNING ***")
+            print("TwitchIO 3.x detected but Twitch credentials missing from .env file!")
+            print("The built executable may fail to connect to Twitch.")
+            print("Please add TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET to your .env file.\n")
+            
+    except ImportError:
+        logger.warning("TwitchIO not found during build - this may cause runtime issues")
+    except Exception as e:
+        logger.warning(f"Could not check TwitchIO version: {e}")
+    
     # Create embedded config Python file
     config_content = f'''"""
 Embedded environment configuration for Chat Yapper executable.
@@ -780,8 +805,8 @@ def generate_checksums():
             f.write(f"{checksum}  ChatYapper.exe\n")
         
         logger.info(f"SHA256 checksum: {checksum}")
-        print(f"[✓] SHA256: {checksum}")
-        print(f"[✓] Checksum saved to: {checksum_file}")
+        print(f"[OK] SHA256: {checksum}")
+        print(f"[OK] Checksum saved to: {checksum_file}")
         
         # Also create a checksums.txt with metadata
         metadata_file = Path("dist/CHECKSUMS.txt")
@@ -797,7 +822,7 @@ def generate_checksums():
             f.write("  Linux:   sha256sum ChatYapper.exe\n")
             f.write("  Mac:     shasum -a 256 ChatYapper.exe\n")
         
-        print(f"[✓] Verification file saved to: {metadata_file}")
+        print(f"[OK] Verification file saved to: {metadata_file}")
         logger.info(f"Checksum files generated successfully")
         
         return True

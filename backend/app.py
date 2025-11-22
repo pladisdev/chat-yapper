@@ -884,11 +884,88 @@ async def test_twitch_connection(token_info: dict):
         # Import TwitchIO for connection testing
         import twitchio
         from twitchio.ext import commands
+        from modules.twitch_listener import _ti_major
         
         # Create a minimal test bot that just connects and disconnects
         class TestBot(commands.Bot):
             def __init__(self, token, nick):
-                super().__init__(token=token, nick=nick, prefix='!', initial_channels=[])
+                # Handle both access-token and oauth: formats
+                if token and not token.startswith("oauth:"):
+                    token = f"oauth:{token}"
+                
+                major_version = _ti_major()
+                
+                # Build constructor kwargs compatible with 1.x, 2.x, and 3.x
+                try:
+                    if major_version >= 3:
+                        # TwitchIO 3.x requires client_id, client_secret, and bot_id
+                        try:
+                            from modules.persistent_data import TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET
+                            client_id = TWITCH_CLIENT_ID or ""
+                            client_secret = TWITCH_CLIENT_SECRET or ""
+                        except ImportError:
+                            # Fallback for embedded builds
+                            try:
+                                import embedded_config
+                                client_id = getattr(embedded_config, 'TWITCH_CLIENT_ID', '')
+                                client_secret = getattr(embedded_config, 'TWITCH_CLIENT_SECRET', '')
+                            except ImportError:
+                                client_id = ""
+                                client_secret = ""
+                        
+                        # Validate that we have required credentials for TwitchIO 3.x
+                        if not client_id or not client_secret:
+                            raise ValueError(f"TwitchIO 3.x requires TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET, but they are not configured. client_id={'present' if client_id else 'missing'}, client_secret={'present' if client_secret else 'missing'}")
+                        
+                        bot_id = nick
+                        
+                        super().__init__(
+                            token=token,
+                            client_id=client_id,
+                            client_secret=client_secret,
+                            bot_id=bot_id,
+                            prefix='!',
+                            initial_channels=[]
+                        )
+                    elif major_version >= 2:
+                        # TwitchIO 2.x
+                        super().__init__(token=token, prefix='!', initial_channels=[])
+                    else:
+                        # TwitchIO 1.x expects irc_token + nick
+                        super().__init__(irc_token=token, nick=nick, prefix='!', initial_channels=[])
+                except TypeError as e:
+                    # If we still get a TypeError, it might be version detection issue
+                    # Try the 3.x format as fallback
+                    if "client_id" in str(e) or "client_secret" in str(e) or "bot_id" in str(e):
+                        try:
+                            from modules.persistent_data import TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET
+                            client_id = TWITCH_CLIENT_ID or ""
+                            client_secret = TWITCH_CLIENT_SECRET or ""
+                        except ImportError:
+                            try:
+                                import embedded_config
+                                client_id = getattr(embedded_config, 'TWITCH_CLIENT_ID', '')
+                                client_secret = getattr(embedded_config, 'TWITCH_CLIENT_SECRET', '')
+                            except ImportError:
+                                client_id = ""
+                                client_secret = ""
+                        
+                        # Validate that we have required credentials for TwitchIO 3.x
+                        if not client_id or not client_secret:
+                            raise ValueError(f"TwitchIO 3.x requires TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET, but they are not configured. client_id={'present' if client_id else 'missing'}, client_secret={'present' if client_secret else 'missing'}")
+                        
+                        bot_id = nick
+                        super().__init__(
+                            token=token,
+                            client_id=client_id,
+                            client_secret=client_secret,
+                            bot_id=bot_id,
+                            prefix='!',
+                            initial_channels=[]
+                        )
+                    else:
+                        raise
+                
                 self.connection_successful = False
                 
             async def event_ready(self):
@@ -920,6 +997,13 @@ async def test_twitch_connection(token_info: dict):
         logger.error(f"Twitch connection test failed: {e}")
         logger.info(f"Connection test error type: {type(e).__name__}")
         
+        # Check if this is a TwitchIO 3.x configuration error
+        if "client_id" in str(e) or "client_secret" in str(e) or "bot_id" in str(e):
+            logger.error("*** TwitchIO 3.x CONFIGURATION ERROR ***")
+            logger.error("This error indicates TwitchIO 3.x is installed but TWITCH_CLIENT_ID/TWITCH_CLIENT_SECRET are not configured.")
+            logger.error("This can happen when the application is built on a different PC without the proper .env file.")
+            logger.error("To fix this, ensure TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET are properly configured in the build environment.")
+        
         # Check if this is an authentication error
         error_str = str(e).lower()
         is_auth_error = (
@@ -927,7 +1011,10 @@ async def test_twitch_connection(token_info: dict):
             "unauthorized" in error_str or 
             "invalid" in error_str or
             "access token" in error_str or
-            e.__class__.__name__ == "AuthenticationError"
+            e.__class__.__name__ == "AuthenticationError" or
+            "client_id" in error_str or
+            "client_secret" in error_str or
+            "bot_id" in error_str
         )
         
         if is_auth_error:

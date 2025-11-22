@@ -17,6 +17,7 @@ import MessageFiltering from '../components/settings/MessageFiltering'
 import AudioFiltersSettings from '../components/settings/AudioFiltersSettings'
 import MessageHistory from '../components/MessageHistory'
 import ExportImportSettings from '../components/settings/ExportImportSettings'
+import QuickStatusView from '../components/settings/QuickStatusView'
 import chatYapperIcon from '../assets/icon.png'
 import backgroundImage from '../assets/background.png'
 import backgroundImage2 from '../assets/background2.png'
@@ -89,9 +90,7 @@ export default function SettingsPage() {
     })
     
     // Load voices from database
-    fetch(`${apiUrl}/api/voices`).then(r => r.json()).then(data => {
-      setAllVoices(data?.voices || [])
-    })
+    loadVoices()
     
     // Load managed avatars
     fetch(`${apiUrl}/api/avatars/managed`).then(r => r.json()).then(data => {
@@ -101,6 +100,16 @@ export default function SettingsPage() {
 
   // No need for WebSocket listener here - backend is source of truth
   // Settings will be refreshed from backend when needed
+
+  const loadVoices = async () => {
+    try {
+      const response = await fetch(`${apiUrl}/api/voices`)
+      const data = await response.json()
+      setAllVoices(data?.voices || [])
+    } catch (error) {
+      console.error('Failed to load voices:', error)
+    }
+  }
 
   const updateSettings = async (partial) => {
     const next = { ...(settings || {}), ...partial }
@@ -212,8 +221,12 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <Tabs defaultValue="general" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-9 lg:w-auto lg:inline-grid">
+        {/* Main content area with two-column layout on larger screens */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Main settings area */}
+          <div className="lg:col-span-3">
+            <Tabs defaultValue="general" className="space-y-6">
+              <TabsList className="grid w-full grid-cols-9 lg:w-auto lg:inline-grid">
             <TabsTrigger value="general" className="flex items-center gap-2">
               <Settings className="w-4 h-4" />
               <span className="hidden sm:inline">General</span>
@@ -284,7 +297,7 @@ export default function SettingsPage() {
 
           <TabsContent value="tts" className="space-y-6">
             <TTSConfiguration settings={settings} updateSettings={updateSettings} apiUrl={apiUrl} />
-            <VoiceManager managedAvatars={managedAvatars} apiUrl={apiUrl} />
+            <VoiceManager managedAvatars={managedAvatars} apiUrl={apiUrl} onVoicesChange={loadVoices} />
           </TabsContent>
 
           <TabsContent value="filters" className="space-y-6">
@@ -313,6 +326,18 @@ export default function SettingsPage() {
             <AboutSection apiUrl={apiUrl} />
           </TabsContent>
         </Tabs>
+          </div>
+          
+          {/* Status sidebar */}
+          <div className="lg:col-span-1 order-first lg:order-last">
+            <div className="sticky top-6">
+              <QuickStatusView 
+                settings={settings} 
+                allVoices={allVoices} 
+              />
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   )

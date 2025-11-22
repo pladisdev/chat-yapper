@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import logger from '../utils/logger'
 import { hexColorWithOpacity } from '../utils/colorUtils'
+import Toast from '../components/ui/toast'
+import { useToast } from '../hooks/useToast'
 
 // Audio playback constants
 const AUDIO_READY_TIMEOUT_MS = 5000 // 5 seconds timeout for audio readiness check
@@ -15,6 +17,11 @@ export default function YappersPage() {
   // Use ref to always have the latest settings value without waiting for React re-render
   // This solves timing issues where settings update via WebSocket but audio is created before re-render
   const settingsRef = useRef(null)
+
+  // Toast notifications for user feedback
+  const { toasts, showToast, hideToast, showAutoplayError, hideAllToasts } = useToast()
+  const [hasShownAutoplayError, setHasShownAutoplayError] = useState(false)
+  const [userHasInteracted, setUserHasInteracted] = useState(false)
   
   // Track active audio objects for stopping
   // Supports parallel audio: multiple users can have TTS playing simultaneously
@@ -109,6 +116,37 @@ export default function YappersPage() {
       return () => window.removeEventListener('resize', updateDimensions)
     }
   }, [])
+
+  // Track user interaction to know when we can show autoplay notifications
+  useEffect(() => {
+    const handleUserInteraction = () => {
+      if (!userHasInteracted) {
+        setUserHasInteracted(true)
+        logger.info('User has interacted with the page - audio should now be enabled')
+        
+        // Only show success notification if we had previously shown an error
+        if (hasShownAutoplayError) {
+          logger.info('Showing audio enabled notification after autoplay error was resolved')
+          hideAllToasts()
+          showToast('🎵 Audio enabled!', 'info', { duration: 2000 })
+          setHasShownAutoplayError(false) // Reset after showing success
+        } else {
+          logger.info('User interacted but no autoplay error was shown, not showing success message')
+        }
+      }
+    }
+
+    const events = ['click', 'touchstart', 'keydown', 'mousedown']
+    events.forEach(event => {
+      document.addEventListener(event, handleUserInteraction, { once: false, passive: true })
+    })
+
+    return () => {
+      events.forEach(event => {
+        document.removeEventListener(event, handleUserInteraction)
+      })
+    }
+  }, [userHasInteracted, hasShownAutoplayError, hideAllToasts, showToast])
 
   // Backend-managed avatar slot assignments
   const [avatarSlots, setAvatarSlots] = useState([])
@@ -415,6 +453,14 @@ export default function YappersPage() {
         utterance.addEventListener('end', end)
         utterance.addEventListener('error', (e) => {
           console.error('Web Speech error:', e)
+          
+          // Check if this is related to user interaction requirement
+          if (e.error === 'not-allowed' && !userHasInteracted && !hasShownAutoplayError) {
+            logger.warn('Web Speech blocked - likely requires user interaction')
+            showAutoplayError()
+            setHasShownAutoplayError(true)
+          }
+          
           end()
         })
       } else {
@@ -427,6 +473,14 @@ export default function YappersPage() {
         utterance.addEventListener('end', end)
         utterance.addEventListener('error', (e) => {
           console.error('Web Speech error:', e)
+          
+          // Check if this is related to user interaction requirement
+          if (e.error === 'not-allowed' && !userHasInteracted && !hasShownAutoplayError) {
+            logger.warn('Web Speech blocked - likely requires user interaction')
+            showAutoplayError()
+            setHasShownAutoplayError(true)
+          }
+          
           end()
         })
       }
@@ -806,6 +860,24 @@ export default function YappersPage() {
             })
             .catch((error) => {
               console.error(`Audio play() failed for ${msg.user}:`, error)
+              
+              // Check if this is an autoplay policy error
+              const isAutoplayError = (
+                error.name === 'NotAllowedError' || 
+                error.message.includes('autoplay') ||
+                error.message.includes('user activation') ||
+                error.message.includes('user gesture') ||
+                error.message.includes('interact with the document first')
+              )
+
+              // Only show notification if it's an autoplay error, user hasn't interacted, 
+              // and we haven't already shown the error
+              if (isAutoplayError && !userHasInteracted && !hasShownAutoplayError) {
+                logger.warn('Audio blocked by browser autoplay policy - showing user notification')
+                showAutoplayError()
+                setHasShownAutoplayError(true)
+              }
+
               // CRITICAL: Clean up on play failure to prevent backend thinking slot is occupied
               if (currentAvatarMode === 'popup') {
                 // Clean up audio tracking for popup mode
@@ -940,11 +1012,35 @@ export default function YappersPage() {
 
   return (
     <div className="min-h-screen bg-transparent p-4">
-      {/* Chat bubble fade-in animation */}
+      {/* Toast Notifications */}
+      {toasts.map(toast => (
+        <Toast
+          key={toast.id}
+          message={toast.message}
+          type={toast.type}
+          onClose={() => hideToast(toast.id)}
+          autoClose={toast.autoClose}
+          duration={toast.duration}
+        />
+      ))}
+
+
+
+      {/* Chat bubble fade-in animation & Toast animations */}
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: scale(0.9); }
           to { opacity: 1; transform: scale(1); }
+        }
+        @keyframes slideInFromLeft {
+          from { 
+            opacity: 0; 
+            transform: translateX(-100%); 
+          }
+          to { 
+            opacity: 1; 
+            transform: translateX(0); 
+          }
         }
       `}</style>
       {/* Voice Avatars Overlay */}

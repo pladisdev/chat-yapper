@@ -42,6 +42,31 @@ def test_audio_dir(tmp_path):
     return audio_dir
 
 
+@pytest.fixture(autouse=True)
+def mock_twitch_credentials():
+    """Mock Twitch OAuth credentials for TwitchIO 3.x compatibility"""
+    original_values = {}
+    
+    # Set required credentials for TwitchIO 3.x
+    env_vars = {
+        'TWITCH_CLIENT_ID': 'test_client_id_12345',
+        'TWITCH_CLIENT_SECRET': 'test_client_secret_67890'
+    }
+    
+    for key, value in env_vars.items():
+        original_values[key] = os.environ.get(key)
+        os.environ[key] = value
+    
+    yield
+    
+    # Restore original values
+    for key, original_value in original_values.items():
+        if original_value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = original_value
+
+
 @pytest.fixture
 def test_settings():
     """Provide default test settings"""
