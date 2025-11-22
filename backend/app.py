@@ -880,7 +880,16 @@ async def test_twitch_connection(token_info: dict):
     """Test Twitch connection without starting the full bot to detect auth issues early"""
     logger.info("Testing Twitch connection...")
     
+    # Save current directory and switch to a writable temp directory for TwitchIO token cache
+    import os
+    import tempfile
+    original_dir = os.getcwd()
+    temp_dir = tempfile.gettempdir()
+    
     try:
+        # Change to temp directory to avoid permission issues with .tio.tokens.json
+        os.chdir(temp_dir)
+        
         # Import TwitchIO for connection testing
         import twitchio
         from twitchio.ext import commands
@@ -889,6 +898,9 @@ async def test_twitch_connection(token_info: dict):
         # Create a minimal test bot that just connects and disconnects
         class TestBot(commands.Bot):
             def __init__(self, token, nick, user_id=None):
+                # Store nick for logging
+                self._nick = nick
+                
                 # Handle both access-token and oauth: formats
                 if token and not token.startswith("oauth:"):
                     token = f"oauth:{token}"
@@ -907,10 +919,10 @@ async def test_twitch_connection(token_info: dict):
                             # Fallback for embedded builds with fixed client ID
                             try:
                                 import embedded_config
-                                client_id = getattr(embedded_config, 'TWITCH_CLIENT_ID', 'pker88pnps6l8ku90u7ggwvt9dmz2f')
+                                client_id = getattr(embedded_config, 'TWITCH_CLIENT_ID', '')
                                 client_secret = getattr(embedded_config, 'TWITCH_CLIENT_SECRET', '')
                             except ImportError:
-                                client_id = "pker88pnps6l8ku90u7ggwvt9dmz2f"
+                                client_id = ""
                                 client_secret = ""
                         
                         # Validate that we have required credentials for TwitchIO 3.x
@@ -945,10 +957,10 @@ async def test_twitch_connection(token_info: dict):
                         except ImportError:
                             try:
                                 import embedded_config
-                                client_id = getattr(embedded_config, 'TWITCH_CLIENT_ID', 'pker88pnps6l8ku90u7ggwvt9dmz2f')
+                                client_id = getattr(embedded_config, 'TWITCH_CLIENT_ID', '')
                                 client_secret = getattr(embedded_config, 'TWITCH_CLIENT_SECRET', '')
                             except ImportError:
-                                client_id = "pker88pnps6l8ku90u7ggwvt9dmz2f"
+                                client_id = ""
                                 client_secret = ""
                         
                         # Validate that we have required credentials for TwitchIO 3.x
@@ -971,7 +983,7 @@ async def test_twitch_connection(token_info: dict):
                 self.connection_successful = False
                 
             async def event_ready(self):
-                logger.info(f"Twitch connection test successful for user: {self.nick}")
+                logger.info(f"Twitch connection test successful for user: {self._nick}")
                 self.connection_successful = True
                 # Disconnect immediately after successful connection
                 await self.close()
@@ -1002,6 +1014,13 @@ async def test_twitch_connection(token_info: dict):
     except Exception as e:
         logger.error(f"Twitch connection test failed: {e}")
         logger.info(f"Connection test error type: {type(e).__name__}")
+        
+        # Check if this is a file permission error (TwitchIO 3.x token cache)
+        if "Permission denied" in str(e) and ".tio.tokens.json" in str(e):
+            logger.warning("TwitchIO token cache permission error - this is non-critical for testing")
+            logger.info("Connection test will continue despite token cache error")
+            # Don't treat this as a critical auth error since it's just a cache write issue
+            return False
         
         # Check if this is a TwitchIO 3.x configuration error
         if "client_id" in str(e) or "client_secret" in str(e) or "bot_id" in str(e):
@@ -1042,6 +1061,13 @@ async def test_twitch_connection(token_info: dict):
                 logger.error(f"Failed to broadcast auth error during connection test: {broadcast_error}")
         
         return False
+    
+    finally:
+        # Restore original directory
+        try:
+            os.chdir(original_dir)
+        except Exception:
+            pass  # Ignore errors when restoring directory
 
 async def create_twitch_bot_task(token_info: dict, channel: str, route_twitch_event, context_name: str):
     """Create a Twitch bot task with consistent error handling"""
