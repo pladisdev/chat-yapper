@@ -71,10 +71,10 @@ class TwitchBot(commands.Bot):
                     # Fallback for embedded builds with fixed client ID
                     try:
                         import embedded_config
-                        client_id = getattr(embedded_config, 'TWITCH_CLIENT_ID', 'pker88pnps6l8ku90u7ggwvt9dmz2f')
+                        client_id = getattr(embedded_config, 'TWITCH_CLIENT_ID', '')
                         client_secret = getattr(embedded_config, 'TWITCH_CLIENT_SECRET', '')
                     except ImportError:
-                        client_id = "pker88pnps6l8ku90u7ggwvt9dmz2f"
+                        client_id = ""
                         client_secret = ""
                 
                 # Validate that we have required credentials for TwitchIO 3.x
@@ -109,10 +109,10 @@ class TwitchBot(commands.Bot):
                 except ImportError:
                     try:
                         import embedded_config
-                        client_id = getattr(embedded_config, 'TWITCH_CLIENT_ID', 'pker88pnps6l8ku90u7ggwvt9dmz2f')
+                        client_id = getattr(embedded_config, 'TWITCH_CLIENT_ID', '')
                         client_secret = getattr(embedded_config, 'TWITCH_CLIENT_SECRET', '')
                     except ImportError:
-                        client_id = "pker88pnps6l8ku90u7ggwvt9dmz2f"
+                        client_id = ""
                         client_secret = ""
                 
                 # Validate that we have required credentials for TwitchIO 3.x
