@@ -83,7 +83,11 @@ class YouTubeListener:
                 logger.warning("No active live stream found for this channel")
                 return False
         except HttpError as e:
-            logger.error(f"YouTube API error finding active stream: {e}")
+            status_code = getattr(e, 'resp', {}).get('status', 0)
+            if status_code == 401:
+                logger.error("YouTube API authentication error while finding active stream - token may be expired")
+            else:
+                logger.error(f"YouTube API error finding active stream: {e}")
             return False
         except Exception as e:
             logger.error(f"Error finding active stream: {e}", exc_info=True)
@@ -119,7 +123,11 @@ class YouTubeListener:
                 logger.error(f"Video {self.video_id} not found")
                 return None
         except HttpError as e:
-            logger.error(f"YouTube API error getting live chat ID: {e}")
+            status_code = getattr(e, 'resp', {}).get('status', 0)
+            if status_code == 401:
+                logger.error("YouTube API authentication error while getting live chat ID - token may be expired")
+            else:
+                logger.error(f"YouTube API error getting live chat ID: {e}")
             return None
         except Exception as e:
             logger.error(f"Error getting live chat ID: {e}", exc_info=True)
@@ -289,17 +297,47 @@ class YouTubeListener:
                 error_reason = getattr(e, 'reason', 'Unknown error')
                 status_code = getattr(e, 'resp', {}).get('status', 0)
                 
-                if status_code == 403:
-                    logger.error("⚠️  YouTube API quota exceeded or access forbidden")
-                    logger.error("   The YouTube Data API has strict quota limits:")
-                    logger.error("   - Default quota: 10,000 units/day")
-                    logger.error("   - Each chat poll costs ~5 units")
-                    logger.error("   - This allows ~2,000 polls/day (~83/hour or ~1.4/minute)")
-                    logger.error("   Pausing for 5 minutes to avoid further quota usage...")
-                    await asyncio.sleep(300)  # Wait 5 minutes on quota errors
-                    # After quota error, slow down significantly
-                    self.polling_interval = self.max_polling_interval
-                    self.consecutive_empty_polls = 10  # Force slow polling
+                if status_code == 401:
+                    logger.warning("YouTube API authentication error - token may be expired")
+                    logger.info("Attempting to refresh credentials and rebuild YouTube client...")
+                    
+                    # Try to refresh credentials using the auth router function
+                    try:
+                        from routers.auth import get_youtube_token_for_bot
+                        token_info = await get_youtube_token_for_bot()
+                        if token_info and token_info.get('credentials'):
+                            # Rebuild YouTube client with refreshed credentials
+                            from googleapiclient.discovery import build
+                            self.credentials = token_info['credentials']
+                            self.youtube = build('youtube', 'v3', credentials=self.credentials)
+                            logger.info("Successfully refreshed YouTube credentials and rebuilt client")
+                            continue  # Retry the request
+                        else:
+                            logger.error("Failed to refresh YouTube credentials - stopping listener")
+                            self.running = False
+                            break
+                    except Exception as refresh_error:
+                        logger.error(f"Error during YouTube credential refresh: {refresh_error}")
+                        await asyncio.sleep(30)  # Wait before retrying
+                        
+                elif status_code == 403:
+                    error_details = str(e)
+                    if "quotaExceeded" in error_details or "quota" in error_reason.lower():
+                        logger.error("⚠️  YouTube API quota exceeded")
+                        logger.error("   The YouTube Data API has strict quota limits:")
+                        logger.error("   - Default quota: 10,000 units/day")
+                        logger.error("   - Each chat poll costs ~5 units")
+                        logger.error("   - This allows ~2,000 polls/day (~83/hour or ~1.4/minute)")
+                        logger.error("   Pausing for 5 minutes to avoid further quota usage...")
+                        await asyncio.sleep(300)  # Wait 5 minutes on quota errors
+                        # After quota error, slow down significantly
+                        self.polling_interval = self.max_polling_interval
+                        self.consecutive_empty_polls = 10  # Force slow polling
+                    else:
+                        logger.error("⚠️  YouTube API access forbidden - check permissions")
+                        logger.error(f"   Error details: {error_reason}")
+                        await asyncio.sleep(60)  # Wait 1 minute for permission errors
+                        
                 elif status_code == 404:
                     logger.error("Live chat not found - stream may have ended")
                     self.running = False

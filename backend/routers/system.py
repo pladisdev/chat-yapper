@@ -49,6 +49,67 @@ async def api_get_status():
     logger.info(f"API: Returning status: {status}")
     return status
 
+@router.get("/api/debug/tts-state")
+async def api_debug_tts_state():
+    """Debug endpoint to check TTS counter state"""
+    from app import total_active_tts_count, active_tts_jobs
+    from modules.avatars import get_active_avatar_slots
+    
+    active_slots = get_active_avatar_slots()
+    
+    state = {
+        "total_active_tts_count": total_active_tts_count,
+        "active_tts_jobs_count": len(active_tts_jobs),
+        "active_tts_jobs_users": list(active_tts_jobs.keys()),
+        "active_avatar_slots_count": len(active_slots),
+        "active_avatar_slots": list(active_slots.keys()),
+        "mismatch": total_active_tts_count != len(active_tts_jobs)
+    }
+    
+    logger.info(f"DEBUG TTS State: {state}")
+    print(f"DEBUG TTS State: {state}")
+    return state
+
+@router.post("/api/debug/reset-tts-counter")
+async def api_debug_reset_tts_counter():
+    """Debug endpoint to reset TTS counter to match active jobs"""
+    from app import total_active_tts_count, active_tts_jobs, sync_tts_count
+    
+    old_count = total_active_tts_count
+    sync_tts_count()
+    new_count = total_active_tts_count
+    
+    result = {
+        "old_count": old_count,
+        "new_count": new_count,
+        "active_jobs": len(active_tts_jobs),
+        "reset": True
+    }
+    
+    logger.info(f"DEBUG: Reset TTS counter from {old_count} to {new_count}")
+    print(f"DEBUG: Reset TTS counter from {old_count} to {new_count}")
+    return result
+
+@router.post("/api/debug/force-reset-tts")
+async def api_debug_force_reset_tts():
+    """Debug endpoint to force reset TTS counter to 0 (emergency reset)"""
+    from app import force_reset_tts_counter, total_active_tts_count, active_tts_jobs
+    
+    old_count = total_active_tts_count
+    old_jobs = len(active_tts_jobs)
+    
+    force_reset_tts_counter()
+    
+    result = {
+        "old_count": old_count,
+        "old_jobs": old_jobs,
+        "new_count": 0,
+        "new_jobs": 0,
+        "force_reset": True
+    }
+    
+    return result
+
 @router.get("/api/test")
 async def api_test():
     """Simple test endpoint for debugging"""
@@ -124,7 +185,7 @@ async def api_debug_per_user_queuing():
     """Debug endpoint to check per-user queuing setting"""
     try:
         # Import global variables when needed
-        from app import active_tts_jobs
+        from app import active_tts_jobs, total_active_tts_count
         
         settings = get_settings()
         filtering = settings.get("messageFiltering", {})
@@ -134,7 +195,7 @@ async def api_debug_per_user_queuing():
             "ignoreIfUserSpeaking": ignore_if_user_speaking,
             "messageFiltering": filtering,
             "activeJobsByUser": list(active_tts_jobs.keys()),
-            "totalActiveJobs": len(active_tts_jobs)
+            "totalActiveJobs": total_active_tts_count
         }
     except Exception as e:
         return {"error": str(e)}
@@ -284,4 +345,72 @@ async def api_test_clearchat(payload: Dict[str, Any]):
         }
     except Exception as e:
         logger.error(f"Failed to simulate CLEARCHAT: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+@router.post("/api/test-parallel-limit")
+async def test_parallel_limit():
+    """Test parallel message limiting by sending multiple messages rapidly"""
+    try:
+        import asyncio
+        import time
+        from app import handle_event
+        
+        # Get current settings to check limits
+        settings = get_settings()
+        parallel_limit = settings.get("parallelMessageLimit", 5)
+        queue_overflow = settings.get("queueOverflowMessages", True)
+        
+        logger.info(f"Testing parallel limit: {parallel_limit} messages, queue overflow: {queue_overflow}")
+        
+        # Create test messages to exceed the parallel limit (if there is one)
+        test_messages = []
+        if parallel_limit and parallel_limit > 0:
+            num_messages = parallel_limit + 3  # Send 3 more than the limit
+        else:
+            num_messages = 8  # Send 8 messages for unlimited test
+        
+        for i in range(num_messages):
+            test_messages.append({
+                "type": "chat",
+                "user": f"TestUser{i + 1}",
+                "text": f"This is test message number {i + 1} to test parallel limiting.",
+                "eventType": "chat",
+                "tags": {}
+            })
+        
+        # Send all messages rapidly
+        start_time = time.time()
+        tasks = []
+        for msg in test_messages:
+            task = asyncio.create_task(handle_event(msg))
+            tasks.append(task)
+        
+        # Wait for all tasks to complete (or be queued/ignored)
+        await asyncio.gather(*tasks, return_exceptions=True)
+        
+        duration = time.time() - start_time
+        
+        # Import queue info
+        from app import active_tts_jobs, parallel_message_queue, total_active_tts_count
+        
+        result = {
+            "success": True,
+            "message": f"Sent {num_messages} messages in {duration:.2f}s",
+            "config": {
+                "parallelLimit": parallel_limit,
+                "queueOverflowMessages": queue_overflow
+            },
+            "results": {
+                "messagesProcessed": total_active_tts_count,
+                "messagesQueued": len(parallel_message_queue),
+                "activeTtsJobs": list(active_tts_jobs.keys()),
+                "queuedUsers": [item["message_data"]["user"] for item in parallel_message_queue]
+            }
+        }
+        
+        logger.info(f"Parallel limit test completed: {result['results']}")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Failed to test parallel limit: {e}", exc_info=True)
         return {"success": False, "error": str(e)}

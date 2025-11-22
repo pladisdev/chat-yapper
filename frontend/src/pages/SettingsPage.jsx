@@ -34,7 +34,8 @@ import {
   Shield,
   Database,
   Grid3x3,
-  Sparkles
+  Sparkles,
+  Square
 } from 'lucide-react'
 
 export default function SettingsPage() {
@@ -170,11 +171,45 @@ export default function SettingsPage() {
       />
       <div className="max-w-7xl mx-auto space-y-6 relative z-10">
         <div className="space-y-2">
-          <h1 className="text-4xl font-bold flex items-center gap-3">
-            <img src={chatYapperIcon} alt="Chat Yapper" className="w-10 h-10" />
-            Chat Yapper Settings
-          </h1>
-          <p className="text-muted-foreground">Configure your voice avatar TTS system</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-4xl font-bold flex items-center gap-3">
+                <img src={chatYapperIcon} alt="Chat Yapper" className="w-10 h-10" />
+                Chat Yapper Settings
+              </h1>
+              <p className="text-muted-foreground">Configure your voice avatar TTS system</p>
+            </div>
+            
+            {/* Global Stop TTS Button */}
+            {settings && (
+              <Button
+                onClick={async () => {
+                  try {
+                    // Toggle TTS state in backend
+                    const response = await fetch(`${apiUrl}/api/tts/toggle`, { method: 'POST' })
+                    const result = await response.json()
+                    if (result.success) {
+                      // Backend is now the source of truth - refetch settings to get accurate state
+                      const settingsResponse = await fetch(`${apiUrl}/api/settings`)
+                      const settingsData = await settingsResponse.json()
+                      setSettings(settingsData)
+                      logger.info(`TTS ${result.tts_enabled ? 'enabled' : 'disabled'}`)
+                    } else {
+                      console.error('TTS toggle failed:', result.error)
+                    }
+                  } catch (error) {
+                    console.error('Failed to toggle TTS:', error)
+                  }
+                }}
+                variant={settings.ttsControl?.enabled !== false ? "destructive" : "default"}
+                size="lg"
+                className="gap-2"
+              >
+                <Square className="w-4 h-4" />
+                {settings.ttsControl?.enabled !== false ? 'Stop TTS' : 'Resume TTS'}
+              </Button>
+            )}
+          </div>
         </div>
 
         <Tabs defaultValue="general" className="space-y-6">

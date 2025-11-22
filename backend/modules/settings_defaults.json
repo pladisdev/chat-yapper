@@ -4,6 +4,8 @@
 "audioFormat": "mp3",
 "volume": 1.0,
 "textSize": "normal",
+"parallelMessageLimit": 5,
+"queueOverflowMessages": true,
 "avatarMode": "grid",
 "popupDirection": "bottom",
 "popupFixedEdge": false,

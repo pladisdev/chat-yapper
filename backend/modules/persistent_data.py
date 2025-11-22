@@ -308,19 +308,10 @@ def save_twitch_auth(user_info: dict, token_data: dict):
         logger.info(f"Stored Twitch auth for user: {user_info['login']}")
 
 def get_twitch_token():
-    """Get current Twitch token for bot connection"""
-    from datetime import datetime
-    
+    """Get current Twitch token for bot connection (use get_twitch_token_for_bot for auto-refresh)"""
     with Session(engine) as session:
         auth = session.exec(select(TwitchAuth)).first()
         if auth:
-            # Check if token needs refresh (if expires_at is set and in the past)
-            if auth.expires_at:
-                expires_at = datetime.fromisoformat(auth.expires_at)
-                if expires_at <= datetime.now():
-                    logger.info("Twitch token expired, attempting refresh...")
-                    # TODO: Implement token refresh
-                    
             return {
                 "token": auth.access_token,
                 "username": auth.username,
@@ -390,19 +381,10 @@ def save_youtube_auth(channel_info: dict, token_data: dict):
         logger.info(f"Stored YouTube auth for channel: {channel_info.get('snippet', {}).get('title', 'Unknown')}")
 
 def get_youtube_token():
-    """Get current YouTube token for bot connection"""
-    from datetime import datetime
-    
+    """Get current YouTube token for bot connection (use get_youtube_token_for_bot for auto-refresh)"""
     with Session(engine) as session:
         auth = session.exec(select(YouTubeAuth)).first()
         if auth:
-            # Check if token needs refresh (if expires_at is set and in the past)
-            if auth.expires_at:
-                expires_at = datetime.fromisoformat(auth.expires_at)
-                if expires_at <= datetime.now():
-                    logger.info("YouTube token expired, attempting refresh...")
-                    # TODO: Implement token refresh
-                    
             return {
                 "access_token": auth.access_token,
                 "refresh_token": auth.refresh_token,
