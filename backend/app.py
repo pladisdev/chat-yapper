@@ -230,9 +230,9 @@ async def process_queued_tts_message(message_data, target_slot):
         enriched_message.update({
             "targetSlot": {
                 "id": target_slot["id"],
-                "row": target_slot["row"],
-                "col": target_slot["col"],
-                "totalInRow": target_slot["totalInRow"]
+                "x_position": target_slot.get("x_position", 50),
+                "y_position": target_slot.get("y_position", 50),
+                "size": target_slot.get("size", 100)
             },
             "avatarData": target_slot["avatarData"],
             "generationId": get_avatar_assignments_generation_id()
@@ -1716,9 +1716,34 @@ async def process_tts_message(evt: Dict[str, Any]):
         return
 
     event_type = evt.get("eventType", "chat")
-    # Select voice: special mapping else random
+    
+    # First, find an available avatar slot (without voice filtering)
+    # This will be used to determine which voice to use
+    target_slot = find_available_slot_for_tts(voice_id=None, user=username)
+    
+    if not target_slot:
+        logger.info(f"No available avatar slots for {username}, message will be queued")
+        decrement_tts_count()
+        return
+    
+    # Now determine the voice to use based on priority:
+    # 1. Slot's assigned voice (if voice_id is set and valid)
+    # 2. Special event voice mapping
+    # 3. Random voice (avoiding last voice if no slot assignment)
+    
     selected_voice = None
-    if event_type in special:
+    slot_voice_id = target_slot.get("voice_id")
+    
+    # Check if slot has an assigned voice
+    if slot_voice_id is not None:
+        selected_voice = next((v for v in enabled_voices if v.id == slot_voice_id), None)
+        if selected_voice:
+            logger.info(f"Using slot-assigned voice: {selected_voice.name} ({selected_voice.provider}) for slot {target_slot['id']}")
+        else:
+            logger.warning(f"Slot {target_slot['id']} has voice_id {slot_voice_id} but voice not found in enabled voices, will select randomly")
+    
+    # If no slot voice, check special event mapping
+    if not selected_voice and event_type in special:
         vid = special[event_type].get("voiceId")
         # Validate vid is a proper integer/string ID, not a function name or corrupted value
         if vid and not str(vid).isdigit() and str(vid) not in ["get_by_id", "null", "undefined", ""]:
@@ -1729,9 +1754,11 @@ async def process_tts_message(evt: Dict[str, Any]):
             selected_voice = next((v for v in enabled_voices if str(v.id) == str(vid)), None)
             if not selected_voice:
                 logger.warning(f"Special event voice ID {vid} for {event_type} not found in enabled voices, will use random voice instead")
+            else:
+                logger.info(f"Special event voice selected: {selected_voice.name} ({selected_voice.provider})")
     
+    # If still no voice selected, choose randomly (avoiding last voice if possible)
     if not selected_voice:
-        # Random selection from enabled voices, avoiding last selected voice if possible
         global last_selected_voice_id
         
         # If we have more than 2 voices, avoid selecting the same voice as last time
@@ -1749,11 +1776,8 @@ async def process_tts_message(evt: Dict[str, Any]):
             selected_voice = random.choice(enabled_voices)
             logger.info(f"Random voice selected: {selected_voice.name} ({selected_voice.provider})")
         
-        # Update last selected voice
+        # Update last selected voice only when randomly selected (not for slot-assigned or special event voices)
         last_selected_voice_id = selected_voice.id
-    else:
-        logger.info(f"Special event voice selected: {selected_voice.name} ({selected_voice.provider})")
-        # Don't update last_selected_voice_id for special events, so they don't affect the pattern
     
     # Track voice usage for distribution analysis
     global voice_usage_stats, voice_selection_count
@@ -1830,9 +1854,8 @@ async def process_tts_message(evt: Dict[str, Any]):
             # Get audio duration for accurate slot timeout (no filters applied)
             audio_duration = get_audio_duration(path)
         
-        # Find available avatar slot for this TTS
-        voice_id = selected_voice.id
-        target_slot = find_available_slot_for_tts(voice_id, username)
+        # We already found the slot earlier (before voice selection)
+        # No need to find it again here
         
         audio_url = f"/audio/{os.path.basename(path)}"
         
@@ -1870,9 +1893,9 @@ async def process_tts_message(evt: Dict[str, Any]):
             enhanced_payload.update({
                 "targetSlot": {
                     "id": target_slot["id"],
-                    "row": target_slot["row"],
-                    "col": target_slot["col"],
-                    "totalInRow": target_slot["totalInRow"]
+                    "x_position": target_slot.get("x_position", 50),
+                    "y_position": target_slot.get("y_position", 50),
+                    "size": target_slot.get("size", 100)
                 },
                 "avatarData": target_slot["avatarData"],
                 "generationId": get_avatar_assignments_generation_id()

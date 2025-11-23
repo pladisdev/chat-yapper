@@ -8,7 +8,7 @@ from datetime import datetime
 
 from modules import logger, get_env_var, log_important
 
-from modules.models import Setting, Voice, TwitchAuth, YouTubeAuth, AvatarImage, ProviderVoiceCache
+from modules.models import Setting, Voice, TwitchAuth, YouTubeAuth, AvatarImage, ProviderVoiceCache, AvatarSlot
 
 def find_project_root():
     """Find the project root by looking for characteristic files"""
@@ -570,3 +570,88 @@ def hash_credentials(*credentials: str) -> str:
     """
     combined = ":".join(credentials)
     return hashlib.sha256(combined.encode()).hexdigest()[:16]
+
+
+# ============================================================================
+# Avatar Slot Management Functions
+# ============================================================================
+
+def get_avatar_slots():
+    """Get all configured avatar slots ordered by slot_index"""
+    with Session(engine) as session:
+        slots = session.exec(select(AvatarSlot).order_by(AvatarSlot.slot_index)).all()
+        return [slot.model_dump() for slot in slots]
+
+
+def get_avatar_slot(slot_id: int):
+    """Get a specific avatar slot by ID"""
+    with Session(engine) as session:
+        slot = session.exec(select(AvatarSlot).where(AvatarSlot.id == slot_id)).first()
+        return slot.model_dump() if slot else None
+
+
+def create_avatar_slot(slot_index: int, x_position: int, y_position: int, 
+                       size: int = 60, avatar_group_id: str = None):
+    """Create a new avatar slot"""
+    with Session(engine) as session:
+        now = datetime.now().isoformat()
+        slot = AvatarSlot(
+            slot_index=slot_index,
+            x_position=x_position,
+            y_position=y_position,
+            size=size,
+            avatar_group_id=avatar_group_id,
+            created_at=now,
+            updated_at=now
+        )
+        session.add(slot)
+        session.commit()
+        session.refresh(slot)
+        logger.info(f"Created avatar slot #{slot_index} at ({x_position}%, {y_position}%)")
+        return slot.model_dump()
+
+
+def update_avatar_slot(slot_id: int, **kwargs):
+    """Update an avatar slot. Accepts: x_position, y_position, size, avatar_group_id, slot_index"""
+    with Session(engine) as session:
+        slot = session.exec(select(AvatarSlot).where(AvatarSlot.id == slot_id)).first()
+        if not slot:
+            logger.error(f"Avatar slot {slot_id} not found")
+            return None
+        
+        # Update fields
+        for key, value in kwargs.items():
+            if hasattr(slot, key):
+                setattr(slot, key, value)
+        
+        slot.updated_at = datetime.now().isoformat()
+        session.add(slot)
+        session.commit()
+        session.refresh(slot)
+        logger.info(f"Updated avatar slot {slot_id}: {kwargs}")
+        return slot.model_dump()
+
+
+def delete_avatar_slot(slot_id: int):
+    """Delete an avatar slot"""
+    with Session(engine) as session:
+        slot = session.exec(select(AvatarSlot).where(AvatarSlot.id == slot_id)).first()
+        if not slot:
+            logger.error(f"Avatar slot {slot_id} not found")
+            return False
+        
+        session.delete(slot)
+        session.commit()
+        logger.info(f"Deleted avatar slot {slot_id}")
+        return True
+
+
+def delete_all_avatar_slots():
+    """Delete all avatar slots"""
+    with Session(engine) as session:
+        slots = session.exec(select(AvatarSlot)).all()
+        for slot in slots:
+            session.delete(slot)
+        session.commit()
+        logger.info(f"Deleted all {len(slots)} avatar slots")
+        return len(slots)
