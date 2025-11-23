@@ -268,10 +268,14 @@ class TwitchBot(commands.Bot):
 async def run_twitch_bot(token: str, nick: str, channel: str, on_event: Callable[[Dict[str, Any]], None], user_id: str = None):
     bot_logger = None
     bot = None
+    
+    # Early logging to confirm function is called
+    print(f"[TWITCH DEBUG] run_twitch_bot called: nick={nick}, channel={channel}, user_id={user_id}")
+    
     try:
         import logging
         bot_logger = logging.getLogger("ChatYapper.Twitch")
-        bot_logger.info(f"Starting Twitch bot: nick={nick}, channel={channel}")
+        bot_logger.info(f"Starting Twitch bot: nick={nick}, channel={channel}, user_id={user_id}")
         
         # Log TwitchIO version for debugging
         try:
@@ -280,10 +284,12 @@ async def run_twitch_bot(token: str, nick: str, channel: str, on_event: Callable
             bot_logger.info(f"TwitchIO version: {version}")
         except Exception:
             pass
-    except Exception:
+    except Exception as log_err:
+        print(f"[TWITCH DEBUG] Logging setup failed: {log_err}")
         pass
 
     try:
+        bot_logger.info(f"Creating TwitchBot instance with user_id={user_id}...")
         bot = TwitchBot(token, nick, channel, on_event, user_id)
         if bot_logger:
             bot_logger.info("Twitch bot instance created, connecting...")

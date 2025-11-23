@@ -1072,6 +1072,8 @@ async def test_twitch_connection(token_info: dict):
 async def create_twitch_bot_task(token_info: dict, channel: str, route_twitch_event, context_name: str):
     """Create a Twitch bot task with consistent error handling"""
     try:
+        logger.info(f"Creating Twitch bot task ({context_name}) with user_id: {token_info.get('user_id')}")
+        
         # Create the task and monitor it for auth errors immediately
         # Use the authenticated username for TwitchIO compatibility, display name handled separately
         task = asyncio.create_task(run_twitch_bot(
@@ -1081,6 +1083,8 @@ async def create_twitch_bot_task(token_info: dict, channel: str, route_twitch_ev
             on_event=lambda e: asyncio.create_task(route_twitch_event(e)),
             user_id=token_info.get("user_id")
         ))
+        
+        logger.info(f"Twitch bot task created, attaching error handler...")
         
         # Attach the error handler
         task.add_done_callback(create_twitch_task_exception_handler(context_name))
