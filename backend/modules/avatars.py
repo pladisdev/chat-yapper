@@ -103,95 +103,91 @@ def get_available_avatars():
         ]
 
 def generate_avatar_slot_assignments():
-    """Generate randomized avatar assignments for all slots based on settings"""
+    """Generate avatar assignments from configured slots in database"""
     global avatar_slot_assignments, avatar_assignments_generation_id
     
-    settings = get_settings()
-    avatar_rows = settings.get("avatarRows", 2)
-    avatar_row_config = settings.get("avatarRowConfig", [6, 6])
+    from modules.persistent_data import get_avatar_slots
     
-    # Debug logging for settings
-    logger.info(f"Avatar settings from backend: avatarRows={avatar_rows}, avatarRowConfig={avatar_row_config}")
+    # Get configured slots from database
+    configured_slots = get_avatar_slots()
     
+    if not configured_slots:
+        # No configured slots - return empty list
+        logger.info("No configured avatar slots found - avatar crowd will be empty")
+        avatar_slot_assignments = []
+        avatar_assignments_generation_id += 1
+        return avatar_slot_assignments
+    
+    # Get available avatars
     available_avatars = get_available_avatars()
     if not available_avatars:
         logger.warning("No avatars available for assignment")
         avatar_slot_assignments = []
-        return
+        avatar_assignments_generation_id += 1
+        return avatar_slot_assignments
     
-    total_slots = sum(avatar_row_config[:avatar_rows])
-    logger.info(f"Generating avatar assignments for {total_slots} slots with {len(available_avatars)} avatars")
-    logger.info(f"Available avatars: {[{'name': a['name'], 'defaultImage': a['defaultImage'][:50] + '...' if len(a['defaultImage']) > 50 else a['defaultImage']} for a in available_avatars]}")
+    # Create avatar lookup by group_id matching frontend logic
+    # Frontend uses: avatar.avatar_group_id || `single_${avatar.id}`
+    from modules.persistent_data import get_enabled_avatars
+    raw_avatars = get_enabled_avatars()
+    
+    avatar_group_lookup = {}
+    for avatar_db in raw_avatars:
+        group_id = avatar_db.avatar_group_id or f"single_{avatar_db.id}"
+        if group_id not in avatar_group_lookup:
+            avatar_group_lookup[group_id] = {
+                "name": avatar_db.name,
+                "images": {},
+                "voice_id": avatar_db.voice_id,
+                "spawn_position": avatar_db.spawn_position
+            }
+        # Ensure file path is properly formatted
+        file_path = avatar_db.file_path
+        if not file_path.startswith('http') and not file_path.startswith('/'):
+            file_path = f"/{file_path}"
+        avatar_group_lookup[group_id]["images"][avatar_db.avatar_type] = file_path
+    
+    # Convert to avatar data format
+    avatar_data_by_group = {}
+    for group_id, group_data in avatar_group_lookup.items():
+        default_img = group_data["images"].get("default", group_data["images"].get("speaking"))
+        speaking_img = group_data["images"].get("speaking", group_data["images"].get("default"))
+        avatar_data_by_group[group_id] = {
+            "name": group_data["name"],
+            "defaultImage": default_img,
+            "speakingImage": speaking_img,
+            "isSingleImage": default_img == speaking_img or not (default_img and speaking_img),
+            "voice_id": group_data["voice_id"],
+            "spawn_position": group_data["spawn_position"]
+        }
     
     assignments = []
     
-    # Handle avatars with specific spawn positions first
-    slot_index = 0
-    slots = []
+    for slot_config in configured_slots:
+        slot_data = {
+            "id": slot_config['id'],  # Use database primary key for unique ID
+            "slot_index": slot_config['slot_index'],  # Keep slot_index for ordering/display
+            "x_position": slot_config["x_position"],
+            "y_position": slot_config["y_position"],
+            "size": slot_config["size"],
+            "voice_id": slot_config.get("voice_id"),  # Voice assignment for this slot (None = random)
+            "avatarData": None,
+            "isActive": False
+        }
+        
+        # Assign avatar if one is configured for this slot
+        if slot_config.get("avatar_group_id") and slot_config["avatar_group_id"] in avatar_data_by_group:
+            avatar_data = avatar_data_by_group[slot_config["avatar_group_id"]].copy()
+            slot_data["avatarData"] = avatar_data
+            logger.info(f"Assigned {avatar_data['name']} to slot {slot_config['slot_index']} at ({slot_config['x_position']}%, {slot_config['y_position']}%)")
+        
+        assignments.append(slot_data)
     
-    # Create all slots first
-    for row_index in range(avatar_rows):
-        avatars_in_row = avatar_row_config[row_index] if row_index < len(avatar_row_config) else 6
-        logger.debug(f"Creating row {row_index} with {avatars_in_row} avatars")
-        for col_index in range(avatars_in_row):
-            slots.append({
-                "id": f"slot_{slot_index}",
-                "row": row_index,
-                "col": col_index,
-                "totalInRow": avatars_in_row,
-                "avatarData": None,  # Will be assigned
-                "isActive": False
-            })
-            slot_index += 1
-    
-    logger.info(f"Total slots created: {len(slots)}")
-    
-    # First pass: Handle avatars with specific spawn positions
-    assigned_slots = set()
-    for avatar in available_avatars:
-        if avatar["spawn_position"] is not None:
-            spawn_pos = avatar["spawn_position"] - 1  # Convert to 0-based index
-            if 0 <= spawn_pos < len(slots) and spawn_pos not in assigned_slots:
-                slots[spawn_pos]["avatarData"] = avatar.copy()
-                assigned_slots.add(spawn_pos)
-                logger.info(f"Assigned {avatar['name']} to specific position {spawn_pos + 1}")
-    
-    # Second pass: Randomly assign remaining avatars to unassigned slots
-    unassigned_slots = [i for i in range(len(slots)) if i not in assigned_slots]
-    
-    # Create assignment pool - ensure each avatar appears at least once if we have enough slots
-    assignment_pool = []
-    if len(unassigned_slots) >= len(available_avatars):
-        # Add each avatar at least once
-        assignment_pool.extend(available_avatars)
-        # Fill remaining with random avatars
-        remaining = len(unassigned_slots) - len(available_avatars)
-        for _ in range(remaining):
-            assignment_pool.append(random.choice(available_avatars))
-    else:
-        # More avatars than slots, randomly select
-        for _ in range(len(unassigned_slots)):
-            assignment_pool.append(random.choice(available_avatars))
-    
-    # Shuffle the assignment pool
-    random.shuffle(assignment_pool)
-    
-    # Assign to unassigned slots
-    for i, slot_idx in enumerate(unassigned_slots):
-        if i < len(assignment_pool):
-            slots[slot_idx]["avatarData"] = assignment_pool[i].copy()
-            logger.info(f"Randomly assigned {assignment_pool[i]['name']} to slot {slot_idx}")
-    
-    avatar_slot_assignments = slots
+    avatar_slot_assignments = assignments
     avatar_assignments_generation_id += 1
     
-    logger.info(f"Generated {len(avatar_slot_assignments)} avatar slot assignments (gen #{avatar_assignments_generation_id})")
+    logger.info(f"Generated {len(avatar_slot_assignments)} avatar slot assignments from configured slots (gen #{avatar_assignments_generation_id})")
     
-    # Log a sample of what will be sent to frontend for debugging
-    if avatar_slot_assignments:
-        sample_slot = avatar_slot_assignments[0]
-        logger.info(f"Sample slot data being sent to frontend: {sample_slot}")
-
     return avatar_slot_assignments
 
 def find_available_slot_for_tts(voice_id=None, user=None):
@@ -219,22 +215,40 @@ def find_available_slot_for_tts(voice_id=None, user=None):
         logger.info(f"Cleaning up expired active slot: {slot_id}")
         del active_avatar_slots[slot_id]
     
+    # Get list of valid voice IDs for validation
+    from modules.persistent_data import get_voices
+    voices_data = get_voices()
+    voices_list = voices_data.get("voices", [])
+    valid_voice_ids = {voice["id"] for voice in voices_list if voice.get("enabled", False)}
+    
     # Find slots that match the voice_id if specified
     matching_slots = []
     available_slots = []
     
     for slot in avatar_slot_assignments:
         slot_id = slot["id"]
-        avatar_data = slot["avatarData"]
+        slot_voice_id = slot.get("voice_id")
         
         is_active = slot_id in active_avatar_slots
         
         if not is_active:
             available_slots.append(slot)
             
-            # Check if this avatar matches the voice_id
-            if voice_id and avatar_data and avatar_data.get("voice_id") == voice_id:
-                matching_slots.append(slot)
+            # Check if this slot matches the voice_id
+            # slot_voice_id can be:
+            # - None (random - matches any voice)
+            # - A valid voice ID (must match the requested voice)
+            # - An invalid/deleted voice ID (treated as random)
+            if voice_id:
+                if slot_voice_id is None:
+                    # Random slot - matches any voice
+                    matching_slots.append(slot)
+                elif slot_voice_id == voice_id and slot_voice_id in valid_voice_ids:
+                    # Exact match with valid voice
+                    matching_slots.append(slot)
+                elif slot_voice_id not in valid_voice_ids:
+                    # Voice was deleted - treat as random
+                    matching_slots.append(slot)
     
     # Prefer voice-matched slots if available
     if matching_slots:

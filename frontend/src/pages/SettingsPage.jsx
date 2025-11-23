@@ -274,6 +274,7 @@ export default function SettingsPage() {
               settings={settings}
               updateSettings={updateSettings}
               apiUrl={apiUrl}
+              managedAvatars={managedAvatars}
             />
             
             <AvatarManagement

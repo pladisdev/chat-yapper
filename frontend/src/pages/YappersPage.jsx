@@ -29,6 +29,9 @@ export default function YappersPage() {
   const activeAudioRef = useRef(new Map()) // username -> Audio object (one per user)
   const allActiveAudioRef = useRef(new Set()) // All Audio objects for global stop
 
+  // Store random animation delays for each slot to ensure consistent randomness
+  const idleAnimationDelaysRef = useRef(new Map())
+
   // Determine the correct API URL
   const apiUrl = location.hostname === 'localhost' && (location.port === '5173' || location.port === '5174')
     ? `http://localhost:${import.meta.env.VITE_BACKEND_PORT || 8008}`  // Vite dev server connecting to backend
@@ -60,7 +63,15 @@ export default function YappersPage() {
           avatarRows: 2,
           avatarRowConfig: [6, 6],
           avatarSize: 60,
-          avatarActiveOffset: 2.5,
+          crowdAnimationType: 'bounce',
+          crowdBounceHeight: 10,
+          crowdAnimationDuration: 300,
+          crowdAnimationDelay: 0,
+          crowdAnimationCurve: 'ease-out',
+          crowdIdleAnimationType: 'none',
+          crowdIdleAnimationIntensity: 2,
+          crowdIdleAnimationSpeed: 3000,
+          crowdIdleAnimationSynced: false,
           popupDirection: 'bottom',
           popupFixedEdge: false,
           popupRotateToDirection: false
@@ -80,6 +91,14 @@ export default function YappersPage() {
       settingsRef.current = settings
     }
   }, [settings])
+
+  // Clear random animation delays when sync setting changes to force new randomization
+  useEffect(() => {
+    if (settings?.crowdIdleAnimationSynced !== undefined) {
+      idleAnimationDelaysRef.current.clear()
+      logger.info('Idle animation delays cleared due to sync setting change')
+    }
+  }, [settings?.crowdIdleAnimationSynced])
 
   // Update volume for all currently playing audio when volume setting changes
   useEffect(() => {
@@ -1053,69 +1072,215 @@ export default function YappersPage() {
         )}
         
         {avatarMode === 'grid' ? (
-          // Grid Mode - Original crowd formation
+          // Grid Mode - Fixed positions from configured slots
           avatarSlots.map((slot, index) => {
-            // Grid layout with individual row configuration
-            const baseSize = settings?.avatarSize || 60
-            const spacingX = settings?.avatarSpacingX || settings?.avatarSpacing || 50
-            const spacingY = settings?.avatarSpacingY || settings?.avatarSpacing || 50
-            const baseX = 100 // Starting position from left
-            const baseY = 100 // Starting position from bottom
+            // Use exact positions from slot configuration
+            const x = slot.x_position || 50  // Percentage
+            const y = slot.y_position || 50  // Percentage
+            const slotSize = slot.size || settings?.avatarSize || 100  // Pixels
             
-            // Calculate centering offset for this row
-            const maxAvatarsInAnyRow = Math.max(...(settings?.avatarRowConfig || [6, 6]))
-            const avatarsInThisRow = slot.totalInRow
-            const maxRowWidth = (maxAvatarsInAnyRow - 1) * spacingX
-            const thisRowWidth = (avatarsInThisRow - 1) * spacingX
-            const centerOffset = (maxRowWidth - thisRowWidth) / 2 // Center shorter rows
-          
-          // Add honeycomb offset - create true honeycomb/brick pattern
-          // For proper honeycomb: alternate between offset and no offset, with shorter rows getting preference for offset
-          const isMaxWidthRow = avatarsInThisRow === maxAvatarsInAnyRow
-          const shouldOffset = isMaxWidthRow ? (slot.row % 2 === 1) : (slot.row % 2 === 0) // Alternate pattern, but flip for shorter rows
-          const honeycombOffset = shouldOffset ? spacingX / 2 : 0 // Offset by half spacing for honeycomb pattern
-          
-          // Calculate position based on row and column with centering and honeycomb offset
-          // Note: Calculate total rows to invert row positioning (bottom to top)
-          const totalRows = Math.max(...avatarSlots.map(s => s.row)) + 1
-          const x = baseX + slot.col * spacingX + centerOffset + honeycombOffset
-          const y = baseY + (totalRows - 1 - slot.row) * spacingY // Invert row order for bottom-up positioning
-          
-          // Get glow effect settings
-          const glowEnabled = settings?.avatarGlowEnabled ?? true
-          const glowColor = settings?.avatarGlowColor ?? '#ffffff'
-          const glowOpacity = settings?.avatarGlowOpacity ?? 0.9
-          const glowSize = settings?.avatarGlowSize ?? 20
-          const activeOffset = settings?.avatarActiveOffset ?? 2.5
-          
-          // Convert hex color to rgba for glow effect
-          const hexToRgba = (hex, opacity) => {
-            const r = parseInt(hex.slice(1, 3), 16)
-            const g = parseInt(hex.slice(3, 5), 16)
-            const b = parseInt(hex.slice(5, 7), 16)
-            return `rgba(${r},${g},${b},${opacity})`
-          }
-          
-          // Build filter based on glow settings
-          const activeFilter = glowEnabled
-            ? `brightness(1.25) drop-shadow(0 0 ${glowSize}px ${hexToRgba(glowColor, glowOpacity)})`
-            : 'brightness(1.25)'
-          const inactiveFilter = 'drop-shadow(0 4px 8px rgba(0,0,0,0.3))'
-          
-          return (
-            <div key={slot.id}
-              style={{ 
-                position: 'absolute',
-                left: `${x - baseSize/2}px`,
-                bottom: `${y - baseSize/2}px`,
-                width: `${baseSize}px`,
-                height: `${baseSize}px`,
-                transform: activeSlots[slot.id] ? `translateY(-${activeOffset}px)` : 'translateY(0)',
-                zIndex: 10 + index,
-                transition: 'all 300ms ease-out',
-                pointerEvents: 'none'
-              }}
-            >
+            // Convert pixel size to percentage based on a reference canvas (800x600)
+            // This matches the layout editor's rendering
+            const referenceWidth = 800
+            const referenceHeight = 600
+            const widthPercent = (slotSize / referenceWidth) * 100
+            const heightPercent = (slotSize / referenceHeight) * 100
+            
+            // Get glow effect settings
+            const glowEnabled = settings?.avatarGlowEnabled ?? true
+            const glowColor = settings?.avatarGlowColor ?? '#ffffff'
+            const glowOpacity = settings?.avatarGlowOpacity ?? 0.9
+            const glowSize = settings?.avatarGlowSize ?? 20
+            
+            // Get animation settings
+            const animationType = settings?.crowdAnimationType || 'bounce'
+            const bounceHeight = settings?.crowdBounceHeight ?? 10
+            const animationDuration = settings?.crowdAnimationDuration ?? 300
+            const animationDelay = settings?.crowdAnimationDelay ?? 0
+            const animationCurve = settings?.crowdAnimationCurve || 'ease-out'
+            
+            // Get idle animation settings
+            const idleAnimationType = settings?.crowdIdleAnimationType || 'none'
+            const idleAnimationIntensity = settings?.crowdIdleAnimationIntensity ?? 2
+            const idleAnimationSpeed = settings?.crowdIdleAnimationSpeed ?? 3000
+            const idleAnimationSynced = settings?.crowdIdleAnimationSynced ?? false
+            
+            // Map curve names to CSS timing functions
+            const getCurveCss = (curve) => {
+              const curves = {
+                'ease-out': 'ease-out',
+                'ease-in': 'ease-in',
+                'ease-in-out': 'ease-in-out',
+                'linear': 'linear',
+                'bounce': 'cubic-bezier(0.68, -0.55, 0.265, 1.55)',
+                'elastic': 'cubic-bezier(0.68, -0.6, 0.32, 1.6)'
+              }
+              return curves[curve] || 'ease-out'
+            }
+            
+            // Helper function to calculate transform based on animation type
+            const getTransform = (isActive) => {
+              const baseTransform = 'translate(-50%, -50%)'
+              
+              if (!isActive || animationType === 'none') {
+                return baseTransform
+              }
+              
+              switch (animationType) {
+                case 'bounce':
+                  return `${baseTransform} translateY(-${bounceHeight}px)`
+                case 'spin':
+                  return `${baseTransform} translateY(-${bounceHeight}px) rotate(${bounceHeight * 7.2}deg)`
+                case 'float':
+                  return `${baseTransform} translateY(-${bounceHeight}px)`
+                case 'pulse':
+                  return `${baseTransform} scale(${bounceHeight / 100})`
+                default:
+                  return baseTransform
+              }
+            }
+            
+            // Convert hex color to rgba for glow effect
+            const hexToRgba = (hex, opacity) => {
+              const r = parseInt(hex.slice(1, 3), 16)
+              const g = parseInt(hex.slice(3, 5), 16)
+              const b = parseInt(hex.slice(5, 7), 16)
+              return `rgba(${r},${g},${b},${opacity})`
+            }
+            
+            // Build filter based on glow settings
+            const activeFilter = glowEnabled
+              ? `brightness(1.25) drop-shadow(0 0 ${glowSize}px ${hexToRgba(glowColor, glowOpacity)})`
+              : 'brightness(1.25)'
+            const inactiveFilter = 'drop-shadow(0 4px 8px rgba(0,0,0,0.3))'
+            
+            // Skip slots without assigned avatars
+            if (!slot.avatarData) {
+              return null
+            }
+            
+            // For float and spin animations, use CSS animation instead of transform
+            const useContinuousAnimation = (animationType === 'float' || animationType === 'spin') && activeSlots[slot.id]
+            
+            // Determine if idle animation should be applied (when not active and idle animation is enabled)
+            const isIdle = !activeSlots[slot.id]
+            const useIdleAnimation = isIdle && idleAnimationType !== 'none'
+            
+            // Calculate idle animation parameters based on intensity
+            const getIdleAnimationParams = () => {
+              switch (idleAnimationType) {
+                case 'jitter':
+                  return { distance: idleAnimationIntensity * 0.5 }
+                case 'pulse':
+                  return { scale: 1 + (idleAnimationIntensity * 0.01) }
+                case 'sway-horizontal':
+                case 'sway-vertical':
+                  return { distance: idleAnimationIntensity * 2 }
+                default:
+                  return {}
+              }
+            }
+            const idleParams = getIdleAnimationParams()
+            
+            // For idle animations, use shared or unique animation name based on sync setting
+            const idleAnimationName = idleAnimationSynced 
+              ? `crowd-idle-${idleAnimationType}` 
+              : `crowd-idle-${idleAnimationType}-${slot.id}`
+            
+            // Generate a random delay for independent animations to prevent syncing
+            const getRandomDelay = () => {
+              if (idleAnimationSynced) return 0
+              
+              // Generate or retrieve random delay for this slot
+              const delayKey = `${slot.id}-${idleAnimationType}`
+              if (!idleAnimationDelaysRef.current.has(delayKey)) {
+                // Generate truly random delay between 0 and -idleAnimationSpeed
+                const randomDelay = -1 * Math.random() * idleAnimationSpeed
+                idleAnimationDelaysRef.current.set(delayKey, randomDelay)
+              }
+              return idleAnimationDelaysRef.current.get(delayKey)
+            }
+            const idleAnimationRandomDelay = getRandomDelay()
+            
+            return (
+              <div key={`${slot.id}-${idleAnimationSynced}`}
+                style={{ 
+                  position: 'absolute',
+                  left: `${x}%`,
+                  top: `${y}%`,
+                  width: `${widthPercent}%`,
+                  height: `${heightPercent}%`,
+                  transform: useContinuousAnimation ? 'translate(-50%, -50%)' : getTransform(activeSlots[slot.id]),
+                  zIndex: 10 + index,
+                  transition: useContinuousAnimation || useIdleAnimation ? 'none' : `all ${animationDuration}ms ${getCurveCss(animationCurve)} ${animationDelay}ms`,
+                  animation: useContinuousAnimation 
+                    ? animationType === 'float' 
+                      ? `crowd-float-${slot.id} ${animationDuration * 2}ms ease-in-out infinite ${animationDelay}ms`
+                      : `crowd-spin-${slot.id} ${animationDuration}ms linear infinite ${animationDelay}ms`
+                    : useIdleAnimation 
+                    ? `${idleAnimationName} ${idleAnimationSpeed}ms ease-in-out infinite ${idleAnimationRandomDelay}ms`
+                    : 'none',
+                  pointerEvents: 'none'
+                }}
+              >
+              {/* Inject keyframe animation for this specific slot when using continuous animations */}
+              {useContinuousAnimation && animationType === 'float' && (
+                <style>{`
+                  @keyframes crowd-float-${slot.id} {
+                    0%, 100% { transform: translate(-50%, -50%) translateY(0px); }
+                    50% { transform: translate(-50%, -50%) translateY(-${bounceHeight}px); }
+                  }
+                `}</style>
+              )}
+              {useContinuousAnimation && animationType === 'spin' && (
+                <style>{`
+                  @keyframes crowd-spin-${slot.id} {
+                    0% { transform: translate(-50%, -50%) translateY(-${bounceHeight}px) rotate(0deg); }
+                    100% { transform: translate(-50%, -50%) translateY(-${bounceHeight}px) rotate(360deg); }
+                  }
+                `}</style>
+              )}
+              {/* Inject keyframe animation for idle animations */}
+              {useIdleAnimation && idleAnimationType === 'jitter' && (
+                <style>{`
+                  @keyframes ${idleAnimationName} {
+                    0%, 100% { transform: translate(-50%, -50%); }
+                    10% { transform: translate(-50%, -50%) translate(${idleParams.distance}px, -${idleParams.distance}px); }
+                    20% { transform: translate(-50%, -50%) translate(-${idleParams.distance}px, ${idleParams.distance}px); }
+                    30% { transform: translate(-50%, -50%) translate(${idleParams.distance}px, ${idleParams.distance}px); }
+                    40% { transform: translate(-50%, -50%) translate(-${idleParams.distance}px, -${idleParams.distance}px); }
+                    50% { transform: translate(-50%, -50%); }
+                    60% { transform: translate(-50%, -50%) translate(-${idleParams.distance}px, ${idleParams.distance}px); }
+                    70% { transform: translate(-50%, -50%) translate(${idleParams.distance}px, -${idleParams.distance}px); }
+                    80% { transform: translate(-50%, -50%) translate(-${idleParams.distance}px, -${idleParams.distance}px); }
+                    90% { transform: translate(-50%, -50%) translate(${idleParams.distance}px, ${idleParams.distance}px); }
+                  }
+                `}</style>
+              )}
+              {useIdleAnimation && idleAnimationType === 'pulse' && (
+                <style>{`
+                  @keyframes ${idleAnimationName} {
+                    0%, 100% { transform: translate(-50%, -50%) scale(1); }
+                    50% { transform: translate(-50%, -50%) scale(${idleParams.scale}); }
+                  }
+                `}</style>
+              )}
+              {useIdleAnimation && idleAnimationType === 'sway-horizontal' && (
+                <style>{`
+                  @keyframes ${idleAnimationName} {
+                    0%, 100% { transform: translate(-50%, -50%) translateX(0px); }
+                    50% { transform: translate(-50%, -50%) translateX(${idleParams.distance}px); }
+                  }
+                `}</style>
+              )}
+              {useIdleAnimation && idleAnimationType === 'sway-vertical' && (
+                <style>{`
+                  @keyframes ${idleAnimationName} {
+                    0%, 100% { transform: translate(-50%, -50%) translateY(0px); }
+                    50% { transform: translate(-50%, -50%) translateY(-${idleParams.distance}px); }
+                  }
+                `}</style>
+              )}
               {/* Chat bubble for grid mode */}
               {settings?.chatBubblesEnabled !== false && chatMessages[slot.id] && (
                 <div

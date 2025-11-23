@@ -225,6 +225,12 @@ chat-yapper/
 
 ## Changelog
 
+### v1.3.0 (Latest)
+- **New Features:**
+ - Better control of avatar placement in Avatar Layout Editor
+ - Select and Adjust speaking animations for crowd mode
+ - Added idle animations for crowd mode
+
 ### v1.2.2 (Latest)
 - **New Features:**
  - Quick status view

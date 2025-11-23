@@ -102,6 +102,24 @@ def migrate_avatarimage_table(conn: sqlite3.Connection) -> None:
         logger.info("AvatarImage table schema is up to date")
 
 
+def migrate_avatarslot_table(conn: sqlite3.Connection) -> None:
+    """Add new columns to AvatarSlot table if they don't exist"""
+    logger.info("Checking AvatarSlot table schema...")
+    
+    # List of migrations: (column_name, column_type, default_value)
+    migrations = [
+        ("voice_id", "INTEGER", None),  # Voice assignment for this slot (None = random)
+    ]
+    
+    changes_made = False
+    for col_name, col_type, default in migrations:
+        if add_column_if_missing(conn, "avatarslot", col_name, col_type, default):
+            changes_made = True
+    
+    if not changes_made:
+        logger.info("AvatarSlot table schema is up to date")
+
+
 def run_all_migrations(db_path: str) -> None:
     """
     Run all database migrations.
@@ -134,6 +152,11 @@ def run_all_migrations(db_path: str) -> None:
             migrate_avatarimage_table(conn)
         else:
             logger.info("AvatarImage table doesn't exist yet - will be created")
+        
+        if "avatarslot" in existing_tables:
+            migrate_avatarslot_table(conn)
+        else:
+            logger.info("AvatarSlot table doesn't exist yet - will be created")
         
         conn.close()
         logger.info("Database migration check completed successfully")

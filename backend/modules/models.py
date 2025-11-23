@@ -65,3 +65,16 @@ class ProviderVoiceCache(SQLModel, table=True):
     voices_json: str  # JSON string of voice list
     last_updated: str  # ISO timestamp of when this was last fetched
     credentials_hash: Optional[str] = Field(default=None)  # Hash of credentials to detect changes
+
+
+class AvatarSlot(SQLModel, table=True):
+    """Individual avatar slot configuration for precise positioning and control"""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    slot_index: int  # Unique index for this slot (0-based position in the list)
+    x_position: int  # X position as percentage (0-100)
+    y_position: int  # Y position as percentage (0-100)
+    size: int = Field(default=100)  # Avatar size in pixels
+    avatar_group_id: Optional[str] = Field(default=None)  # Which avatar is assigned to this slot (None = empty slot)
+    voice_id: Optional[int] = Field(default=None)  # ID of the Voice to use for this slot (None = random)
+    created_at: Optional[str] = Field(default=None)  # When this slot was created
+    updated_at: Optional[str] = Field(default=None)  # When this slot was last modified

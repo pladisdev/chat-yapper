@@ -12,7 +12,9 @@ from fastapi import APIRouter, UploadFile, Form, HTTPException
 from modules.persistent_data import (
     PUBLIC_DIR, PERSISTENT_AVATARS_DIR,
     delete_avatar, get_avatar, get_all_avatars, add_avatar, update_avatar,
-    delete_avatar_group, update_avatar_group_position, toggle_avatar_group_disabled
+    delete_avatar_group, update_avatar_group_position, toggle_avatar_group_disabled,
+    get_avatar_slots, get_avatar_slot, create_avatar_slot, update_avatar_slot,
+    delete_avatar_slot, delete_all_avatar_slots
 )
 from modules.models import AvatarImage
 from modules import logger
@@ -415,3 +417,148 @@ async def api_get_avatar_queue():
     except Exception as e:
         logger.error(f"Failed to get avatar queue: {e}")
         return {"queue": [], "length": 0, "active_slots": 0, "total_slots": 0}
+
+
+# ============================================================================
+# Avatar Slot Configuration Endpoints
+# ============================================================================
+
+@router.get("/api/avatar-slots/configured")
+async def api_get_configured_slots():
+    """Get all configured avatar slots"""
+    try:
+        slots = get_avatar_slots()
+        return {"success": True, "slots": slots}
+    except Exception as e:
+        logger.error(f"Failed to get configured avatar slots: {e}")
+        return {"success": False, "error": str(e), "slots": []}
+
+
+@router.post("/api/avatar-slots/configured")
+async def api_create_avatar_slot(slot_data: dict):
+    """Create a new avatar slot configuration"""
+    try:
+        slot = create_avatar_slot(
+            slot_index=slot_data["slot_index"],
+            x_position=slot_data["x_position"],
+            y_position=slot_data["y_position"],
+            size=slot_data.get("size", 60),
+            avatar_group_id=slot_data.get("avatar_group_id")
+        )
+        
+        # Broadcast update to all clients
+        from app import hub, avatar_message_queue
+        from modules.avatars import (generate_avatar_slot_assignments, get_active_avatar_slots,
+                                     get_avatar_slot_assignments, get_avatar_assignments_generation_id)
+        
+        # Regenerate avatar slot assignments
+        get_active_avatar_slots().clear()
+        avatar_message_queue.clear()
+        generate_avatar_slot_assignments()
+        
+        await hub.broadcast({
+            "type": "avatar_slots_updated",
+            "slots": get_avatar_slot_assignments(),
+            "generationId": get_avatar_assignments_generation_id()
+        })
+        
+        return {"success": True, "slot": slot}
+    except Exception as e:
+        logger.error(f"Failed to create avatar slot: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@router.put("/api/avatar-slots/configured/{slot_id}")
+async def api_update_configured_slot(slot_id: int, slot_data: dict):
+    """Update an avatar slot configuration"""
+    try:
+        # Extract valid fields
+        update_fields = {}
+        for key in ["x_position", "y_position", "size", "avatar_group_id", "slot_index", "voice_id"]:
+            if key in slot_data:
+                update_fields[key] = slot_data[key]
+        
+        slot = update_avatar_slot(slot_id, **update_fields)
+        
+        if not slot:
+            return {"success": False, "error": "Slot not found"}
+        
+        # Broadcast update to all clients
+        from app import hub, avatar_message_queue
+        from modules.avatars import (generate_avatar_slot_assignments, get_active_avatar_slots,
+                                     get_avatar_slot_assignments, get_avatar_assignments_generation_id)
+        
+        # Regenerate avatar slot assignments
+        get_active_avatar_slots().clear()
+        avatar_message_queue.clear()
+        generate_avatar_slot_assignments()
+        
+        await hub.broadcast({
+            "type": "avatar_slots_updated",
+            "slots": get_avatar_slot_assignments(),
+            "generationId": get_avatar_assignments_generation_id()
+        })
+        
+        return {"success": True, "slot": slot}
+    except Exception as e:
+        logger.error(f"Failed to update avatar slot: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@router.delete("/api/avatar-slots/configured/{slot_id}")
+async def api_delete_configured_slot(slot_id: int):
+    """Delete an avatar slot configuration"""
+    try:
+        success = delete_avatar_slot(slot_id)
+        
+        if not success:
+            return {"success": False, "error": "Slot not found"}
+        
+        # Broadcast update to all clients
+        from app import hub, avatar_message_queue
+        from modules.avatars import (generate_avatar_slot_assignments, get_active_avatar_slots,
+                                     get_avatar_slot_assignments, get_avatar_assignments_generation_id)
+        
+        # Regenerate avatar slot assignments
+        get_active_avatar_slots().clear()
+        avatar_message_queue.clear()
+        generate_avatar_slot_assignments()
+        
+        await hub.broadcast({
+            "type": "avatar_slots_updated",
+            "slots": get_avatar_slot_assignments(),
+            "generationId": get_avatar_assignments_generation_id()
+        })
+        
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"Failed to delete avatar slot: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@router.delete("/api/avatar-slots/configured")
+async def api_delete_all_configured_slots():
+    """Delete all avatar slot configurations"""
+    try:
+        count = delete_all_avatar_slots()
+        
+        # Broadcast update to all clients
+        from app import hub, avatar_message_queue
+        from modules.avatars import (generate_avatar_slot_assignments, get_active_avatar_slots,
+                                     get_avatar_slot_assignments, get_avatar_assignments_generation_id)
+        
+        # Regenerate avatar slot assignments (will be empty or use defaults)
+        get_active_avatar_slots().clear()
+        avatar_message_queue.clear()
+        generate_avatar_slot_assignments()
+        
+        await hub.broadcast({
+            "type": "avatar_slots_updated",
+            "slots": get_avatar_slot_assignments(),
+            "generationId": get_avatar_assignments_generation_id()
+        })
+        
+        return {"success": True, "deleted_count": count}
+    except Exception as e:
+        logger.error(f"Failed to delete all avatar slots: {e}")
+        return {"success": False, "error": str(e)}
