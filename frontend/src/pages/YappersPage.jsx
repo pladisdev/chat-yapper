@@ -1159,8 +1159,8 @@ export default function YappersPage() {
               return null
             }
             
-            // For float animations, use CSS animation instead of transform
-            const useContinuousAnimation = animationType === 'float' && activeSlots[slot.id]
+            // For float and spin animations, use CSS animation instead of transform
+            const useContinuousAnimation = (animationType === 'float' || animationType === 'spin') && activeSlots[slot.id]
             
             // Determine if idle animation should be applied (when not active and idle animation is enabled)
             const isIdle = !activeSlots[slot.id]
@@ -1214,7 +1214,9 @@ export default function YappersPage() {
                   zIndex: 10 + index,
                   transition: useContinuousAnimation || useIdleAnimation ? 'none' : `all ${animationDuration}ms ${getCurveCss(animationCurve)} ${animationDelay}ms`,
                   animation: useContinuousAnimation 
-                    ? `crowd-float-${slot.id} ${animationDuration * 2}ms ease-in-out infinite ${animationDelay}ms` 
+                    ? animationType === 'float' 
+                      ? `crowd-float-${slot.id} ${animationDuration * 2}ms ease-in-out infinite ${animationDelay}ms`
+                      : `crowd-spin-${slot.id} ${animationDuration}ms linear infinite ${animationDelay}ms`
                     : useIdleAnimation 
                     ? `${idleAnimationName} ${idleAnimationSpeed}ms ease-in-out infinite ${idleAnimationRandomDelay}ms`
                     : 'none',
@@ -1222,11 +1224,19 @@ export default function YappersPage() {
                 }}
               >
               {/* Inject keyframe animation for this specific slot when using continuous animations */}
-              {useContinuousAnimation && (
+              {useContinuousAnimation && animationType === 'float' && (
                 <style>{`
                   @keyframes crowd-float-${slot.id} {
                     0%, 100% { transform: translate(-50%, -50%) translateY(0px); }
                     50% { transform: translate(-50%, -50%) translateY(-${bounceHeight}px); }
+                  }
+                `}</style>
+              )}
+              {useContinuousAnimation && animationType === 'spin' && (
+                <style>{`
+                  @keyframes crowd-spin-${slot.id} {
+                    0% { transform: translate(-50%, -50%) translateY(-${bounceHeight}px) rotate(0deg); }
+                    100% { transform: translate(-50%, -50%) translateY(-${bounceHeight}px) rotate(360deg); }
                   }
                 `}</style>
               )}

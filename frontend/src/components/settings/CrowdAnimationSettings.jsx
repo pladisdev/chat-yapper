@@ -82,7 +82,7 @@ function CrowdAnimationSettings({ settings, onUpdate }) {
                   max="50"
                   step="1"
                   value={animationSettings.bounceHeight}
-                  onChange={e => onUpdate({ crowdBounceHeight: parseFloat(e.target.value) })}
+                  onChange={e => onUpdate({ crowdBounceHeight: parseInt(e.target.value) })}
                 />
                 <p className="text-sm text-muted-foreground">
                   {animationSettings.animationType === 'spin'
@@ -107,7 +107,7 @@ function CrowdAnimationSettings({ settings, onUpdate }) {
                   max="150"
                   step="5"
                   value={animationSettings.bounceHeight}
-                  onChange={e => onUpdate({ crowdBounceHeight: parseFloat(e.target.value) })}
+                  onChange={e => onUpdate({ crowdBounceHeight: parseInt(e.target.value) })}
                 />
                 <p className="text-sm text-muted-foreground">
                   How much the avatar scales up when active (100% = no scaling)
@@ -230,7 +230,7 @@ function CrowdAnimationSettings({ settings, onUpdate }) {
                     max="10"
                     step="1"
                     value={animationSettings.idleAnimationIntensity}
-                    onChange={e => onUpdate({ crowdIdleAnimationIntensity: parseFloat(e.target.value) })}
+                    onChange={e => onUpdate({ crowdIdleAnimationIntensity: parseInt(e.target.value) })}
                   />
                   <p className="text-sm text-muted-foreground">
                     {animationSettings.idleAnimationType === 'jitter' ? 'How much the avatar vibrates' :
