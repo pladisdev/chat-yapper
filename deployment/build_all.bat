@@ -16,6 +16,16 @@ if errorlevel 1 (
     exit /b 1
 )
 
+REM Ask if user wants to clean first
+echo.
+set /p clean="Clean old build artifacts first? (recommended) (y/n): "
+if /i "%clean%"=="y" (
+    echo.
+    echo Cleaning build artifacts...
+    python deployment\clean_build.py --skip-confirmation
+    echo.
+)
+
 echo Step 1: Building ChatYapper.exe...
 echo.
 cd /d "%~dp0.."

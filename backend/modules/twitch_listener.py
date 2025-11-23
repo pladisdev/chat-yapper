@@ -206,13 +206,18 @@ class TwitchBot(commands.Bot):
             "tags": tags,
         })
 
-    # TwitchIO 2.x
+    # TwitchIO 2.x+ uses raw events, 1.x uses non-raw
+    # Only implement the raw version for 2.x+, let 1.x fall through to non-raw
     async def event_raw_usernotice(self, channel, tags):
-        self._emit_usernotice(channel, tags)
+        # Only handle if we're on 2.x+ (which supports raw events)
+        if self._major >= 2:
+            self._emit_usernotice(channel, tags)
 
-    # TwitchIO 1.x sometimes uses event_usernotice
+    # TwitchIO 1.x fallback - only fires on 1.x
     async def event_usernotice(self, channel, tags):
-        self._emit_usernotice(channel, tags)
+        # Only handle if we're on 1.x (which doesn't have raw events)
+        if self._major < 2:
+            self._emit_usernotice(channel, tags)
 
     # ---------- Moderation Events (Bans/Timeouts) ----------
     # Handles CLEARCHAT IRC events which are sent when:
@@ -256,23 +261,37 @@ class TwitchBot(commands.Bot):
                 "tags": tags,
             })
 
-    # TwitchIO 2.x
+    # TwitchIO 2.x+ uses raw events, 1.x uses non-raw
+    # Only implement the raw version for 2.x+, let 1.x fall through to non-raw
     async def event_raw_clearchat(self, channel, tags):
-        self._emit_clearchat(channel, tags)
+        # Only handle if we're on 2.x+ (which supports raw events)
+        if self._major >= 2:
+            self._emit_clearchat(channel, tags)
 
-    # TwitchIO 1.x fallback
+    # TwitchIO 1.x fallback - only fires on 1.x
     async def event_clearchat(self, channel, tags):
-        self._emit_clearchat(channel, tags)
+        # Only handle if we're on 1.x (which doesn't have raw events)
+        if self._major < 2:
+            self._emit_clearchat(channel, tags)
 
 
 async def run_twitch_bot(token: str, nick: str, channel: str, on_event: Callable[[Dict[str, Any]], None], user_id: str = None):
     bot_logger = None
     bot = None
     
+    # Save current directory and switch to a writable temp directory for TwitchIO token cache
+    import os
+    import tempfile
+    original_dir = os.getcwd()
+    temp_dir = tempfile.gettempdir()
+    
     # Early logging to confirm function is called
     print(f"[TWITCH DEBUG] run_twitch_bot called: nick={nick}, channel={channel}, user_id={user_id}")
     
     try:
+        # Change to temp directory to avoid permission issues with .tio.tokens.json
+        os.chdir(temp_dir)
+        
         import logging
         bot_logger = logging.getLogger("ChatYapper.Twitch")
         bot_logger.info(f"Starting Twitch bot: nick={nick}, channel={channel}, user_id={user_id}")
@@ -348,11 +367,22 @@ async def run_twitch_bot(token: str, nick: str, channel: str, on_event: Callable
                 # Ignore other cleanup errors during cancellation
                 if bot_logger:
                     bot_logger.debug(f"Error during bot cleanup: {close_err}")
+        # Restore original directory
+        try:
+            os.chdir(original_dir)
+        except Exception:
+            pass
         raise  # Re-raise CancelledError so the task properly terminates
     except Exception as e:
         try:
             if bot_logger:
                 bot_logger.error(f"Twitch bot startup failed: {e}", exc_info=True)
+        except Exception:
+            pass
+        
+        # Restore original directory before re-raising
+        try:
+            os.chdir(original_dir)
         except Exception:
             pass
         
