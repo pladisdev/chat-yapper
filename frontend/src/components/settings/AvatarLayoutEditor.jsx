@@ -274,8 +274,8 @@ function AvatarLayoutEditor({ apiUrl, managedAvatars }) {
           const slot = copiedSlot.slots[i]
           const newIndex = maxIndex + 1 + i
           newSlotIndices.push(newIndex)
-          const newX = Math.min(100, slot.x_position + 5)
-          const newY = Math.min(100, slot.y_position + 5)
+          const newX = Math.round(Math.min(100, slot.x_position + 5))
+          const newY = Math.round(Math.min(100, slot.y_position + 5))
           
           const response = await fetch(`${apiUrl}/api/avatar-slots/configured`, {
             method: 'POST',
@@ -311,8 +311,8 @@ function AvatarLayoutEditor({ apiUrl, managedAvatars }) {
         const newIndex = maxIndex + 1
         
         // Offset the position slightly so it doesn't overlap exactly
-        const newX = Math.min(100, copiedSlot.x_position + 5)
-        const newY = Math.min(100, copiedSlot.y_position + 5)
+        const newX = Math.round(Math.min(100, copiedSlot.x_position + 5))
+        const newY = Math.round(Math.min(100, copiedSlot.y_position + 5))
         
         const response = await fetch(`${apiUrl}/api/avatar-slots/configured`, {
           method: 'POST',
@@ -498,7 +498,7 @@ function AvatarLayoutEditor({ apiUrl, managedAvatars }) {
         setPendingClearMultiSelect(true)
         setIsDragging(true)
         setDraggedSlot(slot) // Primary slot for drag offset calculation
-        setDragOffset({ x: slot.x_position, y: slot.y_position })
+        setDragOffset({ x: Math.round(slot.x_position), y: Math.round(slot.y_position) })
       } else {
         // Single selection - clear multi-selection immediately
         setPendingClearMultiSelect(false)
@@ -506,7 +506,7 @@ function AvatarLayoutEditor({ apiUrl, managedAvatars }) {
         setSelectedSlots([])
         setIsDragging(true)
         setDraggedSlot(slot)
-        setDragOffset({ x: slot.x_position, y: slot.y_position })
+        setDragOffset({ x: Math.round(slot.x_position), y: Math.round(slot.y_position) })
       }
     }
   }
@@ -586,8 +586,8 @@ function AvatarLayoutEditor({ apiUrl, managedAvatars }) {
           const currentSlot = configuredSlots.find(s => s.id === slot.id)
           return {
             id: slot.id,
-            x_position: Math.max(0, Math.min(100, currentSlot.x_position + deltaX)),
-            y_position: Math.max(0, Math.min(100, currentSlot.y_position + deltaY))
+            x_position: Math.round(Math.max(0, Math.min(100, currentSlot.x_position + deltaX))),
+            y_position: Math.round(Math.max(0, Math.min(100, currentSlot.y_position + deltaY)))
           }
         })
         

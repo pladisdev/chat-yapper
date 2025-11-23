@@ -439,10 +439,10 @@ async def api_create_avatar_slot(slot_data: dict):
     """Create a new avatar slot configuration"""
     try:
         slot = create_avatar_slot(
-            slot_index=slot_data["slot_index"],
-            x_position=slot_data["x_position"],
-            y_position=slot_data["y_position"],
-            size=slot_data.get("size", 60),
+            slot_index=int(slot_data["slot_index"]),
+            x_position=int(slot_data["x_position"]),
+            y_position=int(slot_data["y_position"]),
+            size=int(slot_data.get("size", 60)),
             avatar_group_id=slot_data.get("avatar_group_id")
         )
         
@@ -472,11 +472,19 @@ async def api_create_avatar_slot(slot_data: dict):
 async def api_update_configured_slot(slot_id: int, slot_data: dict):
     """Update an avatar slot configuration"""
     try:
-        # Extract valid fields
+        # Extract valid fields and ensure correct types
         update_fields = {}
         for key in ["x_position", "y_position", "size", "avatar_group_id", "slot_index", "voice_id"]:
             if key in slot_data:
-                update_fields[key] = slot_data[key]
+                value = slot_data[key]
+                # Convert numeric fields to int to avoid Pydantic warnings
+                if key in ["x_position", "y_position", "size", "slot_index", "voice_id"]:
+                    if value is not None:
+                        update_fields[key] = int(value)
+                    else:
+                        update_fields[key] = value
+                else:
+                    update_fields[key] = value
         
         slot = update_avatar_slot(slot_id, **update_fields)
         

@@ -1647,12 +1647,10 @@ async def check_parallel_limits_and_process(evt: Dict[str, Any], is_test_voice: 
 
 async def handle_event(evt: Dict[str, Any]):
     """Handle regular chat events with message filtering and parallel limiting"""
-    print("*** HANDLE_EVENT CALLED ***")
     logger.info(f"Handling event: {evt}")
     
     # Check if TTS is globally enabled
     if not tts_enabled:
-        print("*** TTS DISABLED - EXITING ***")
         logger.info(f"TTS is disabled - skipping message from {evt.get('user', 'unknown')}")
         return
 
@@ -1680,8 +1678,6 @@ async def handle_event(evt: Dict[str, Any]):
     
     if filtered_text != original_text:
         logger.info(f"Text after filtering: '{filtered_text}'")
-        raise
-    return
 
 async def process_tts_message(evt: Dict[str, Any]):
     """Process TTS message with simple audio duration-based limiting"""
