@@ -331,8 +331,11 @@ class TwitchBot(commands.Bot):
         who = getattr(self, "nick", None) or self._nick or "unknown"
         try:
             logger.info(f"Twitch bot ready as {who}, listening to {self.channel_name}")
-        except Exception:
-            pass
+            # Join the channel to start receiving messages (required in TwitchIO 3.x)
+            await self.join_channels([self.channel_name])
+            logger.info(f"Joined channel: {self.channel_name}")
+        except Exception as e:
+            logger.error(f"Error in event_ready: {e}", exc_info=True)
 
     async def event_error(self, error, data=None):
         try:
