@@ -9,6 +9,7 @@ try:
     from google.oauth2.credentials import Credentials
     from googleapiclient.discovery import build
     from googleapiclient.errors import HttpError
+    from google.auth.exceptions import RefreshError
     YOUTUBE_AVAILABLE = True
 except ImportError as e:
     logger.error(f"Failed to import YouTube dependencies: {e}")
@@ -16,6 +17,7 @@ except ImportError as e:
     YOUTUBE_AVAILABLE = False
     Credentials = None  # type: ignore
     HttpError = Exception
+    RefreshError = Exception  # type: ignore
 
 
 class YouTubeListener:
@@ -82,15 +84,20 @@ class YouTubeListener:
             else:
                 logger.warning("No active live stream found for this channel")
                 return False
+        except RefreshError as e:
+            logger.error("YouTube authentication token has expired or been revoked")
+            logger.info("Please reconnect your YouTube account in settings to continue using YouTube chat integration")
+            return False
         except HttpError as e:
             status_code = getattr(e, 'resp', {}).get('status', 0)
             if status_code == 401:
-                logger.error("YouTube API authentication error while finding active stream - token may be expired")
+                logger.error("YouTube API authentication error - token may be expired")
+                logger.info("Please reconnect your YouTube account in settings")
             else:
                 logger.error(f"YouTube API error finding active stream: {e}")
             return False
         except Exception as e:
-            logger.error(f"Error finding active stream: {e}", exc_info=True)
+            logger.error(f"Error finding active stream: {e}")
             return False
     
     async def get_live_chat_id(self) -> Optional[str]:
@@ -122,15 +129,20 @@ class YouTubeListener:
             else:
                 logger.error(f"Video {self.video_id} not found")
                 return None
+        except RefreshError as e:
+            logger.error("YouTube authentication token has expired or been revoked")
+            logger.info("Please reconnect your YouTube account in settings to continue using YouTube chat integration")
+            return None
         except HttpError as e:
             status_code = getattr(e, 'resp', {}).get('status', 0)
             if status_code == 401:
-                logger.error("YouTube API authentication error while getting live chat ID - token may be expired")
+                logger.error("YouTube API authentication error - token may be expired")
+                logger.info("Please reconnect your YouTube account in settings")
             else:
                 logger.error(f"YouTube API error getting live chat ID: {e}")
             return None
         except Exception as e:
-            logger.error(f"Error getting live chat ID: {e}", exc_info=True)
+            logger.error(f"Error getting live chat ID: {e}")
             return None
     
     async def listen_to_chat(self, on_event: Callable[[Dict[str, Any]], None]):

@@ -482,8 +482,9 @@ async def restart_twitch_if_needed(settings: Dict[str, Any]):
                 # Catch any other errors during cancellation (e.g., twitchio internal errors)
                 logger.warning(f"Error while cancelling Twitch bot task: {e}")
             
-            # Give it a moment to fully clean up
-            await asyncio.sleep(0.1)
+            # Give TwitchIO's EventSub server more time to fully shut down
+            # This prevents CancelledError spam from aiohttp adapter callbacks
+            await asyncio.sleep(0.5)
         
         # Start new task if enabled
         if run_twitch_bot and settings.get("twitch", {}).get("enabled"):
@@ -819,8 +820,8 @@ async def restart_youtube_if_needed(settings: Dict[str, Any]):
             except Exception as e:
                 logger.warning(f"Error while cancelling YouTube bot task: {e}")
             
-            # Give it a moment to fully clean up
-            await asyncio.sleep(0.1)
+            # Give YouTube API more time to fully clean up
+            await asyncio.sleep(0.5)
         
         # Start new task if enabled
         if run_youtube_bot and settings.get("youtube", {}).get("enabled"):
@@ -1512,9 +1513,37 @@ except Exception as e:
 # ---------- Avatar Slot Management API ----------
 # Avatar slot endpoints have been moved to routers/avatars.py
 
+def custom_exception_handler(loop, context):
+    """
+    Custom exception handler to suppress harmless TwitchIO internal errors during shutdown.
+    These CancelledError exceptions from aiohttp adapter callbacks are expected during bot restarts.
+    """
+    exception = context.get("exception")
+    message = context.get("message", "")
+    handle = str(context.get("handle", ""))
+    
+    # Suppress TwitchIO EventSub server cancellation errors (harmless during shutdown)
+    if isinstance(exception, asyncio.CancelledError):
+        # Check if this is from TwitchIO's aiohttp adapter
+        if ("AiohttpAdapter._task_callback" in message or 
+            "AiohttpAdapter._task_callback" in handle or
+            "aio_adapter.py" in message or
+            "web_runner.py" in message):
+            # This is an expected error during TwitchIO bot shutdown - don't log it
+            return
+    
+    # For all other exceptions, use the default handler
+    loop.default_exception_handler(context)
+
 @app.on_event("startup")
 async def startup():
     logger.info("FastAPI startup event triggered")
+    
+    # Install custom exception handler to suppress TwitchIO shutdown noise
+    loop = asyncio.get_running_loop()
+    loop.set_exception_handler(custom_exception_handler)
+    logger.info("Custom exception handler installed for cleaner TwitchIO shutdown")
+    
     try:
         # Broadcast initial avatar slot assignments to any connected clients
         await broadcast_avatar_slots()
