@@ -9,14 +9,17 @@ from unittest.mock import MagicMock, AsyncMock, patch
 from modules.twitch_listener import TwitchBot
 
 
+@pytest.fixture(autouse=True)
+def mock_twitch_credentials(monkeypatch):
+    """Mock Twitch credentials for all tests - module level to ensure it's set before imports"""
+    # Patch the module-level constants that were already imported
+    import modules.persistent_data
+    monkeypatch.setattr(modules.persistent_data, 'TWITCH_CLIENT_ID', 'test_client_id')
+    monkeypatch.setattr(modules.persistent_data, 'TWITCH_CLIENT_SECRET', 'test_client_secret')
+
+
 class TestClearChatEvents:
     """Test CLEARCHAT event parsing and handling"""
-    
-    @pytest.fixture(autouse=True)
-    def mock_twitch_credentials(self, monkeypatch):
-        """Mock Twitch credentials for all tests in this class"""
-        monkeypatch.setenv("TWITCH_CLIENT_ID", "test_client_id")
-        monkeypatch.setenv("TWITCH_CLIENT_SECRET", "test_client_secret")
     
     def test_normalize_tags_dict(self):
         """Test tag normalization with dict input"""
