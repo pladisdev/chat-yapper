@@ -25,6 +25,12 @@ skip_if_no_credentials = pytest.mark.skipif(
 class TestClearChatEvents:
     """Test CLEARCHAT event parsing and handling"""
     
+    @pytest.fixture(autouse=True)
+    def mock_twitch_credentials(self, monkeypatch):
+        """Mock Twitch credentials for all tests in this class"""
+        monkeypatch.setenv("TWITCH_CLIENT_ID", "test_client_id")
+        monkeypatch.setenv("TWITCH_CLIENT_SECRET", "test_client_secret")
+    
     def test_normalize_tags_dict(self):
         """Test tag normalization with dict input"""
         from modules.twitch_listener import _normalize_tags
