@@ -518,6 +518,7 @@ async def restart_twitch_if_needed(settings: Dict[str, Any]):
             
             # Event router to handle different event types
             async def route_twitch_event(e):
+                logger.info(f"[EVENT ROUTER] Received event: type={e.get('type')}, user={e.get('user')}, text={e.get('text', '')[:50]}")
                 event_type = e.get("type", "")
                 if event_type == "moderation":
                     await handle_moderation_event(e)
@@ -1617,6 +1618,7 @@ async def startup():
                 
                 # Event router to handle different event types
                 async def route_twitch_event(e):
+                    logger.info(f"[EVENT ROUTER] Received event: type={e.get('type')}, user={e.get('user')}, text={e.get('text', '')[:50]}")
                     event_type = e.get("type", "")
                     if event_type == "moderation":
                         await handle_moderation_event(e)
