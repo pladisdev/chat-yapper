@@ -1,13 +1,13 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import { Label } from '../ui/label'
 import { Switch } from '../ui/switch'
 import { Slider } from '../ui/slider'
 import { Input } from '../ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
-import { MessageSquare } from 'lucide-react'
+import { MessageSquare, RefreshCw } from 'lucide-react'
 import { hexColorWithOpacity } from '../../utils/colorUtils'
 
-const FONT_OPTIONS = [
+const DEFAULT_FONT_OPTIONS = [
   { value: 'Arial, sans-serif', label: 'Arial' },
   { value: '"Helvetica Neue", Helvetica, sans-serif', label: 'Helvetica' },
   { value: '"Segoe UI", Tahoma, sans-serif', label: 'Segoe UI' },
@@ -18,12 +18,23 @@ const FONT_OPTIONS = [
   { value: '"Courier New", Courier, monospace', label: 'Courier New' },
   { value: '"Comic Sans MS", cursive', label: 'Comic Sans MS' },
   { value: 'Impact, fantasy', label: 'Impact' },
-  { value: '"Brush Script MT", cursive', label: 'Brush Script' }
+  { value: '"Brush Script MT", cursive', label: 'Brush Script' },
+  { value: 'custom', label: 'Custom Font...' }
 ]
 
 function ChatBubbleSettings({ settings, onUpdate }) {
   const chatBubblesEnabled = settings?.chatBubblesEnabled ?? true
   const bubbleFontFamily = settings?.bubbleFontFamily ?? 'Arial, sans-serif'
+  
+  // State for system fonts
+  const [systemFonts, setSystemFonts] = useState([])
+  const [loadingFonts, setLoadingFonts] = useState(false)
+  const [fontOptions, setFontOptions] = useState(DEFAULT_FONT_OPTIONS)
+  
+  // Determine if current font is custom (not in the preset list)
+  const isCustomFont = !fontOptions.slice(0, -1).some(opt => opt.value === bubbleFontFamily)
+  const [showCustomInput, setShowCustomInput] = useState(isCustomFont)
+  const [customFontValue, setCustomFontValue] = useState(isCustomFont ? bubbleFontFamily : '')
   const bubbleFontSize = settings?.bubbleFontSize ?? 14
   const bubbleFontColor = settings?.bubbleFontColor ?? '#ffffff'
   const bubbleBackgroundColor = settings?.bubbleBackgroundColor ?? '#000000'
@@ -32,12 +43,105 @@ function ChatBubbleSettings({ settings, onUpdate }) {
   const bubbleShowUsername = settings?.bubbleShowUsername ?? true
   const bubbleUsernameColor = settings?.bubbleUsernameColor ?? '#ffffff'
 
+  // Load system fonts on component mount
+  useEffect(() => {
+    loadSystemFonts()
+  }, [])
+
+  /**
+   * Check if a font is actually available in the browser
+   * Uses canvas-based font detection
+   */
+  const isFontAvailable = (fontName) => {
+    // Create a test string
+    const testString = "mmmmmmmmmmlli"
+    const testSize = '72px'
+    const canvas = document.createElement('canvas')
+    const context = canvas.getContext('2d')
+    
+    // Get baseline width using a common fallback font
+    context.font = `${testSize} monospace`
+    const baselineWidth = context.measureText(testString).width
+    
+    // Test with the font in question, with monospace as fallback
+    context.font = `${testSize} ${fontName}, monospace`
+    const testWidth = context.measureText(testString).width
+    
+    // If widths differ, the font is available (not falling back to monospace)
+    return testWidth !== baselineWidth
+  }
+
+  /**
+   * Filter fonts to only those available in the browser
+   */
+  const filterAvailableFonts = (fonts) => {
+    const available = []
+    
+    for (const font of fonts) {
+      // Extract the main font name from the family string
+      // e.g., '"Arial Black", sans-serif' -> 'Arial Black'
+      const fontName = font.family.split(',')[0].replace(/['"]/g, '').trim()
+      
+      if (isFontAvailable(fontName)) {
+        available.push(font)
+      }
+    }
+    
+    return available
+  }
+
+  const loadSystemFonts = async () => {
+    setLoadingFonts(true)
+    try {
+      const response = await fetch('/api/system/fonts')
+      const data = await response.json()
+      
+      if (data.fonts && data.fonts.length > 0) {
+        // Filter to only fonts that actually work in the browser
+        const availableFonts = filterAvailableFonts(data.fonts)
+        
+        console.log(`Detected ${data.fonts.length} system fonts, ${availableFonts.length} available in browser`)
+        
+        // Convert available fonts to option format
+        const systemFontOptions = availableFonts.map(font => ({
+          value: font.family,
+          label: font.name
+        }))
+        
+        // Combine system fonts with custom option at the end
+        setFontOptions([...systemFontOptions, { value: 'custom', label: 'Custom Font...' }])
+        setSystemFonts(availableFonts)
+      }
+    } catch (error) {
+      console.error('Failed to load system fonts:', error)
+      // Keep default fonts if loading fails
+    } finally {
+      setLoadingFonts(false)
+    }
+  }
+
   const handleToggle = (enabled) => {
     onUpdate({ chatBubblesEnabled: enabled })
   }
 
   const handleFontFamilyChange = (e) => {
-    onUpdate({ bubbleFontFamily: e.target.value })
+    const value = e.target.value
+    if (value === 'custom') {
+      setShowCustomInput(true)
+      // Don't update the font yet, wait for user to type in the custom input
+    } else {
+      setShowCustomInput(false)
+      setCustomFontValue('')
+      onUpdate({ bubbleFontFamily: value })
+    }
+  }
+
+  const handleCustomFontChange = (e) => {
+    const value = e.target.value
+    setCustomFontValue(value)
+    if (value.trim()) {
+      onUpdate({ bubbleFontFamily: value })
+    }
   }
 
   const handleFontSizeChange = (value) => {
@@ -97,21 +201,48 @@ function ChatBubbleSettings({ settings, onUpdate }) {
           <>
             {/* Font Family */}
             <div className="space-y-2">
-              <Label htmlFor="bubble-font" className="text-sm font-medium">
-                Font Family
-              </Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="bubble-font" className="text-sm font-medium">
+                  Font Family
+                </Label>
+                {systemFonts.length > 0 && (
+                  <button
+                    onClick={loadSystemFonts}
+                    disabled={loadingFonts}
+                    className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+                    title="Refresh system fonts"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${loadingFonts ? 'animate-spin' : ''}`} />
+                    {loadingFonts ? 'Loading...' : `${systemFonts.length} fonts`}
+                  </button>
+                )}
+              </div>
               <select
                 id="bubble-font"
-                value={bubbleFontFamily}
+                value={showCustomInput ? 'custom' : bubbleFontFamily}
                 onChange={handleFontFamilyChange}
                 className="w-full h-10 px-3 py-2 bg-background border border-input rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
               >
-                {FONT_OPTIONS.map(font => (
+                {fontOptions.map(font => (
                   <option key={font.value} value={font.value}>
                     {font.label}
                   </option>
                 ))}
               </select>
+              {showCustomInput && (
+                <div className="mt-2">
+                  <Input
+                    type="text"
+                    placeholder="Enter font name (e.g., 'Roboto, sans-serif' or 'MyCustomFont')"
+                    value={customFontValue}
+                    onChange={handleCustomFontChange}
+                    className="w-full"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Enter any system font name or web font family. Include fallbacks for best compatibility.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Font Size */}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Optional, Any
 from sqlmodel import SQLModel, Field
+from pydantic import field_serializer
 
 
 class Setting(SQLModel, table=True):
@@ -78,3 +79,10 @@ class AvatarSlot(SQLModel, table=True):
     voice_id: Optional[int] = Field(default=None)  # ID of the Voice to use for this slot (None = random)
     created_at: Optional[str] = Field(default=None)  # When this slot was created
     updated_at: Optional[str] = Field(default=None)  # When this slot was last modified
+    
+    @field_serializer('slot_index', 'x_position', 'y_position', 'size', 'voice_id', when_used='always')
+    def serialize_int_fields(self, value: Any) -> Optional[int]:
+        """Ensure int fields are serialized as ints, converting floats if necessary"""
+        if value is None:
+            return None
+        return int(value)
