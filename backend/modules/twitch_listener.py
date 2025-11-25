@@ -331,9 +331,15 @@ class TwitchBot(commands.Bot):
         who = getattr(self, "nick", None) or self._nick or "unknown"
         try:
             logger.info(f"Twitch bot ready as {who}, listening to {self.channel_name}")
-            # Join the channel to start receiving messages (required in TwitchIO 3.x)
-            await self.join_channels([self.channel_name])
-            logger.info(f"Joined channel: {self.channel_name}")
+            
+            # In TwitchIO 3.x, channels from initial_channels should auto-join
+            # But we can verify by checking connected channels
+            if hasattr(self, 'connected_channels'):
+                logger.info(f"Connected channels: {list(self.connected_channels)}")
+            
+            # Log available methods for debugging
+            logger.debug(f"Bot methods: {[m for m in dir(self) if 'channel' in m.lower() or 'join' in m.lower()]}")
+            
         except Exception as e:
             logger.error(f"Error in event_ready: {e}", exc_info=True)
 
