@@ -86,18 +86,27 @@ def get_database_session():
         yield session
 
 def get_settings() -> dict:
-    """Get application settings from database"""
+    """Get application settings from database, merged with defaults for any missing keys"""
     import json
     try:
+        # Load defaults
+        defaults = {}
+        if os.path.exists(DEFAULTS_PATH):
+            with open(DEFAULTS_PATH, 'r', encoding='utf-8') as f:
+                defaults = json.load(f)
+        
         with Session(engine) as session:
             row = session.exec(select(Setting).where(Setting.key == "settings")).first()
             if row:
                 settings = json.loads(row.value_json)
+                # Merge defaults with loaded settings (settings take precedence)
+                # This ensures new settings are available even in old databases
+                merged = {**defaults, **settings}
                 logger.info(f"Loaded settings from database: {DB_PATH}")
-                return settings
+                return merged
             else:
                 logger.error("No settings found in database!")
-                return {}
+                return defaults
     except Exception as e:
         logger.error(f"Error loading settings: {e}")
         return {}

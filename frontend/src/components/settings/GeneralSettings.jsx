@@ -32,7 +32,7 @@ function GeneralSettings({ settings, setSettings, updateSettings, apiUrl }) {
     const currentLimit = settings.parallelMessageLimit
     const presetValues = [1, 2, 3, 4, 5, 6, 8, 10, 15, 20, null]
     
-    if (currentLimit !== null && !presetValues.includes(currentLimit)) {
+    if (currentLimit !== null && currentLimit !== undefined && !presetValues.includes(currentLimit)) {
       setIsCustomMode(true)
       setCustomLimit(currentLimit.toString())
     } else {
