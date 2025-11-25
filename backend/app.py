@@ -488,6 +488,11 @@ async def restart_twitch_if_needed(settings: Dict[str, Any]):
         
         # Start new task if enabled
         if run_twitch_bot and settings.get("twitch", {}).get("enabled"):
+            # Double-check no task is still running (prevent duplicate starts)
+            if TwitchTask and not TwitchTask.done():
+                logger.warning("Twitch bot task still running, skipping restart")
+                return
+            
             logger.info("Restarting Twitch bot with new settings")
             
             # Get OAuth token from database
@@ -507,6 +512,9 @@ async def restart_twitch_if_needed(settings: Dict[str, Any]):
                 logger.warning("Twitch connection test failed during restart - not starting bot")
                 TwitchTask = None
                 return
+            
+            # Give the test connection time to fully release the EventSub server port
+            await asyncio.sleep(0.3)
             
             # Event router to handle different event types
             async def route_twitch_event(e):
@@ -1532,6 +1540,12 @@ def custom_exception_handler(loop, context):
             # This is an expected error during TwitchIO bot shutdown - don't log it
             return
     
+    # Suppress port binding errors from duplicate bot starts (Errno 10048)
+    if isinstance(exception, OSError):
+        if "10048" in str(exception) or "address already in use" in str(exception).lower():
+            # Port conflict from duplicate bot start - already logged elsewhere
+            return
+    
     # For all other exceptions, use the default handler
     loop.default_exception_handler(context)
 
@@ -1553,64 +1567,70 @@ async def startup():
         logger.info(f"Settings loaded, Twitch enabled: {settings.get('twitch', {}).get('enabled')}")
         
         if run_twitch_bot and settings.get("twitch", {}).get("enabled"):
-            logger.info("Starting Twitch bot...")
-            
-            # Get OAuth token from database (with automatic refresh if needed)
-            token_info = await get_twitch_token_for_bot()
-            if not token_info:
-                # Check if auth exists at all to provide better error message
-                from modules.persistent_data import get_auth
-                existing_auth = get_auth()
-                
-                if existing_auth:
-                    # Auth exists but token refresh failed or token expired without refresh token
-                    logger.error("Twitch token expired and could not be refreshed. Please reconnect your Twitch account.")
-                    
-                    # Broadcast error to frontend
-                    global twitch_auth_error
-                    twitch_auth_error = {
-                        "type": "twitch_auth_error",
-                        "message": "Your Twitch connection has expired. Please reconnect your account in settings.",
-                        "error": "Token expired and refresh failed"
-                    }
-                    await hub.broadcast(twitch_auth_error)
-                else:
-                    # No auth exists at all
-                    logger.warning("No Twitch OAuth token found. Please connect your Twitch account.")
-                return
-                
-            twitch_config = settings.get("twitch", {})
-            channel = twitch_config.get("channel") or token_info["username"]
-            
-            logger.info(f"Twitch config: channel={channel}, nick={token_info['username']} (displayed as Chat Yapper), token={'***' if token_info['token'] else 'None'}")
-            
-            # Test Twitch connection first to detect auth issues early
-            connection_test_passed = await test_twitch_connection(token_info)
-            
-            if not connection_test_passed:
-                logger.warning("Twitch connection test failed - not starting full bot")
-                # Don't return here, let the auth error be handled by the test function
-                # The error will already be broadcast to clients
-                return
-            
-            # Event router to handle different event types
-            async def route_twitch_event(e):
-                event_type = e.get("type", "")
-                if event_type == "moderation":
-                    await handle_moderation_event(e)
-                else:
-                    # Default to chat event handler
-                    await handle_event(e)
-            
+            # Check if bot is already running (prevent duplicate starts)
             global TwitchTask
-            
-            # Create Twitch bot task with shared error handling
-            TwitchTask = await create_twitch_bot_task(
-                token_info=token_info,
-                channel=channel,
-                route_twitch_event=route_twitch_event,
-                context_name="startup"
-            )
+            if TwitchTask and not TwitchTask.done():
+                logger.warning("Twitch bot already running, skipping startup initialization")
+            else:
+                logger.info("Starting Twitch bot...")
+                
+                # Get OAuth token from database (with automatic refresh if needed)
+                token_info = await get_twitch_token_for_bot()
+                if not token_info:
+                    # Check if auth exists at all to provide better error message
+                    from modules.persistent_data import get_auth
+                    existing_auth = get_auth()
+                    
+                    if existing_auth:
+                        # Auth exists but token refresh failed or token expired without refresh token
+                        logger.error("Twitch token expired and could not be refreshed. Please reconnect your Twitch account.")
+                        
+                        # Broadcast error to frontend
+                        global twitch_auth_error
+                        twitch_auth_error = {
+                            "type": "twitch_auth_error",
+                            "message": "Your Twitch connection has expired. Please reconnect your account in settings.",
+                            "error": "Token expired and refresh failed"
+                        }
+                        await hub.broadcast(twitch_auth_error)
+                    else:
+                        # No auth exists at all
+                        logger.warning("No Twitch OAuth token found. Please connect your Twitch account.")
+                    return
+                    
+                twitch_config = settings.get("twitch", {})
+                channel = twitch_config.get("channel") or token_info["username"]
+                
+                logger.info(f"Twitch config: channel={channel}, nick={token_info['username']} (displayed as Chat Yapper), token={'***' if token_info['token'] else 'None'}")
+                
+                # Test Twitch connection first to detect auth issues early
+                connection_test_passed = await test_twitch_connection(token_info)
+                
+                if not connection_test_passed:
+                    logger.warning("Twitch connection test failed - not starting full bot")
+                    # Don't return here, let the auth error be handled by the test function
+                    # The error will already be broadcast to clients
+                    return
+                
+                # Give the test connection time to fully release the EventSub server port
+                await asyncio.sleep(0.3)
+                
+                # Event router to handle different event types
+                async def route_twitch_event(e):
+                    event_type = e.get("type", "")
+                    if event_type == "moderation":
+                        await handle_moderation_event(e)
+                    else:
+                        # Default to chat event handler
+                        await handle_event(e)
+                
+                # Create Twitch bot task with shared error handling
+                TwitchTask = await create_twitch_bot_task(
+                    token_info=token_info,
+                    channel=channel,
+                    route_twitch_event=route_twitch_event,
+                    context_name="startup"
+                )
         else:
             if not run_twitch_bot:
                 logger.warning("Twitch bot not available (import failed)")
