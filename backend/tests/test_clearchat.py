@@ -4,12 +4,19 @@ Tests that TTS is properly cancelled when users are banned or timed out
 """
 import pytest
 import asyncio
+import os
 from unittest.mock import MagicMock, AsyncMock, patch
 from modules.twitch_listener import TwitchBot
 
 
 class TestClearChatEvents:
     """Test CLEARCHAT event parsing and handling"""
+    
+    @pytest.fixture(autouse=True)
+    def mock_twitch_credentials(self, monkeypatch):
+        """Mock Twitch credentials for all tests in this class"""
+        monkeypatch.setenv("TWITCH_CLIENT_ID", "test_client_id")
+        monkeypatch.setenv("TWITCH_CLIENT_SECRET", "test_client_secret")
     
     def test_normalize_tags_dict(self):
         """Test tag normalization with dict input"""
