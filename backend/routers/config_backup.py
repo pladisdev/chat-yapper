@@ -266,7 +266,8 @@ async def import_config(
                     logger.info(f"Imported {stats['avatars_imported']} avatars, copied {stats['images_copied']} images")
                 
                 # Regenerate avatar slot assignments
-                from app import hub, avatar_message_queue
+                from app import hub
+                from modules.queue_manager import avatar_message_queue
                 from modules.avatars import (
                     generate_avatar_slot_assignments, get_active_avatar_slots,
                     get_avatar_slot_assignments, get_avatar_assignments_generation_id

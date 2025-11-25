@@ -501,7 +501,8 @@ async def test_parallel_limit():
         duration = time.time() - start_time
         
         # Import queue info
-        from app import active_tts_jobs, parallel_message_queue, total_active_tts_count
+        from app import active_tts_jobs, total_active_tts_count
+        from modules.queue_manager import parallel_message_queue
         
         result = {
             "success": True,

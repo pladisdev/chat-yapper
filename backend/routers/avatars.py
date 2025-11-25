@@ -152,7 +152,8 @@ async def api_upload_avatar(file: UploadFile, avatar_name: str = Form(...), avat
         
         # Broadcast refresh message to all connected clients and regenerate slot assignments
         # Import here to avoid circular imports
-        from app import hub, avatar_message_queue
+        from app import hub
+        from modules.queue_manager import avatar_message_queue
         from modules.avatars import (generate_avatar_slot_assignments, get_active_avatar_slots,
                                      get_avatar_slot_assignments, get_avatar_assignments_generation_id)
         
@@ -223,7 +224,8 @@ async def api_delete_avatar(avatar_id: int):
         delete_avatar(avatar_id)
         
         # Broadcast refresh message and regenerate slot assignments
-        from app import hub, avatar_message_queue
+        from app import hub
+        from modules.queue_manager import avatar_message_queue
         from modules.avatars import (generate_avatar_slot_assignments, get_active_avatar_slots,
                                      get_avatar_slot_assignments, get_avatar_assignments_generation_id)
         
@@ -255,7 +257,8 @@ async def api_delete_avatar_group(group_id: str):
     """Delete an entire avatar group (all avatars with the same group_id)"""
     try:
         result = delete_avatar_group(group_id)
-        from app import hub, avatar_message_queue
+        from app import hub
+        from modules.queue_manager import avatar_message_queue
         from modules.avatars import (generate_avatar_slot_assignments, get_active_avatar_slots,
                                      get_avatar_slot_assignments, get_avatar_assignments_generation_id)
         get_active_avatar_slots().clear()
@@ -283,7 +286,8 @@ async def api_update_avatar_position(group_id: str, position_data: dict):
         spawn_position = position_data.get("spawn_position")
         result = update_avatar_group_position(group_id, spawn_position)
         
-        from app import hub, avatar_message_queue
+        from app import hub
+        from modules.queue_manager import avatar_message_queue
         from modules.avatars import (generate_avatar_slot_assignments, get_active_avatar_slots,
                                      get_avatar_slot_assignments, get_avatar_assignments_generation_id)
         get_active_avatar_slots().clear()
@@ -309,7 +313,8 @@ async def api_toggle_avatar_group_disabled(group_id: str):
     """Toggle the disabled status of an entire avatar group"""
     try:
         result = toggle_avatar_group_disabled(group_id)
-        from app import hub, avatar_message_queue
+        from app import hub
+        from modules.queue_manager import avatar_message_queue
         from modules.avatars import (generate_avatar_slot_assignments, get_active_avatar_slots,
                                      get_avatar_slot_assignments, get_avatar_assignments_generation_id)
         get_active_avatar_slots().clear()
@@ -335,7 +340,8 @@ async def api_toggle_avatar_group_disabled(group_id: str):
 async def api_regenerate_avatar_slots():
     """Force regeneration of avatar slot assignments (re-randomize avatars)"""
     try:
-        from app import hub, avatar_message_queue
+        from app import hub
+        from modules.queue_manager import avatar_message_queue
         from modules.avatars import (generate_avatar_slot_assignments, get_active_avatar_slots,
                                      get_avatar_slot_assignments, get_avatar_assignments_generation_id)
         
@@ -392,7 +398,7 @@ async def api_release_avatar_slot(slot_id: str):
 async def api_get_avatar_queue():
     """Get current avatar message queue status"""
     try:
-        from app import avatar_message_queue
+        from modules.queue_manager import avatar_message_queue
         from modules.avatars import get_active_avatar_slots, get_avatar_slot_assignments
         
         active_avatar_slots = get_active_avatar_slots()
@@ -447,7 +453,8 @@ async def api_create_avatar_slot(slot_data: dict):
         )
         
         # Broadcast update to all clients
-        from app import hub, avatar_message_queue
+        from app import hub
+        from modules.queue_manager import avatar_message_queue
         from modules.avatars import (generate_avatar_slot_assignments, get_active_avatar_slots,
                                      get_avatar_slot_assignments, get_avatar_assignments_generation_id)
         
@@ -492,7 +499,8 @@ async def api_update_configured_slot(slot_id: int, slot_data: dict):
             return {"success": False, "error": "Slot not found"}
         
         # Broadcast update to all clients
-        from app import hub, avatar_message_queue
+        from app import hub
+        from modules.queue_manager import avatar_message_queue
         from modules.avatars import (generate_avatar_slot_assignments, get_active_avatar_slots,
                                      get_avatar_slot_assignments, get_avatar_assignments_generation_id)
         
@@ -523,7 +531,8 @@ async def api_delete_configured_slot(slot_id: int):
             return {"success": False, "error": "Slot not found"}
         
         # Broadcast update to all clients
-        from app import hub, avatar_message_queue
+        from app import hub
+        from modules.queue_manager import avatar_message_queue
         from modules.avatars import (generate_avatar_slot_assignments, get_active_avatar_slots,
                                      get_avatar_slot_assignments, get_avatar_assignments_generation_id)
         
@@ -551,7 +560,8 @@ async def api_delete_all_configured_slots():
         count = delete_all_avatar_slots()
         
         # Broadcast update to all clients
-        from app import hub, avatar_message_queue
+        from app import hub
+        from modules.queue_manager import avatar_message_queue
         from modules.avatars import (generate_avatar_slot_assignments, get_active_avatar_slots,
                                      get_avatar_slot_assignments, get_avatar_assignments_generation_id)
         
