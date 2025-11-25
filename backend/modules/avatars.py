@@ -163,6 +163,9 @@ def generate_avatar_slot_assignments():
     
     assignments = []
     
+    # Get list of all avatar group IDs for random selection
+    available_avatar_groups = list(avatar_data_by_group.keys())
+    
     for slot_config in configured_slots:
         slot_data = {
             "id": slot_config['id'],  # Use database primary key for unique ID
@@ -177,9 +180,17 @@ def generate_avatar_slot_assignments():
         
         # Assign avatar if one is configured for this slot
         if slot_config.get("avatar_group_id") and slot_config["avatar_group_id"] in avatar_data_by_group:
+            # Specific avatar assigned
             avatar_data = avatar_data_by_group[slot_config["avatar_group_id"]].copy()
             slot_data["avatarData"] = avatar_data
             logger.info(f"Assigned {avatar_data['name']} to slot {slot_config['slot_index']} at ({slot_config['x_position']}%, {slot_config['y_position']}%)")
+        elif available_avatar_groups:
+            # No specific avatar assigned (null) - randomly select one
+            import random
+            random_group_id = random.choice(available_avatar_groups)
+            avatar_data = avatar_data_by_group[random_group_id].copy()
+            slot_data["avatarData"] = avatar_data
+            logger.info(f"Randomly assigned {avatar_data['name']} to slot {slot_config['slot_index']} at ({slot_config['x_position']}%, {slot_config['y_position']}%)")
         
         assignments.append(slot_data)
     

@@ -2,7 +2,10 @@
 System, settings, stats, and debug router
 """
 import json
-from typing import Dict, Any
+import os
+import platform
+from pathlib import Path
+from typing import Dict, Any, List
 
 from fastapi import APIRouter, HTTPException
 
@@ -48,6 +51,113 @@ async def api_get_status():
     }
     logger.info(f"API: Returning status: {status}")
     return status
+
+def get_system_fonts() -> List[Dict[str, str]]:
+    """
+    Detect installed system fonts on Windows and Linux.
+    Returns a list of dicts with 'name' and 'family' keys.
+    """
+    fonts = []
+    system = platform.system()
+    
+    try:
+        if system == "Windows":
+            # Windows fonts are typically in C:\Windows\Fonts
+            font_dir = Path(os.environ.get('WINDIR', 'C:\\Windows')) / 'Fonts'
+            if font_dir.exists():
+                # Common font extensions
+                extensions = {'.ttf', '.otf', '.ttc'}
+                seen_families = set()
+                
+                for font_file in font_dir.iterdir():
+                    if font_file.suffix.lower() in extensions:
+                        # Extract font family name from filename
+                        name = font_file.stem
+                        # Clean up common suffixes
+                        for suffix in [' Bold', ' Italic', ' Regular', ' Light', ' Medium', 
+                                      'BD', 'BI', 'I', 'Z', 'L', 'M']:
+                            if name.endswith(suffix):
+                                name = name[:-len(suffix)].strip()
+                        
+                        # Remove common variations
+                        name = name.replace('MT', '').strip()
+                        
+                        if name and name not in seen_families:
+                            seen_families.add(name)
+                            # Create CSS-friendly font family string
+                            family = f'"{name}", sans-serif' if ' ' in name else f'{name}, sans-serif'
+                            fonts.append({'name': name, 'family': family})
+        
+        elif system == "Linux":
+            # Linux fonts are typically in these directories
+            font_dirs = [
+                Path('/usr/share/fonts'),
+                Path('/usr/local/share/fonts'),
+                Path.home() / '.fonts',
+                Path.home() / '.local/share/fonts'
+            ]
+            
+            extensions = {'.ttf', '.otf', '.ttc'}
+            seen_families = set()
+            
+            for base_dir in font_dirs:
+                if base_dir.exists():
+                    # Recursively search for font files
+                    for font_file in base_dir.rglob('*'):
+                        if font_file.suffix.lower() in extensions:
+                            name = font_file.stem
+                            # Clean up common suffixes
+                            for suffix in ['-Bold', '-Italic', '-Regular', '-Light', '-Medium',
+                                          'Bold', 'Italic', 'Regular', 'Light', 'Medium']:
+                                if name.endswith(suffix):
+                                    name = name[:-len(suffix)].strip('-')
+                            
+                            if name and name not in seen_families:
+                                seen_families.add(name)
+                                family = f'"{name}", sans-serif' if ' ' in name else f'{name}, sans-serif'
+                                fonts.append({'name': name, 'family': family})
+        
+        # Sort alphabetically
+        fonts.sort(key=lambda x: x['name'].lower())
+        
+        # Add common web-safe fonts that might not be detected
+        web_safe = [
+            {'name': 'Arial', 'family': 'Arial, sans-serif'},
+            {'name': 'Helvetica', 'family': 'Helvetica, sans-serif'},
+            {'name': 'Times New Roman', 'family': '"Times New Roman", Times, serif'},
+            {'name': 'Courier New', 'family': '"Courier New", Courier, monospace'},
+            {'name': 'Verdana', 'family': 'Verdana, sans-serif'},
+            {'name': 'Georgia', 'family': 'Georgia, serif'},
+        ]
+        
+        # Add web-safe fonts if not already in the list
+        existing_names = {f['name'] for f in fonts}
+        for ws_font in web_safe:
+            if ws_font['name'] not in existing_names:
+                fonts.insert(0, ws_font)
+        
+        logger.info(f"Detected {len(fonts)} system fonts on {system}")
+        
+    except Exception as e:
+        logger.error(f"Error detecting system fonts: {e}")
+        # Return basic web-safe fonts as fallback
+        fonts = [
+            {'name': 'Arial', 'family': 'Arial, sans-serif'},
+            {'name': 'Helvetica', 'family': 'Helvetica, sans-serif'},
+            {'name': 'Verdana', 'family': 'Verdana, sans-serif'},
+            {'name': 'Georgia', 'family': 'Georgia, serif'},
+            {'name': 'Times New Roman', 'family': '"Times New Roman", Times, serif'},
+            {'name': 'Courier New', 'family': '"Courier New", Courier, monospace'},
+        ]
+    
+    return fonts
+
+@router.get("/api/system/fonts")
+async def api_get_system_fonts():
+    """Get list of installed system fonts"""
+    logger.info("API: GET /api/system/fonts called")
+    fonts = get_system_fonts()
+    return {"fonts": fonts, "count": len(fonts)}
 
 @router.get("/api/debug/tts-state")
 async def api_debug_tts_state():

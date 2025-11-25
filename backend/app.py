@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from modules.tts import get_hybrid_provider, TTSJob, get_audio_duration
-from modules.message_filter import get_message_history
+from modules.message_filter import get_message_history, should_process_message
 from modules.persistent_data import get_settings, save_settings, get_auth, get_enabled_voices, AUDIO_DIR, PUBLIC_DIR
 from modules.avatars import (
     generate_avatar_slot_assignments,
@@ -28,6 +28,13 @@ from modules.avatars import (
     get_avatar_assignments_generation_id,
     get_avatar_slot_assignments,
     get_active_avatar_slots
+)
+from modules import queue_manager
+from modules.queue_manager import (
+    queue_avatar_message,
+    queue_parallel_message,
+    get_avatar_queue_length,
+    get_parallel_queue_length
 )
 
 from modules import logger
@@ -102,151 +109,30 @@ def add_to_message_history(username: str, original_text: str, filtered_text: str
 # Avatar Slot Management System
 # Manages which avatars are assigned to which slots and tracks their active status
 
-
-avatar_message_queue = []  # Queue for messages when all slots are busy
-
-def queue_avatar_message(message_data):
-    """Add a message to the avatar queue when all slots are busy"""
-    global avatar_message_queue
-    
-    avatar_message_queue.append({
-        "message_data": message_data,
-        "queued_time": time.time()
-    })
-    logger.info(f"Queued message for {message_data.get('user')} (queue length: {len(avatar_message_queue)})")
-
-def queue_parallel_message(message_data):
-    """Add a message to the parallel queue when limit is reached"""
-    global parallel_message_queue
-    
-    parallel_message_queue.append({
-        "message_data": message_data,
-        "queued_time": time.time()
-    })
-    logger.info(f"Queued message for {message_data.get('user')} (parallel queue length: {len(parallel_message_queue)})")
-
+# Queue processing wrapper functions that inject dependencies
 def process_parallel_message_queue():
     """Process queued messages if parallel slots become available"""
-    global parallel_message_queue, total_active_tts_count
-    
-    if not parallel_message_queue:
-        return
-    
-    settings = app_get_settings()
-    parallel_limit = settings.get("parallelMessageLimit", 5)
-    
-    # Check if we're under the limit now (or if there's no limit)
-    if parallel_limit is None or not isinstance(parallel_limit, (int, float)) or parallel_limit <= 0 or total_active_tts_count < parallel_limit:
-        # Try to process the oldest queued message
-        queued_item = parallel_message_queue[0]
-        message_data = queued_item["message_data"]
-        
-        # Check if message is too old (ignore messages older than 120 seconds)
-        if time.time() - queued_item["queued_time"] > 120:
-            parallel_message_queue.pop(0)
-            logger.info(f"Discarded old queued parallel message for {message_data.get('user')}")
-            # Try to process next message
-            if parallel_message_queue:
-                process_parallel_message_queue()
-            return
-        
-        # Remove from queue and process
-        parallel_message_queue.pop(0)
-        
-        # Reserve the slot by incrementing counter (check if replacing existing job)
-        username = message_data.get('user', 'unknown')
-        username_lower = username.lower()
-        replacing_existing = username_lower in active_tts_jobs
-        
-        if not replacing_existing:
-            total_active_tts_count += 1
-        
-        limit_text = "unlimited" if not parallel_limit or not isinstance(parallel_limit, (int, float)) or parallel_limit <= 0 else str(int(parallel_limit))
-        logger.info(f"Processing queued parallel message for {username} (active: {total_active_tts_count}/{limit_text}, replacing={replacing_existing})")
-        
-        # Process the queued message
-        async def process_queued():
-            try:
-                await process_tts_message(message_data)
-            except Exception as e:
-                # If processing fails, we need to decrement the counter
-                if not replacing_existing:
-                    decrement_tts_count()
-                logger.error(f"Failed to process queued TTS message for {username}: {e}")
-        
-        asyncio.create_task(process_queued())
+    queue_manager.process_parallel_message_queue(
+        app_get_settings,
+        process_tts_message,
+        active_tts_jobs,
+        total_active_tts_count,
+        increment_tts_count,
+        decrement_tts_count
+    )
 
 def process_avatar_message_queue():
-    """Process queued messages if slots become available"""
-    global avatar_message_queue
-    
-    if not avatar_message_queue:
-        return
-    
-    # Try to process the oldest queued message
-    queued_item = avatar_message_queue[0]
-    message_data = queued_item["message_data"]
-    
-    # Check if message is too old (ignore messages older than 60 seconds)
-    if time.time() - queued_item["queued_time"] > 60:
-        avatar_message_queue.pop(0)
-        logger.info(f"Discarded old queued message for {message_data.get('user')}")
-        # Try to process next message
-        if avatar_message_queue:
-            process_avatar_message_queue()
-        return
-    
-    # Try to find an available slot
-    voice_id = message_data.get("voice", {}).get("id") if message_data.get("voice") else None
-    available_slot = find_available_slot_for_tts(voice_id, message_data.get("user"))
-    
-    if available_slot:
-        # Remove from queue and process
-        avatar_message_queue.pop(0)
-        logger.info(f"Processing queued message for {message_data.get('user')} in slot {available_slot['id']}")
-        
-        # Process the queued TTS message
-        asyncio.create_task(process_queued_tts_message(message_data, available_slot))
+    """Process queued messages if avatar slots become available"""
+    queue_manager.process_avatar_message_queue(process_queued_tts_message)
 
 async def process_queued_tts_message(message_data, target_slot):
     """Process a TTS message that was queued due to all slots being busy"""
-    try:
-        # Reserve the slot
-        audio_url = message_data.get("audioUrl", "")
-        user = message_data.get("user", "")
-        
-        # Try to get audio duration from the file
-        audio_duration = None
-        if audio_url:
-            audio_filename = os.path.basename(audio_url)
-            audio_path = os.path.join(AUDIO_DIR, audio_filename)
-            if os.path.exists(audio_path):
-                audio_duration = get_audio_duration(audio_path)
-        
-        reserve_avatar_slot(target_slot["id"], user, audio_url, audio_duration)
-        
-        # Add slot information to the message
-        enriched_message = message_data.copy()
-        enriched_message.update({
-            "targetSlot": {
-                "id": target_slot["id"],
-                "x_position": target_slot.get("x_position", 50),
-                "y_position": target_slot.get("y_position", 50),
-                "size": target_slot.get("size", 100)
-            },
-            "avatarData": target_slot["avatarData"],
-            "generationId": get_avatar_assignments_generation_id()
-        })
-        
-        # Broadcast to clients
-        await hub.broadcast(enriched_message)
-        logger.info(f"Broadcasted queued TTS for {user} in slot {target_slot['id']}")
-        
-    except Exception as e:
-        logger.error(f"Failed to process queued TTS message: {e}")
-        # Release the slot on error
-        release_avatar_slot(target_slot["id"])
-        process_avatar_message_queue()
+    await queue_manager.process_queued_tts_message(
+        message_data, 
+        target_slot, 
+        hub, 
+        process_avatar_message_queue
+    )
     
 logger.info("Initializing FastAPI application")
 app = FastAPI()
@@ -472,7 +358,7 @@ async def handle_websocket_message(data: Dict[str, Any]):
             "slots": slots,
             "generationId": get_avatar_assignments_generation_id(),
             "activeSlots": list(get_active_avatar_slots().keys()),
-            "queueLength": len(avatar_message_queue)
+            "queueLength": get_avatar_queue_length()
         }
         # Send only to the requesting client (would need to track client in real implementation)
         # For now, broadcast to all clients
@@ -564,9 +450,8 @@ def app_save_settings(data: Dict[str, Any]):
     if avatar_layout_changed:
         logger.info("Avatar layout settings changed, regenerating slot assignments...")
         # Clear active slots and queue to avoid conflicts
-        global avatar_message_queue
         get_active_avatar_slots().clear()
-        avatar_message_queue.clear()
+        queue_manager.clear_all_queues()
         
         # Regenerate assignments
         generate_avatar_slot_assignments()
@@ -878,196 +763,9 @@ async def handle_youtube_auth_error():
 
 async def test_twitch_connection(token_info: dict):
     """Test Twitch connection without starting the full bot to detect auth issues early"""
-    logger.info("Testing Twitch connection...")
-    
-    # Save current directory and switch to a writable temp directory for TwitchIO token cache
-    import os
-    import tempfile
-    original_dir = os.getcwd()
-    temp_dir = tempfile.gettempdir()
-    
-    try:
-        # Change to temp directory to avoid permission issues with .tio.tokens.json
-        os.chdir(temp_dir)
-        
-        # Import TwitchIO for connection testing
-        import twitchio
-        from twitchio.ext import commands
-        from modules.twitch_listener import _ti_major
-        
-        # Create a minimal test bot that just connects and disconnects
-        class TestBot(commands.Bot):
-            def __init__(self, token, nick, user_id=None):
-                # Store nick for logging
-                self._nick = nick
-                
-                # Handle both access-token and oauth: formats
-                if token and not token.startswith("oauth:"):
-                    token = f"oauth:{token}"
-                
-                major_version = _ti_major()
-                
-                # Build constructor kwargs compatible with 1.x, 2.x, and 3.x
-                try:
-                    if major_version >= 3:
-                        # TwitchIO 3.x requires client_id, client_secret, and bot_id
-                        try:
-                            from modules.persistent_data import TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET
-                            client_id = TWITCH_CLIENT_ID or ""
-                            client_secret = TWITCH_CLIENT_SECRET or ""
-                        except ImportError:
-                            # Fallback for embedded builds with fixed client ID
-                            try:
-                                import embedded_config
-                                client_id = getattr(embedded_config, 'TWITCH_CLIENT_ID', '')
-                                client_secret = getattr(embedded_config, 'TWITCH_CLIENT_SECRET', '')
-                            except ImportError:
-                                client_id = ""
-                                client_secret = ""
-                        
-                        # Validate that we have required credentials for TwitchIO 3.x
-                        if not client_id or not client_secret:
-                            raise ValueError(f"TwitchIO 3.x requires TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET, but they are not configured. client_id={'present' if client_id else 'missing'}, client_secret={'present' if client_secret else 'missing'}")
-                        
-                        # For TwitchIO 3.x, bot_id should be the user ID, not the username
-                        bot_id = user_id or nick
-                        
-                        super().__init__(
-                            token=token,
-                            client_id=client_id,
-                            client_secret=client_secret,
-                            bot_id=bot_id,
-                            prefix='!',
-                            initial_channels=[]
-                        )
-                    elif major_version >= 2:
-                        # TwitchIO 2.x
-                        super().__init__(token=token, prefix='!', initial_channels=[])
-                    else:
-                        # TwitchIO 1.x expects irc_token + nick
-                        super().__init__(irc_token=token, nick=nick, prefix='!', initial_channels=[])
-                except TypeError as e:
-                    # If we still get a TypeError, it might be version detection issue
-                    # Try the 3.x format as fallback
-                    if "client_id" in str(e) or "client_secret" in str(e) or "bot_id" in str(e):
-                        try:
-                            from modules.persistent_data import TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET
-                            client_id = TWITCH_CLIENT_ID or ""
-                            client_secret = TWITCH_CLIENT_SECRET or ""
-                        except ImportError:
-                            try:
-                                import embedded_config
-                                client_id = getattr(embedded_config, 'TWITCH_CLIENT_ID', '')
-                                client_secret = getattr(embedded_config, 'TWITCH_CLIENT_SECRET', '')
-                            except ImportError:
-                                client_id = ""
-                                client_secret = ""
-                        
-                        # Validate that we have required credentials for TwitchIO 3.x
-                        if not client_id or not client_secret:
-                            raise ValueError(f"TwitchIO 3.x requires TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET, but they are not configured. client_id={'present' if client_id else 'missing'}, client_secret={'present' if client_secret else 'missing'}")
-                        
-                        # For TwitchIO 3.x, bot_id should be the user ID, not the username  
-                        bot_id = user_id or nick
-                        super().__init__(
-                            token=token,
-                            client_id=client_id,
-                            client_secret=client_secret,
-                            bot_id=bot_id,
-                            prefix='!',
-                            initial_channels=[]
-                        )
-                    else:
-                        raise
-                
-                self.connection_successful = False
-                
-            async def event_ready(self):
-                logger.info(f"Twitch connection test successful for user: {self._nick}")
-                self.connection_successful = True
-                # Disconnect immediately after successful connection
-                await self.close()
-        
-        # Create test bot instance using authenticated username and user ID for compatibility
-        test_bot = TestBot(
-            token=token_info["token"], 
-            nick=token_info["username"],
-            user_id=token_info.get("user_id")
-        )
-        
-        # Run the test with a timeout
-        try:
-            await asyncio.wait_for(test_bot.start(), timeout=10.0)
-            
-            if test_bot.connection_successful:
-                logger.info("Twitch connection test passed")
-                return True
-            else:
-                logger.warning("Twitch connection test failed - no ready event received")
-                return False
-                
-        except asyncio.TimeoutError:
-            logger.warning("Twitch connection test timed out")
-            await test_bot.close()
-            return False
-            
-    except Exception as e:
-        logger.error(f"Twitch connection test failed: {e}")
-        logger.info(f"Connection test error type: {type(e).__name__}")
-        
-        # Check if this is a file permission error (TwitchIO 3.x token cache)
-        if "Permission denied" in str(e) and ".tio.tokens.json" in str(e):
-            logger.warning("TwitchIO token cache permission error - this is non-critical for testing")
-            logger.info("Connection test will continue despite token cache error")
-            # Don't treat this as a critical auth error since it's just a cache write issue
-            return False
-        
-        # Check if this is a TwitchIO 3.x configuration error
-        if "client_id" in str(e) or "client_secret" in str(e) or "bot_id" in str(e):
-            logger.error("*** TwitchIO 3.x CONFIGURATION ERROR ***")
-            logger.error("This error indicates TwitchIO 3.x is installed but TWITCH_CLIENT_ID/TWITCH_CLIENT_SECRET are not configured.")
-            logger.error("This can happen when the application is built on a different PC without the proper .env file.")
-            logger.error("To fix this, ensure TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET are properly configured in the build environment.")
-        
-        # Check if this is an authentication error
-        error_str = str(e).lower()
-        is_auth_error = (
-            "authentication" in error_str or 
-            "unauthorized" in error_str or 
-            "invalid" in error_str or
-            "access token" in error_str or
-            e.__class__.__name__ == "AuthenticationError" or
-            "client_id" in error_str or
-            "client_secret" in error_str or
-            "bot_id" in error_str
-        )
-        
-        if is_auth_error:
-            logger.warning("=== AUTHENTICATION ERROR DETECTED IN CONNECTION TEST ===")
-            
-            # Store and broadcast auth error immediately
-            global twitch_auth_error
-            twitch_auth_error = {
-                "type": "twitch_auth_error",
-                "message": "Twitch authentication failed. Please reconnect your account.",
-                "error": str(e)
-            }
-            
-            # Broadcast the error to connected clients
-            try:
-                await hub.broadcast(twitch_auth_error)
-                logger.info("Auth error broadcast completed (connection test)")
-            except Exception as broadcast_error:
-                logger.error(f"Failed to broadcast auth error during connection test: {broadcast_error}")
-        
-        return False
-    
-    finally:
-        # Restore original directory
-        try:
-            os.chdir(original_dir)
-        except Exception:
-            pass  # Ignore errors when restoring directory
+    # Import and use the shared test function from twitch_utils
+    from modules.twitch_listener import test_twitch_connection as twitch_utils_test
+    return await twitch_utils_test(token_info)
 
 async def create_twitch_bot_task(token_info: dict, channel: str, route_twitch_event, context_name: str):
     """Create a Twitch bot task with consistent error handling"""
@@ -1238,7 +936,7 @@ def stop_all_tts():
     
     # Clear all data structures
     active_tts_jobs.clear()
-    parallel_message_queue.clear()  # Also clear parallel message queue
+    queue_manager.clear_all_queues()  # Clear both queues
     total_active_tts_count = 0
     
     # Disable TTS processing
@@ -1291,207 +989,6 @@ def toggle_tts():
         logger.error(f"Failed to save TTS state to database: {e}")
     
     return new_state
-
-def should_process_message(text: str, settings: Dict[str, Any], username: str = None, active_tts_jobs: Dict[str, Any] = None, tags: Dict[str, Any] = None) -> tuple[bool, str]:
-    """
-    Check if a message should be processed based on filtering settings.
-    Returns (should_process, filtered_text)
-    """
-    filtering = settings.get("messageFiltering", {})
-    
-    if not filtering.get("enabled", True):
-        return True, text
-    
-    # Check Twitch channel point redeem filter
-    twitch_settings = settings.get("twitch", {})
-    redeem_filter = twitch_settings.get("redeemFilter", {})
-    if redeem_filter.get("enabled", False):
-        allowed_redeem_names = redeem_filter.get("allowedRedeemNames", [])
-        if allowed_redeem_names:
-            # Check if message has a msg-param-reward-name tag (the redeem name)
-            # Also check custom-reward-id to confirm it's a redeem
-            custom_reward_id = tags.get("custom-reward-id", "") if tags else ""
-            reward_name = tags.get("msg-param-reward-name", "") if tags else ""
-            
-            if not custom_reward_id:
-                # No redeem ID means this is a regular message, not a channel point redeem
-                logger.info(f"Skipping message from {username} - not from a channel point redeem")
-                return False, text
-            
-            # Check if the redeem name is in the allowed list (case-insensitive)
-            if not any(reward_name.lower() == allowed_name.lower() for allowed_name in allowed_redeem_names):
-                logger.info(f"Skipping message from {username} - redeem name '{reward_name}' not in allowed list")
-                return False, text
-            
-            logger.info(f"Processing message from {username} - redeem name '{reward_name}' is allowed")
-    
-    # Skip ignored users
-    if username and filtering.get("ignoredUsers"):
-        ignored_users = filtering.get("ignoredUsers", [])
-        # Case-insensitive comparison
-        if any(username.lower() == ignored_user.lower() for ignored_user in ignored_users):
-            logger.info(f"Skipping message from ignored user: {username}")
-            return False, text
-    
-    # Skip commands if enabled (messages starting with ! or /)
-    if filtering.get("skipCommands", True):
-        stripped = text.strip()
-        if stripped.startswith('!') or stripped.startswith('/'):
-            logger.info(f"Skipping command message: {text[:50]}...")
-            return False, text
-    
-    # Start with original text, apply filters progressively
-    filtered_text = text
-    
-    # Remove emotes if enabled (and skip emote-only messages)
-    if filtering.get("skipEmotes", False):
-        import re
-        # Use Twitch tags to detect and remove emotes if available
-        if tags and "emotes" in tags and tags["emotes"]:
-            # Twitch emotes tag format: "emoteid:start-end,start-end/emoteid:start-end"
-            # Example: "25:0-4,6-10/1902:12-20" means emote 25 at positions 0-4 and 6-10, emote 1902 at 12-20
-            emotes_tag = tags["emotes"]
-            
-            # Parse emote positions to get character ranges that are emotes
-            emote_ranges = []
-            try:
-                for emote_data in emotes_tag.split('/'):
-                    if ':' not in emote_data:
-                        continue
-                    emote_id, positions = emote_data.split(':', 1)
-                    for pos_range in positions.split(','):
-                        if '-' in pos_range:
-                            start, end = pos_range.split('-')
-                            # Emote positions are byte positions (inclusive on both ends)
-                            emote_ranges.append((int(start), int(end)))
-            except (ValueError, AttributeError) as e:
-                logger.warning(f"Failed to parse emotes tag '{emotes_tag}': {e}")
-            
-            if emote_ranges:
-                # Sort ranges by start position
-                emote_ranges.sort()
-                
-                # Build a set of all character positions that are part of emotes
-                emote_positions_set = set()
-                for start, end in emote_ranges:
-                    for i in range(start, end + 1):  # inclusive range
-                        emote_positions_set.add(i)
-                
-                # Build text without emotes by keeping only non-emote characters
-                text_without_emotes = ''.join(
-                    char for i, char in enumerate(filtered_text) if i not in emote_positions_set
-                )
-                
-                # Clean up extra whitespace
-                text_without_emotes = re.sub(r'\s+', ' ', text_without_emotes).strip()
-                
-                # If nothing remains after removing emotes, skip the message entirely
-                if not text_without_emotes:
-                    logger.info(f"Skipping emote-only message: {text[:50]}...")
-                    return False, text
-                
-                # Update filtered_text with emotes removed
-                if text_without_emotes != filtered_text:
-                    logger.info(f"Removed emotes from message: '{filtered_text[:50]}...' -> '{text_without_emotes[:50]}...'")
-                    filtered_text = text_without_emotes
-            # else: No valid emote ranges parsed, continue without emote filtering
-        else:
-            # Fallback: Simple check for common emote patterns if no tags available
-            text_without_emotes = re.sub(r'\b\w+\d+\b', '', filtered_text)  # Remove emotes like PogChamp123
-            text_without_emotes = re.sub(r'[^\w\s]', '', text_without_emotes)  # Remove special characters
-            text_without_emotes = text_without_emotes.strip()
-            
-            if not text_without_emotes:
-                logger.info(f"Skipping emote-only message (fallback detection): {text[:50]}...")
-                return False, text
-    
-    # Remove URLs if enabled
-    if filtering.get("removeUrls", True):
-        import re
-        # URL regex pattern that matches http/https, www, and common TLDs
-        url_pattern = r'https?://[^\s]+|www\.[^\s]+|[^\s]+\.(com|org|net|edu|gov|mil|int|co|io|ly|me|tv|fm|gg|tk|ml|ga|cf)[^\s]*'
-        original_length = len(filtered_text)
-        filtered_text = re.sub(url_pattern, '', filtered_text, flags=re.IGNORECASE)
-        filtered_text = re.sub(r'\s+', ' ', filtered_text).strip()  # Clean up extra spaces
-        
-        if len(filtered_text) != original_length:
-            logger.info(f"Removed URLs from message: '{text[:50]}...' -> '{filtered_text[:50]}...'")
-    
-    # Apply profanity filter if enabled
-    profanity_config = filtering.get("profanityFilter", {})
-    if profanity_config.get("enabled", False):
-        custom_words = profanity_config.get("customWords", [])
-        replacement = profanity_config.get("replacement", "beep")
-        
-        if custom_words:
-            import re
-            original_text = filtered_text
-            
-            for word in custom_words:
-                if not word.strip():
-                    continue
-                    
-                # Escape special regex characters in the word
-                escaped_word = re.escape(word.strip())
-                
-                # Full replacement with word boundaries for case-insensitive matching
-                pattern = r'\b' + escaped_word + r'\b'
-                filtered_text = re.sub(pattern, replacement, filtered_text, flags=re.IGNORECASE)
-            
-            if filtered_text != original_text:
-                logger.info(f"Applied profanity filter: '{original_text[:50]}...' -> '{filtered_text[:50]}...'")
-    
-    # Check minimum length (after URL removal)
-    min_length = filtering.get("minLength", 1)
-    if len(filtered_text) < min_length:
-        logger.info(f"Skipping message too short after filtering ({len(filtered_text)} < {min_length}): {filtered_text}")
-        return False, filtered_text
-    
-    # Truncate if over maximum length
-    max_length = filtering.get("maxLength", 500)
-    if len(filtered_text) > max_length:
-        truncated_text = filtered_text[:max_length].strip()
-        # Try to end at a word boundary
-        if ' ' in truncated_text:
-            last_space = truncated_text.rfind(' ')
-            if last_space > max_length * 0.8:  # Only use word boundary if it's not too short
-                truncated_text = truncated_text[:last_space]
-        
-        logger.info(f"Truncating message from {len(filtered_text)} to {len(truncated_text)} characters")
-        return True, truncated_text
-    
-    if filtering.get("ignoreIfUserSpeaking", False) and active_tts_jobs is not None:
-        username_lower = username.lower()
-        
-        # Check if user has any active TTS jobs
-        user_has_active_tts = username_lower in active_tts_jobs
-        
-        if user_has_active_tts:
-            logger.info(f"Ignored message from {username} due to active TTS: {filtered_text[:50]}...")
-            return False, filtered_text
-
-    # Check for spam (single user rate limiting)
-    if username and filtering.get("enableSpamFilter", True):
-        message_history = get_message_history()
-        spam_threshold = filtering.get("spamThreshold", 5)
-        spam_window = filtering.get("spamTimeWindow", 10)
-        
-        is_spam, reason = message_history.is_spam(
-            username, 
-            max_messages=spam_threshold, 
-            time_window_seconds=spam_window
-        )
-        
-        if is_spam:
-            logger.info(f"Skipping spam message: {reason}")
-            return False, filtered_text
-    
-    # Add message to history for rate limiting tracking (but not for duplicate detection)
-    if username and filtering.get("enableSpamFilter", True):
-        message_history = get_message_history()
-        message_history.add_message(username, filtered_text)
-    
-    return True, filtered_text
 
 # ---------- TTS Pipeline ----------
 
@@ -1917,7 +1414,7 @@ async def process_tts_message(evt: Dict[str, Any]):
                 "type": "tts_queued",
                 "user": evt.get("user"),
                 "message": evt.get("text"),
-                "queuePosition": len(avatar_message_queue)
+                "queuePosition": get_avatar_queue_length()
             }
             await hub.broadcast(queue_notification)
         
@@ -2029,10 +1526,28 @@ async def startup():
         if run_twitch_bot and settings.get("twitch", {}).get("enabled"):
             logger.info("Starting Twitch bot...")
             
-            # Get OAuth token from database
+            # Get OAuth token from database (with automatic refresh if needed)
             token_info = await get_twitch_token_for_bot()
             if not token_info:
-                logger.warning("No Twitch OAuth token found. Please connect your Twitch account.")
+                # Check if auth exists at all to provide better error message
+                from modules.persistent_data import get_auth
+                existing_auth = get_auth()
+                
+                if existing_auth:
+                    # Auth exists but token refresh failed or token expired without refresh token
+                    logger.error("Twitch token expired and could not be refreshed. Please reconnect your Twitch account.")
+                    
+                    # Broadcast error to frontend
+                    global twitch_auth_error
+                    twitch_auth_error = {
+                        "type": "twitch_auth_error",
+                        "message": "Your Twitch connection has expired. Please reconnect your account in settings.",
+                        "error": "Token expired and refresh failed"
+                    }
+                    await hub.broadcast(twitch_auth_error)
+                else:
+                    # No auth exists at all
+                    logger.warning("No Twitch OAuth token found. Please connect your Twitch account.")
                 return
                 
             twitch_config = settings.get("twitch", {})

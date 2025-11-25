@@ -415,6 +415,7 @@ async def store_twitch_auth(user_info: Dict[str, Any], token_data: Dict[str, Any
 async def refresh_twitch_token(refresh_token: str) -> Dict[str, Any]:
     """Refresh an expired Twitch access token"""
     try:
+        logger.info("Attempting Twitch token refresh with refresh token...")
         data = {
             "client_id": TWITCH_CLIENT_ID,
             "client_secret": TWITCH_CLIENT_SECRET,
@@ -426,14 +427,22 @@ async def refresh_twitch_token(refresh_token: str) -> Dict[str, Any]:
             async with session.post("https://id.twitch.tv/oauth2/token", data=data) as response:
                 if response.status == 200:
                     result = await response.json()
-                    logger.info("Successfully refreshed Twitch token")
+                    logger.info("Successfully refreshed Twitch token via refresh_token grant")
                     return result
                 else:
                     error_text = await response.text()
-                    logger.error(f"Token refresh failed: {response.status} - {error_text}")
+                    logger.error(f"Twitch token refresh failed with status {response.status}")
+                    logger.error(f"Refresh error details: {error_text}")
+                    
+                    # Check for specific error types
+                    if response.status == 400:
+                        logger.error("Refresh token is invalid or expired - user must re-authenticate")
+                    elif response.status == 401:
+                        logger.error("Unauthorized - check TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET")
+                    
                     return None
     except Exception as e:
-        logger.error(f"Error refreshing Twitch token: {e}")
+        logger.error(f"Exception during Twitch token refresh: {e}", exc_info=True)
         return None
 
 async def get_twitch_token_for_bot():
@@ -459,7 +468,7 @@ async def get_twitch_token_for_bot():
         
         # Attempt token refresh if needed and refresh token is available
         if needs_refresh and auth.refresh_token:
-            logger.info("Attempting to refresh Twitch token...")
+            logger.info("Twitch token expired, attempting refresh...")
             
             refreshed_token_data = await refresh_twitch_token(auth.refresh_token)
             if refreshed_token_data:
@@ -482,8 +491,12 @@ async def get_twitch_token_for_bot():
                 logger.error("Failed to refresh Twitch token - may need to re-authenticate")
                 # Could set a flag here to notify frontend that re-auth is needed
                 return None
+        elif needs_refresh and not auth.refresh_token:
+            # Token is expired but no refresh token available - user must re-authenticate
+            logger.error("Twitch token is expired and no refresh token available - user must re-authenticate")
+            return None
         
-        # Return current token if no refresh needed or no refresh token available
+        # Return current token if no refresh needed
         return {
             "token": auth.access_token,
             "username": auth.username,

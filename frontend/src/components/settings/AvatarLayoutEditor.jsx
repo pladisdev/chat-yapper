@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
-import { LayoutGrid, Plus, Trash2, Save, ChevronUp, ChevronDown } from 'lucide-react'
+import { LayoutGrid, Plus, Trash2, Save, ChevronUp, ChevronDown, HelpCircle } from 'lucide-react'
 import logger from '../../utils/logger'
 
 function AvatarLayoutEditor({ apiUrl, managedAvatars }) {
@@ -285,7 +285,7 @@ function AvatarLayoutEditor({ apiUrl, managedAvatars }) {
               x_position: newX,
               y_position: newY,
               size: slot.size,
-              avatar_group_id: slot.avatar_group_id || null
+              avatar_group_id: null  // Set to random avatar when pasting
             })
           })
           
@@ -322,7 +322,7 @@ function AvatarLayoutEditor({ apiUrl, managedAvatars }) {
             x_position: newX,
             y_position: newY,
             size: copiedSlot.size,
-            avatar_group_id: copiedSlot.avatar_group_id || null
+            avatar_group_id: null  // Set to random avatar when pasting
           })
         })
         
@@ -755,8 +755,8 @@ function AvatarLayoutEditor({ apiUrl, managedAvatars }) {
                       onDragStart={(e) => e.preventDefault()}
                     />
                   ) : (
-                    <div className="w-full h-full rounded-full border-2 border-dashed border-muted-foreground/50 flex items-center justify-center text-xs text-muted-foreground">
-                      Empty
+                    <div className="w-full h-full rounded-full border-2 border-dashed border-muted-foreground/50 flex items-center justify-center text-muted-foreground">
+                      <HelpCircle className="w-1/2 h-1/2" />
                     </div>
                   )}
                   {isSelected && (
@@ -869,7 +869,7 @@ function AvatarLayoutEditor({ apiUrl, managedAvatars }) {
                   handleUpdateSlot(selectedSlot.id, { avatar_group_id: value })
                 }}
               >
-                <option value="">None (Empty Slot)</option>
+                <option value="">Random Avatar</option>
                 {groupedAvatars.filter(a => !a.disabled).map(avatar => (
                   <option key={avatar.id} value={avatar.id}>
                     {avatar.name}
@@ -968,7 +968,7 @@ function AvatarLayoutEditor({ apiUrl, managedAvatars }) {
                             style={{ filter: avatar.disabled ? 'grayscale(100%)' : 'none' }}
                           />
                         ) : (
-                          <div className="text-xs text-muted-foreground">Empty</div>
+                          <HelpCircle className="w-6 h-6 text-muted-foreground" />
                         )}
                       </div>
                       
