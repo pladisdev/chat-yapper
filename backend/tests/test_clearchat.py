@@ -9,6 +9,19 @@ from unittest.mock import MagicMock, AsyncMock, patch
 from modules.twitch_listener import TwitchBot
 
 
+def check_twitch_credentials():
+    """Check if Twitch credentials are available for testing"""
+    import modules.persistent_data
+    return bool(modules.persistent_data.TWITCH_CLIENT_SECRET)
+
+
+# Skip tests requiring TwitchBot if credentials are not available
+skip_if_no_credentials = pytest.mark.skipif(
+    not check_twitch_credentials(),
+    reason="Twitch credentials not available (TWITCH_CLIENT_SECRET missing)"
+)
+
+
 class TestClearChatEvents:
     """Test CLEARCHAT event parsing and handling"""
     
@@ -48,6 +61,7 @@ class TestClearChatEvents:
         assert result["ban-duration"] == "600"
     
     @pytest.mark.asyncio
+    @skip_if_no_credentials
     async def test_clearchat_ban_event(self):
         """Test ban event (no duration)"""
         events_received = []
@@ -84,6 +98,7 @@ class TestClearChatEvents:
         assert "tags" in event
     
     @pytest.mark.asyncio
+    @skip_if_no_credentials
     async def test_clearchat_timeout_event(self):
         """Test timeout event (with duration)"""
         events_received = []
@@ -119,6 +134,7 @@ class TestClearChatEvents:
         assert "tags" in event
     
     @pytest.mark.asyncio
+    @skip_if_no_credentials
     async def test_clearchat_chat_clear(self):
         """Test general chat clear (no target user)"""
         events_received = []
@@ -147,6 +163,7 @@ class TestClearChatEvents:
         assert "target_user" not in event or event.get("target_user") is None
     
     @pytest.mark.asyncio
+    @skip_if_no_credentials
     async def test_clearchat_with_display_name_fallback(self):
         """Test CLEARCHAT using display-name when login not available"""
         events_received = []
