@@ -42,8 +42,11 @@ def check_wix_installed():
 def check_wix_extensions():
     """Check if required WiX extensions are installed"""
     try:
+        # Check both local and global extensions
         result = subprocess.run("wix extension list", shell=True, capture_output=True, text=True)
-        if "WixToolset.UI.wixext" in result.stdout:
+        global_result = subprocess.run("wix extension list --global", shell=True, capture_output=True, text=True)
+        
+        if "WixToolset.UI.wixext" in result.stdout or "WixToolset.UI.wixext" in global_result.stdout:
             print("WiX UI extension found")
             return True
         else:
