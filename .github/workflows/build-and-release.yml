@@ -144,7 +144,16 @@ jobs:
       shell: powershell
     
     - name: Build MSI Installer
-      run: python deployment/build_msi.py
+      run: |
+        # Ensure WiX is in PATH
+        $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
+        
+        # Verify WiX is accessible
+        wix --version
+        
+        # Build MSI
+        python deployment/build_msi.py
+      shell: powershell
       env:
         VITE_APP_VERSION: ${{ steps.get_version.outputs.app_version }}
     
