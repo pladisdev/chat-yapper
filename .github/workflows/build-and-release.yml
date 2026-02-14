@@ -116,10 +116,10 @@ jobs:
         Write-Host "Executable size: $([math]::Round($size, 2)) MB"
       shell: powershell
     
-    - name: Install WiX Toolset v4
+    - name: Install WiX Toolset v5
       run: |
-        Write-Host "Installing WiX Toolset v4..."
-        dotnet tool install --global wix
+        Write-Host "Installing WiX Toolset v5..."
+        dotnet tool install --global wix --version 5.0.1
         
         # Ensure WiX is in PATH
         $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
@@ -128,10 +128,9 @@ jobs:
         wix --version
         
         Write-Host "Installing WiX UI extension globally..."
-        wix extension add --global WixToolset.UI.wixext
+        wix extension add --global WixToolset.UI.wixext/5.0.1
         
         Write-Host "Verifying UI extension..."
-        wix extension list
         wix extension list --global
         
         Write-Host "WiX installation complete"
@@ -256,7 +255,7 @@ jobs:
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [build, linux-build, docker-build]
+    needs: [build, linux-build]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     
     steps:
@@ -286,14 +285,6 @@ jobs:
         name: linux-build
         path: ./linux-build
     
-    - name: Download Docker artifacts
-      if: needs.docker-build.result == 'success'
-      uses: actions/download-artifact@v4
-      with:
-        name: docker-release-files
-        path: ./docker-release
-      continue-on-error: true
-    
     - name: Get MSI filename
       id: msi_info
       run: |
@@ -306,17 +297,6 @@ jobs:
         else
           echo "msi_name=ChatYapper.msi" >> $GITHUB_OUTPUT
           echo "MSI file not found, using default name"
-        fi
-    
-    - name: Check Docker build status
-      id: docker_status
-      run: |
-        if [ "${{ needs.docker-build.result }}" == "success" ]; then
-          echo "docker_success=true" >> $GITHUB_OUTPUT
-          echo "Docker build succeeded"
-        else
-          echo "docker_success=false" >> $GITHUB_OUTPUT
-          echo "Docker build failed or was skipped - release will not include Docker files"
         fi
     
     - name: Create Release
@@ -680,19 +660,20 @@ jobs:
           type=raw,value=${{ steps.docker_version.outputs.docker_tag }}
           type=raw,value=latest,enable=${{ steps.docker_version.outputs.is_release == 'true' }}
     
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: ./docker/Dockerfile
-        push: true
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        platforms: linux/amd64,linux/arm64
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-        build-args: |
-          APP_VERSION=${{ steps.docker_version.outputs.app_version }}
+    # Commented out to speed up CI - Docker build takes too long
+    # - name: Build and push Docker image
+    #   uses: docker/build-push-action@v5
+    #   with:
+    #     context: .
+    #     file: ./docker/Dockerfile
+    #     push: true
+    #     tags: ${{ steps.meta.outputs.tags }}
+    #     labels: ${{ steps.meta.outputs.labels }}
+    #     platforms: linux/amd64,linux/arm64
+    #     cache-from: type=gha
+    #     cache-to: type=gha,mode=max
+    #     build-args: |
+    #       APP_VERSION=${{ steps.docker_version.outputs.app_version }}
     
     - name: Generate docker-compose.yml for release
       if: steps.docker_version.outputs.is_release == 'true'
@@ -979,7 +960,7 @@ jobs:
   build-status-check:
     name: Build Status Check
     runs-on: ubuntu-latest
-    needs: [build, linux-build, docker-build]
+    needs: [build, linux-build]
     if: always()
     
     steps:
@@ -994,10 +975,5 @@ jobs:
           echo "[FAIL] Linux build failed or was cancelled"
           echo "Cannot merge to main until build succeeds"
           exit 1
-        fi
-        if [ "${{ needs.docker-build.result }}" == "success" ]; then
-          echo "[PASS] Docker build succeeded"
-        elif [ "${{ needs.docker-build.result }}" == "failure" ]; then
-          echo "[WARN] Docker build failed - continuing anyway (Docker build is optional)"
         fi
         echo "[PASS] Required builds succeeded - safe to merge"
