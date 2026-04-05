@@ -225,18 +225,21 @@ chat-yapper/
 
 ## Changelog
 
-### v1.3.1 (Latest)
+### v1.3.2 (Latest)
+ - Fix to edge-tts
+
+### v1.3.1
 - **New Features:**
  - Twitch fix
  - Allow random avatar assignment
  - More fonts to select from
 
-### v1.3.0 (Latest)
+### v1.3.0
  - Better control of avatar placement in Avatar Layout Editor
  - Select and Adjust speaking animations for crowd mode
  - Added idle animations for crowd mode
 
-### v1.2.2 (Latest)
+### v1.2.2
  - Quick status view
  - Limit concurrent TTS messages
  - Some more twitch fixes and improved notifcations
