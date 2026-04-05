@@ -2,6 +2,8 @@ import asyncio
 import os
 import uuid
 import time
+import sys
+import subprocess
 from dataclasses import dataclass
 import aiohttp
 import random
@@ -19,6 +21,56 @@ def reset_fallback_stats():
     global fallback_voice_stats, fallback_selection_count
     fallback_voice_stats.clear()
     fallback_selection_count = 0
+
+# Track edge-tts update attempts to avoid repeated updates
+_edge_tts_update_attempted = False
+
+async def try_update_edge_tts():
+    """Attempt to update edge-tts package when API compatibility issues occur"""
+    global _edge_tts_update_attempted
+    
+    if _edge_tts_update_attempted:
+        logger.info("edge-tts update already attempted this session, skipping")
+        return False
+    
+    _edge_tts_update_attempted = True
+    logger.info("Attempting to update edge-tts package to fix API compatibility...")
+    
+    try:
+        # Run pip upgrade in subprocess
+        python_exe = sys.executable
+        result = await asyncio.create_subprocess_exec(
+            python_exe, "-m", "pip", "install", "--upgrade", "edge-tts",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await result.communicate()
+        
+        if result.returncode == 0:
+            logger.info(f"edge-tts successfully updated: {stdout.decode()}")
+            
+            # Reload the edge_tts module
+            try:
+                import importlib
+                global edge_tts
+                if edge_tts:
+                    importlib.reload(edge_tts)
+                    logger.info("edge-tts module reloaded successfully")
+                else:
+                    import edge_tts as new_edge_tts
+                    edge_tts = new_edge_tts
+                    logger.info("edge-tts module imported successfully")
+                return True
+            except Exception as e:
+                logger.warning(f"edge-tts updated but module reload failed: {e}")
+                logger.info("Restart the application to use the updated edge-tts")
+                return False
+        else:
+            logger.error(f"edge-tts update failed: {stderr.decode()}")
+            return False
+    except Exception as e:
+        logger.error(f"Failed to update edge-tts: {e}")
+        return False
 
 # Provider 1: MonsterAPI TTS (async, great quality)
 try:
@@ -341,9 +393,28 @@ class EdgeTTSProvider(TTSProvider):
         
         outpath = os.path.join(AUDIO_DIR, f"{uuid.uuid4()}.{job.audio_format}")
         
+        # Helper function to attempt synthesis with retry logic
+        async def attempt_synthesis(voice_id: str, retry_on_403: bool = True):
+            try:
+                communicate = edge_tts.Communicate(job.text, voice_id)
+                await communicate.save(outpath)
+                return True
+            except Exception as e:
+                # Check if it's a 403 error (API compatibility issue)
+                error_str = str(e)
+                if "403" in error_str and "Invalid response status" in error_str and retry_on_403:
+                    logger.warning(f"Edge TTS returned 403 error - API may need updating")
+                    # Attempt to update edge-tts
+                    if await try_update_edge_tts():
+                        logger.info("Retrying synthesis after edge-tts update...")
+                        # Retry once after update (without further retries)
+                        return await attempt_synthesis(voice_id, retry_on_403=False)
+                    else:
+                        logger.error("edge-tts update failed or requires restart. Please restart the application.")
+                raise
+        
         try:
-            communicate = edge_tts.Communicate(job.text, job.voice)
-            await communicate.save(outpath)
+            await attempt_synthesis(job.voice)
         except edge_tts.exceptions.NoAudioReceived as e:
             logger.error(f"Edge TTS NoAudioReceived error - Voice: {job.voice}, Text: '{job.text[:50]}...'")
             
@@ -358,8 +429,7 @@ class EdgeTTSProvider(TTSProvider):
             if job.voice != self.voice_id:
                 logger.warning(f"Voice '{job.voice}' appears to be invalid or deprecated. Retrying with default voice: {self.voice_id}")
                 try:
-                    communicate = edge_tts.Communicate(job.text, self.voice_id)
-                    await communicate.save(outpath)
+                    await attempt_synthesis(self.voice_id)
                     logger.info(f"Successfully synthesized with fallback voice: {self.voice_id}")
                 except edge_tts.exceptions.NoAudioReceived:
                     raise RuntimeError(f"Edge TTS failed with both '{job.voice}' and fallback '{self.voice_id}'. The voices may be invalid or Edge TTS service is unavailable. Please refresh your voice list in Settings → TTS → Edge TTS.")
