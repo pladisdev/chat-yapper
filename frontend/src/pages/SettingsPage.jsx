@@ -186,7 +186,6 @@ export default function SettingsPage() {
                 <img src={chatYapperIcon} alt="Chat Yapper" className="w-10 h-10" />
                 Chat Yapper Settings
               </h1>
-              <p className="text-muted-foreground">Configure your voice avatar TTS system</p>
             </div>
             
             {/* Global Stop TTS Button */}
@@ -666,6 +665,25 @@ function AboutSection({ apiUrl }) {
             <div className="space-y-3">
               
               
+              <div className="p-4 rounded-lg border bg-card">
+                <div className="flex items-center gap-3">
+                  <div>
+                    <p className="font-medium">Website</p>
+                    <p className="text-sm text-muted-foreground mb-1">
+                      Check out other projects and updates
+                    </p>
+                    <a 
+                      href="https://pladis.dev/" 
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline font-mono text-sm"
+                    >
+                      pladis.dev
+                    </a>
+                  </div>
+                </div>
+              </div>
+
               <div className="p-4 rounded-lg border bg-card">
                 <div className="flex items-center gap-3">
                   <div>

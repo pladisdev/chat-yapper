@@ -138,6 +138,53 @@ async def twitch_auth_status():
         logger.error(f"Error checking Twitch status: {e}")
         return {"connected": False, "error": str(e)}
 
+@router.get("/api/twitch/redeems")
+async def get_twitch_channel_redeems():
+    """Fetch channel point rewards for the authenticated broadcaster from Twitch Helix API"""
+    try:
+        token_info = await get_twitch_token_for_bot()
+        if not token_info:
+            raise HTTPException(status_code=401, detail="No Twitch account connected. Please connect your account first.")
+
+        broadcaster_id = token_info["user_id"]
+        headers = {
+            "Authorization": f"Bearer {token_info['token']}",
+            "Client-Id": TWITCH_CLIENT_ID
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"https://api.twitch.tv/helix/channel_points/custom_rewards?broadcaster_id={broadcaster_id}",
+                headers=headers
+            ) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    rewards = [
+                        {"id": r["id"], "title": r["title"], "cost": r["cost"]}
+                        for r in result.get("data", [])
+                    ]
+                    return {"rewards": rewards}
+                elif response.status == 403:
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Channel points are not available. The channel may not be a Partner or Affiliate."
+                    )
+                elif response.status == 401:
+                    raise HTTPException(
+                        status_code=401,
+                        detail="Twitch token missing required permissions. Please disconnect and reconnect your Twitch account to grant the 'channel:read:redemptions' scope."
+                    )
+                else:
+                    error_text = await response.text()
+                    logger.error(f"Twitch redeems request failed: {response.status} - {error_text}")
+                    raise HTTPException(status_code=response.status, detail="Failed to fetch channel point rewards from Twitch.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching Twitch redeems: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.delete("/api/twitch/disconnect")
 async def twitch_disconnect():
     """Disconnect Twitch account"""

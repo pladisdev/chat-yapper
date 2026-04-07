@@ -157,7 +157,6 @@ function TTSProviderTabs({ settings, updateSettings, apiUrl = '' }) {
           <Mic className="w-5 h-5" />
           TTS Provider Settings
         </CardTitle>
-        <CardDescription>Configure your text-to-speech providers</CardDescription>
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="edge" className="w-full">

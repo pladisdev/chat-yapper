@@ -5,7 +5,7 @@ import { Label } from '../ui/label'
 import { Switch } from '../ui/switch'
 import { Slider } from '../ui/slider'
 import { Separator } from '../ui/separator'
-import { Music, Waves, TrendingUp, Zap, Shuffle } from 'lucide-react'
+import { Music, Waves, TrendingUp, Zap, Shuffle, Droplets, Activity } from 'lucide-react'
 import logger from '../../utils/logger'
 
 export default function AudioFiltersSettings({ settings, updateSettings }) {
@@ -14,7 +14,9 @@ export default function AudioFiltersSettings({ settings, updateSettings }) {
     randomFilters: false,
     reverb: { enabled: false, amount: 50, randomEnabled: true, randomRange: { min: 20, max: 80 } },
     pitch: { enabled: false, semitones: 0, randomEnabled: true, randomRange: { min: -8, max: 8 } },
-    speed: { enabled: false, multiplier: 1.0, randomEnabled: true, randomRange: { min: 0.75, max: 1.3 } }
+    speed: { enabled: false, multiplier: 1.0, randomEnabled: true, randomRange: { min: 0.75, max: 1.3 } },
+    underwater: { enabled: false, intensity: 50, randomEnabled: true },
+    vibrato: { enabled: false, rate: 10.0, depth: 75, randomEnabled: true }
   }
 
   const updateFilter = (filterType, updates) => {
@@ -203,6 +205,110 @@ export default function AudioFiltersSettings({ settings, updateSettings }) {
                     </div>
                   )}
                 </div>
+
+                <Separator />
+
+                {/* Underwater Filter */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-1">
+                      <Label className="text-base font-semibold flex items-center gap-2">
+                        <Droplets className="w-4 h-4" />
+                        Muffled
+                      </Label>
+                      <p className="text-sm text-muted-foreground">
+                        Makes the voice sound like it's coming from another room
+                      </p>
+                    </div>
+                    <Switch
+                      checked={audioFilters.underwater?.enabled ?? false}
+                      onCheckedChange={(checked) => updateFilter('underwater', { enabled: checked })}
+                    />
+                  </div>
+
+                  {audioFilters.underwater?.enabled && (
+                    <div className="space-y-2 ml-6">
+                      <Label htmlFor="underwater-intensity">
+                        Depth: {audioFilters.underwater?.intensity ?? 50}%
+                        {(audioFilters.underwater?.intensity ?? 50) < 35 && ' (slightly muffled)'}
+                        {(audioFilters.underwater?.intensity ?? 50) >= 35 && (audioFilters.underwater?.intensity ?? 50) < 70 && ' (another room)'}
+                        {(audioFilters.underwater?.intensity ?? 50) >= 70 && ' (far away)'}
+                      </Label>
+                      <Slider
+                        id="underwater-intensity"
+                        min={0}
+                        max={100}
+                        step={5}
+                        value={[audioFilters.underwater?.intensity ?? 50]}
+                        onValueChange={([value]) => updateFilter('underwater', { intensity: value })}
+                        className="w-full"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Low = slightly muffled, High = deep underwater
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <Separator />
+
+                {/* Vibrato Filter */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-1">
+                      <Label className="text-base font-semibold flex items-center gap-2">
+                        <Activity className="w-4 h-4" />
+                        Vibrato
+                      </Label>
+                      <p className="text-sm text-muted-foreground">
+                        Periodic pitch wobble — wavy, singing vibrato effect
+                      </p>
+                    </div>
+                    <Switch
+                      checked={audioFilters.vibrato?.enabled ?? false}
+                      onCheckedChange={(checked) => updateFilter('vibrato', { enabled: checked })}
+                    />
+                  </div>
+
+                  {audioFilters.vibrato?.enabled && (
+                    <div className="space-y-4 ml-6">
+                      <div className="space-y-2">
+                        <Label htmlFor="vibrato-rate">
+                          Rate: {(audioFilters.vibrato?.rate ?? 10.0).toFixed(1)} Hz
+                        </Label>
+                        <Slider
+                          id="vibrato-rate"
+                          min={60}
+                          max={150}
+                          step={5}
+                          value={[Math.round((audioFilters.vibrato?.rate ?? 10.0) * 10)]}
+                          onValueChange={([value]) => updateFilter('vibrato', { rate: value / 10 })}
+                          className="w-full"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Speed of pitch oscillations (6 Hz = subtle, 15 Hz = intense)
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="vibrato-depth">
+                          Depth: {audioFilters.vibrato?.depth ?? 75}%
+                        </Label>
+                        <Slider
+                          id="vibrato-depth"
+                          min={50}
+                          max={100}
+                          step={5}
+                          value={[audioFilters.vibrato?.depth ?? 75]}
+                          onValueChange={([value]) => updateFilter('vibrato', { depth: value })}
+                          className="w-full"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          How much the pitch varies (50% = subtle, 100% = extreme)
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </>
             )}
 
@@ -384,6 +490,48 @@ export default function AudioFiltersSettings({ settings, updateSettings }) {
                       </div>
                     </div>
                   )}
+                </div>
+
+                <Separator />
+
+                  {/* Random Muffled / Another Room Settings */}
+                  <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-1">
+                      <Label className="text-base font-semibold flex items-center gap-2">
+                        <Droplets className="w-4 h-4" />
+                        Muffled / Another Room (Random)
+                      </Label>
+                      <p className="text-sm text-muted-foreground">
+                        Enable muffled effect for random mode
+                      </p>
+                    </div>
+                    <Switch
+                      checked={audioFilters.underwater?.randomEnabled !== false}
+                      onCheckedChange={(checked) => updateFilter('underwater', { randomEnabled: checked })}
+                    />
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Random Vibrato Settings */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-1">
+                      <Label className="text-base font-semibold flex items-center gap-2">
+                        <Activity className="w-4 h-4" />
+                        Vibrato (Random)
+                      </Label>
+                      <p className="text-sm text-muted-foreground">
+                        Enable vibrato for random mode
+                      </p>
+                    </div>
+                    <Switch
+                      checked={audioFilters.vibrato?.randomEnabled !== false}
+                      onCheckedChange={(checked) => updateFilter('vibrato', { randomEnabled: checked })}
+                    />
+                  </div>
                 </div>
               </div>
             )}

@@ -27,9 +27,6 @@ function CrowdAnimationSettings({ settings, onUpdate }) {
           <Sparkles className="w-5 h-5" />
           Crowd Mode Animations
         </CardTitle>
-        <CardDescription>
-          Customize how avatars animate in crowd mode
-        </CardDescription>
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="active" className="w-full">

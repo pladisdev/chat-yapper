@@ -52,7 +52,6 @@ function GeneralSettings({ settings, setSettings, updateSettings, apiUrl }) {
           <Settings className="w-5 h-5" />
           General Settings
         </CardTitle>
-        <CardDescription>Configure TTS control, audio volume, and message limits</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="flex items-center justify-between">

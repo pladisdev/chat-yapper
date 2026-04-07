@@ -18,7 +18,6 @@ function AvatarConfigurationTabs({ settings, updateSettings, apiUrl, managedAvat
           <Image className="w-5 h-5" />
           Avatar Configuration
         </CardTitle>
-        <CardDescription>Configure avatar placement and visual effects</CardDescription>
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="placement" className="w-full">

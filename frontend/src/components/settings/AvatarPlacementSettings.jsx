@@ -16,9 +16,6 @@ function AvatarPlacementSettings({ settings, updateSettings, apiUrl }) {
           <LayoutGrid className="w-5 h-5" />
           Avatar Display Mode
         </CardTitle>
-        <CardDescription>
-          Choose how avatars appear and configure mode-specific settings
-        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div>

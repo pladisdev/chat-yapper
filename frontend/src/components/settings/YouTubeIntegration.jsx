@@ -100,9 +100,6 @@ function YouTubeIntegration({ settings, updateSettings, apiUrl = '' }) {
           <Youtube className="w-5 h-5 text-red-500" />
           YouTube Integration
         </CardTitle>
-        <CardDescription>
-          Connect to your YouTube account to enable live chat TTS
-        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {!youtubeStatus?.connected ? (

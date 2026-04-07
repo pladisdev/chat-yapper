@@ -293,7 +293,6 @@ function MessageFiltering({ settings, updateSettings, apiUrl }) {
             <MessageSquare className="w-5 h-5" />
             Message Filtering
           </CardTitle>
-          <CardDescription>Control which messages get processed for TTS</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Enable Message Filtering Toggle - Always Visible */}
@@ -407,6 +406,22 @@ function MessageFiltering({ settings, updateSettings, apiUrl }) {
                       />
                       <Label htmlFor="skipCommands" className="text-sm font-normal">
                         Skip Commands - Messages starting with ! or / (bot commands)
+                      </Label>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="skipMentions"
+                        checked={settings.messageFiltering?.skipMentions ?? false}
+                        onCheckedChange={checked => updateSettings({ 
+                          messageFiltering: { 
+                            ...settings.messageFiltering, 
+                            skipMentions: checked 
+                          } 
+                        })}
+                      />
+                      <Label htmlFor="skipMentions" className="text-sm font-normal">
+                        Skip Mentions - Messages containing @username
                       </Label>
                     </div>
 
