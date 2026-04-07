@@ -19,9 +19,10 @@ from fastapi.responses import StreamingResponse
 from modules import logger
 from modules.persistent_data import (
     get_settings, save_settings, get_all_avatars, get_voices,
-    add_avatar, add_voice, PERSISTENT_AVATARS_DIR, DB_PATH, USER_DATA_DIR
+    add_avatar, add_voice, PERSISTENT_AVATARS_DIR, DB_PATH, USER_DATA_DIR,
+    engine
 )
-from modules.models import AvatarImage, Voice
+from modules.models import AvatarImage, Voice, Setting
 
 router = APIRouter()
 
@@ -390,16 +391,20 @@ async def factory_reset():
                     logger.warning(f"Failed to delete avatar file {filename}: {e}")
             logger.info(f"✓ Deleted {avatar_files_deleted} avatar files")
         
-        # Delete database file (this removes all settings, voices, avatars metadata, auth tokens, etc.)
-        if os.path.exists(DB_PATH):
-            os.unlink(DB_PATH)
-            logger.info(f"✓ Deleted database: {DB_PATH}")
-        
-        # Reinitialize database with empty tables
-        from sqlmodel import SQLModel, create_engine
-        engine = create_engine(f"sqlite:///{DB_PATH}")
-        SQLModel.metadata.create_all(engine)
-        logger.info("✓ Reinitialized empty database")
+        # Clear all data from database tables using the existing engine connection.
+        # We deliberately avoid deleting the .db file because on Windows the process
+        # holds an open file handle (SQLAlchemy connection pool), which causes
+        # WinError 32 "file in use". Truncating via SQL achieves the same reset
+        # without touching the file itself.
+        from sqlmodel import Session, SQLModel, delete
+        from modules.models import Setting, Voice, AvatarImage, TwitchAuth
+        with Session(engine) as session:
+            session.exec(delete(Setting))
+            session.exec(delete(Voice))
+            session.exec(delete(AvatarImage))
+            session.exec(delete(TwitchAuth))
+            session.commit()
+        logger.info("✓ Cleared all database tables")
         
         logger.warning(f"✅ FACTORY RESET COMPLETE - Deleted: {settings_count} settings, {voices_count} voices, {avatars_count} avatars, {avatar_files_deleted} files")
         

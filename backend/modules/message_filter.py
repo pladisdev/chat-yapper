@@ -138,33 +138,31 @@ def should_process_message(
     Returns:
         (should_process, filtered_text) - tuple indicating if message should be processed and the filtered text
     """
-    filtering = settings.get("messageFiltering", {})
-    
-    if not filtering.get("enabled", True):
-        return True, text
-    
-    # Check Twitch channel point redeem filter
+    # Check Twitch channel point redeem filter first — this applies regardless of
+    # whether general message filtering is enabled or disabled.
     twitch_settings = settings.get("twitch", {})
     redeem_filter = twitch_settings.get("redeemFilter", {})
     if redeem_filter.get("enabled", False):
-        allowed_redeem_names = redeem_filter.get("allowedRedeemNames", [])
-        if allowed_redeem_names:
-            # Check if message has a msg-param-reward-name tag (the redeem name)
-            # Also check custom-reward-id to confirm it's a redeem
-            custom_reward_id = tags.get("custom-reward-id", "") if tags else ""
-            reward_name = tags.get("msg-param-reward-name", "") if tags else ""
-            
-            if not custom_reward_id:
-                # No redeem ID means this is a regular message, not a channel point redeem
-                logger.info(f"Skipping message from {username} - not from a channel point redeem")
-                return False, text
-            
-            # Check if the redeem name is in the allowed list (case-insensitive)
-            if not any(reward_name.lower() == allowed_name.lower() for allowed_name in allowed_redeem_names):
-                logger.info(f"Skipping message from {username} - redeem name '{reward_name}' not in allowed list")
-                return False, text
-            
-            logger.info(f"Processing message from {username} - redeem name '{reward_name}' is allowed")
+        # Twitch IRC PRIVMSG tags include custom-reward-id (UUID) for channel point redeems,
+        # but do NOT include the reward title/name. Name-based filtering is not possible
+        # from IRC events alone, so we filter only on the presence of custom-reward-id.
+        # Exception: the built-in "Highlight My Message" reward uses msg-id=highlighted-message
+        # instead of custom-reward-id, so we treat that as a valid redeem too.
+        custom_reward_id = tags.get("custom-reward-id", "") if tags else ""
+        msg_id = (tags.get("msg-id", "") or "") if tags else ""
+        is_highlight = msg_id.lower() == "highlighted-message"
+
+        if not custom_reward_id and not is_highlight:
+            # No redeem ID means this is a regular chat message, not a channel point redeem
+            logger.info(f"Skipping message from {username} - not from a channel point redeem")
+            return False, text
+
+        logger.info(f"Processing channel point redeem from {username} (reward-id: {custom_reward_id or 'highlighted-message'})")
+
+    filtering = settings.get("messageFiltering", {})
+
+    if not filtering.get("enabled", True):
+        return True, text
     
     # Skip ignored users
     if username and filtering.get("ignoredUsers"):
@@ -179,6 +177,12 @@ def should_process_message(
         stripped = text.strip()
         if stripped.startswith('!') or stripped.startswith('/'):
             logger.info(f"Skipping command message: {text[:50]}...")
+            return False, text
+
+    # Skip messages that @mention someone
+    if filtering.get("skipMentions", False):
+        if re.search(r'@\w+', text):
+            logger.info(f"Skipping mention message from {username}: {text[:50]}...")
             return False, text
     
     # Start with original text, apply filters progressively

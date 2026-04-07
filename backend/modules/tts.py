@@ -2,8 +2,6 @@ import asyncio
 import os
 import uuid
 import time
-import sys
-import subprocess
 from dataclasses import dataclass
 import aiohttp
 import random
@@ -22,54 +20,25 @@ def reset_fallback_stats():
     fallback_voice_stats.clear()
     fallback_selection_count = 0
 
-# Track edge-tts update attempts to avoid repeated updates
+# Track edge-tts update attempts to avoid repeated update instructions
 _edge_tts_update_attempted = False
+_edge_tts_update_lock = asyncio.Lock()
 
 async def try_update_edge_tts():
-    """Attempt to update edge-tts package when API compatibility issues occur"""
+    """Log a one-time instruction to update edge-tts outside the running process."""
     global _edge_tts_update_attempted
-    
-    if _edge_tts_update_attempted:
-        logger.info("edge-tts update already attempted this session, skipping")
-        return False
-    
-    _edge_tts_update_attempted = True
-    logger.info("Attempting to update edge-tts package to fix API compatibility...")
-    
-    try:
-        # Run pip upgrade in subprocess
-        python_exe = sys.executable
-        result = await asyncio.create_subprocess_exec(
-            python_exe, "-m", "pip", "install", "--upgrade", "edge-tts",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await result.communicate()
-        
-        if result.returncode == 0:
-            logger.info(f"edge-tts successfully updated: {stdout.decode()}")
-            
-            # Reload the edge_tts module
-            try:
-                import importlib
-                global edge_tts
-                if edge_tts:
-                    importlib.reload(edge_tts)
-                    logger.info("edge-tts module reloaded successfully")
-                else:
-                    import edge_tts as new_edge_tts
-                    edge_tts = new_edge_tts
-                    logger.info("edge-tts module imported successfully")
-                return True
-            except Exception as e:
-                logger.warning(f"edge-tts updated but module reload failed: {e}")
-                logger.info("Restart the application to use the updated edge-tts")
-                return False
-        else:
-            logger.error(f"edge-tts update failed: {stderr.decode()}")
+
+    async with _edge_tts_update_lock:
+        if _edge_tts_update_attempted:
+            logger.info("edge-tts update already flagged this session, skipping")
             return False
-    except Exception as e:
-        logger.error(f"Failed to update edge-tts: {e}")
+
+        _edge_tts_update_attempted = True
+        logger.error(
+            "edge-tts appears incompatible, but automatic runtime upgrades are disabled. "
+            "Please update the pinned 'edge-tts' dependency through your normal build/deploy "
+            "process and restart the application."
+        )
         return False
 
 # Provider 1: MonsterAPI TTS (async, great quality)

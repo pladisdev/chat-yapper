@@ -617,6 +617,7 @@ jobs:
   docker-build:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
+    if: false  # Disabled - Docker build step is commented out; re-enable when build-push-action is restored
     continue-on-error: true
     needs: build  # Run after Windows build succeeds
     

@@ -12,7 +12,6 @@ function PlatformIntegration({ settings, updateSettings, allVoices, apiUrl }) {
         <CardTitle className="flex items-center gap-2">
           Platform Integrations
         </CardTitle>
-        <CardDescription>Connect to streaming platforms to enable chat TTS</CardDescription>
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="twitch" className="w-full">

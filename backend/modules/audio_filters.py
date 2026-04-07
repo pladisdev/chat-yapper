@@ -178,6 +178,8 @@ class AudioFilterProcessor:
             settings.get("reverb", {}).get("enabled", False),
             settings.get("pitch", {}).get("enabled", False),
             settings.get("speed", {}).get("enabled", False),
+            settings.get("underwater", {}).get("enabled", False),
+            settings.get("vibrato", {}).get("enabled", False),
         ])
     
     def _build_filters(self, settings: Dict[str, Any]) -> List[str]:
@@ -212,7 +214,27 @@ class AudioFilterProcessor:
                 else:  # speed > 2.0
                     # Chain multiple atempo for very fast speeds
                     filters.append(f"atempo=2.0,atempo={speed/2.0}")
-        
+
+        # Underwater effect
+        # Technique: low-pass filter (water absorbs high freqs) + echo (watery reverb) + chorus (wobbly sub-surface)
+        if settings.get("underwater", {}).get("enabled", False):
+            intensity = settings.get("underwater", {}).get("intensity", 50)  # 0-100
+            # Map intensity to low-pass cutoff: 0% = 1200 Hz (shallow), 100% = 500 Hz (deep)
+            freq = int(1200 - (intensity / 100.0) * 700)
+            filters.append(
+                f"lowpass=f={freq},"
+                f"aecho=0.8:0.88:60|80:0.5|0.4,"
+                f"chorus=0.7:0.9:55|60:0.4|0.35:0.25|0.4:2|1.3"
+            )
+
+        # Vibrato effect: periodic pitch modulation
+        if settings.get("vibrato", {}).get("enabled", False):
+            rate = settings.get("vibrato", {}).get("rate", 10.0)  # Hz, 6.0-15.0
+            depth = settings.get("vibrato", {}).get("depth", 75) / 100.0  # 0.0-1.0
+            rate = max(0.1, min(20.0, float(rate)))
+            depth = max(0.0, min(1.0, depth))
+            filters.append(f"vibrato=f={rate:.1f}:d={depth:.2f}")
+
         return filters
     
     def _build_random_filters(self, settings: Dict[str, Any]) -> List[str]:
@@ -228,6 +250,11 @@ class AudioFilterProcessor:
         if settings.get("speed", {}).get("randomEnabled", True):
             available_filters.append("speed")
         
+        if settings.get("underwater", {}).get("randomEnabled", True):
+            available_filters.append("underwater")
+        if settings.get("vibrato", {}).get("randomEnabled", True):
+            available_filters.append("vibrato")
+
         if not available_filters:
             logger.warning("No effects enabled for random mode")
             return filters
@@ -239,7 +266,23 @@ class AudioFilterProcessor:
         selected = random.sample(available_filters, num_filters)
         
         for filter_type in selected:
-            if filter_type == "reverb":
+            if filter_type == "underwater":
+                intensity = random.randint(30, 80)
+                freq = int(1200 - (intensity / 100.0) * 700)
+                filters.append(
+                    f"lowpass=f={freq},"
+                    f"aecho=0.8:0.88:60|80:0.5|0.4,"
+                    f"chorus=0.7:0.9:55|60:0.4|0.35:0.25|0.4:2|1.3"
+                )
+                logger.debug(f"Random underwater: intensity={intensity}% (cutoff={freq} Hz)")
+
+            elif filter_type == "vibrato":
+                rate = round(random.uniform(6.0, 15.0), 1)
+                depth = round(random.uniform(0.5, 1.0), 2)
+                filters.append(f"vibrato=f={rate}:d={depth}")
+                logger.debug(f"Random vibrato: rate={rate} Hz, depth={depth}")
+
+            elif filter_type == "reverb":
                 # Get custom range or use defaults
                 reverb_config = settings.get("reverb", {})
                 random_range = reverb_config.get("randomRange", {"min": 20, "max": 80})
