@@ -141,7 +141,9 @@ class TestAudioFilterProcessor:
         settings = {
             'reverb': {'randomEnabled': False},
             'pitch': {'randomEnabled': False},
-            'speed': {'randomEnabled': False}
+            'speed': {'randomEnabled': False},
+            'underwater': {'randomEnabled': False},
+            'vibrato': {'randomEnabled': False}
         }
         
         filters = audio_processor._build_random_filters(settings)
