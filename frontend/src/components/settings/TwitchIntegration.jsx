@@ -12,76 +12,104 @@ import {
   AlertTriangle
 } from 'lucide-react'
 
-function RedeemNamesManager({ redeemNames, onUpdate }) {
-  const [newRedeem, setNewRedeem] = useState('')
+function RedeemNamesManager({ redeemNames, onUpdate, apiUrl = '' }) {
+  const [rewards, setRewards] = useState([])
+  const [loadingRewards, setLoadingRewards] = useState(false)
+  const [rewardsError, setRewardsError] = useState(null)
 
-  const addRedeem = () => {
-    const redeemName = newRedeem.trim()
-    if (!redeemName) return
-    
-    if (redeemNames.some(name => name.toLowerCase() === redeemName.toLowerCase())) {
-      alert('This redeem name is already in the list')
-      return
+  const fetchRewards = async () => {
+    setLoadingRewards(true)
+    setRewardsError(null)
+    try {
+      const response = await fetch(`${apiUrl}/api/twitch/redeems`)
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}))
+        throw new Error(err.detail || `HTTP ${response.status}`)
+      }
+      const data = await response.json()
+      setRewards(data.rewards || [])
+    } catch (e) {
+      setRewardsError(e.message)
+    } finally {
+      setLoadingRewards(false)
     }
-    
-    onUpdate([...redeemNames, redeemName])
-    setNewRedeem('')
   }
 
-  const removeRedeem = (redeemToRemove) => {
-    onUpdate(redeemNames.filter(name => name !== redeemToRemove))
+  const toggleReward = (id) => {
+    if (redeemNames.includes(id)) {
+      onUpdate(redeemNames.filter(r => r !== id))
+    } else {
+      onUpdate([...redeemNames, id])
+    }
   }
 
-  const clearAllRedeems = () => {
-    if (redeemNames.length === 0) return
-    if (confirm(`Are you sure you want to remove all ${redeemNames.length} redeem names?`)) {
-      onUpdate([])
-    }
+  const labelFor = (id) => {
+    if (id === 'highlighted-message') return 'Highlight My Message (built-in)'
+    const match = rewards.find(r => r.id === id)
+    return match ? match.title : id
   }
 
   return (
     <div className="space-y-3">
-      <div className="flex gap-2">
-        <Input
-          placeholder="Enter redeem name..."
-          value={newRedeem}
-          onChange={e => setNewRedeem(e.target.value)}
-          onKeyPress={e => e.key === 'Enter' && addRedeem()}
-        />
+      <div className="flex items-center gap-2">
         <Button
-          onClick={addRedeem}
-          disabled={!newRedeem.trim()}
+          variant="outline"
+          size="sm"
+          onClick={fetchRewards}
+          disabled={loadingRewards}
         >
-          Add
+          {loadingRewards ? 'Loading…' : 'Load Rewards'}
         </Button>
+        {rewardsError && (
+          <span className="text-xs text-destructive">{rewardsError}</span>
+        )}
       </div>
 
+      {rewards.length > 0 && (
+        <div className="space-y-1 max-h-48 overflow-y-auto border rounded-md p-2">
+          <label className="flex items-center gap-2 cursor-pointer py-1">
+            <input
+              type="checkbox"
+              checked={redeemNames.includes('highlighted-message')}
+              onChange={() => toggleReward('highlighted-message')}
+            />
+            <span className="text-sm">Highlight My Message <span className="text-xs text-muted-foreground">(built-in)</span></span>
+          </label>
+          {rewards.map(reward => (
+            <label key={reward.id} className="flex items-center gap-2 cursor-pointer py-1">
+              <input
+                type="checkbox"
+                checked={redeemNames.includes(reward.id)}
+                onChange={() => toggleReward(reward.id)}
+              />
+              <span className="text-sm">
+                {reward.title}
+                <span className="text-xs text-muted-foreground ml-1">({reward.cost.toLocaleString()} pts)</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
+
       {redeemNames.length > 0 && (
-        <div className="space-y-2">
+        <div className="space-y-1">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium">
-              Allowed Redeems ({redeemNames.length})
-            </span>
+            <span className="text-xs font-medium text-muted-foreground">Filtering to {redeemNames.length} reward{redeemNames.length !== 1 ? 's' : ''}</span>
             <Button
-              variant="ghost"
-              size="sm"
-              onClick={clearAllRedeems}
+              variant="ghost" size="sm"
+              onClick={() => onUpdate([])}
               className="h-auto py-1 px-2 text-xs text-destructive hover:text-destructive"
-            >
-              Clear All
-            </Button>
+            >Allow All</Button>
           </div>
-          
           <div className="max-h-32 overflow-y-auto space-y-1">
-            {redeemNames.map((name, index) => (
-              <div key={index} className="flex items-center justify-between p-2 rounded-lg border bg-card">
-                <span className="text-sm">{name}</span>
+            {redeemNames.map((id) => (
+              <div key={id} className="flex items-center justify-between p-2 rounded-lg border bg-card">
+                <span className="text-sm">{labelFor(id)}</span>
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => removeRedeem(name)}
+                  onClick={() => onUpdate(redeemNames.filter(r => r !== id))}
                   className="h-auto py-1 px-2 text-destructive hover:text-destructive"
-                  title={`Remove ${name}`}
                 >
                   ✕
                 </Button>
@@ -91,11 +119,7 @@ function RedeemNamesManager({ redeemNames, onUpdate }) {
         </div>
       )}
 
-      {redeemNames.length === 0 && (
-        <p className="text-xs text-muted-foreground text-center py-2">
-          No redeem names added yet
-        </p>
-      )}
+
     </div>
   )
 }
@@ -258,11 +282,18 @@ function TwitchIntegration({ settings, updateSettings, apiUrl = '' }) {
   };
 
   const updateChannel = () => {
-    updateSettings({ 
-      twitch: { 
-        ...settings.twitch, 
-        channel: channelInput.trim() 
-      } 
+    const newChannel = channelInput.trim()
+    const isOwnChannel = newChannel.toLowerCase() === (twitchStatus?.username || '').toLowerCase()
+    updateSettings({
+      twitch: {
+        ...settings.twitch,
+        channel: newChannel,
+        // Disable redeem filter when switching to a channel that isn't the connected account
+        redeemFilter: {
+          ...settings.twitch?.redeemFilter,
+          enabled: isOwnChannel ? (settings.twitch?.redeemFilter?.enabled ?? false) : false
+        }
+      }
     });
   };
 
@@ -425,52 +456,61 @@ function TwitchIntegration({ settings, updateSettings, apiUrl = '' }) {
                 </div>
 
                 {/* Channel Point Redeem Filter */}
-                <div className="p-4 rounded-lg border bg-card space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-1">
-                      <Label htmlFor="redeem-filter-enabled" className="text-base">
-                        Channel Point Redeem Messages Only
-                      </Label>
-                    </div>
-                    <Switch
-                      id="redeem-filter-enabled"
-                      checked={!!settings.twitch?.redeemFilter?.enabled}
-                      onCheckedChange={checked => updateSettings({
-                        twitch: {
-                          ...settings.twitch,
-                          redeemFilter: {
-                            ...settings.twitch?.redeemFilter,
-                            enabled: checked
-                          }
-                        }
-                      })}
-                    />
-                  </div>
-
-                  {settings.twitch?.redeemFilter?.enabled && (
-                    <div className="space-y-2">
-                      <Label htmlFor="allowed-redeems">
-                        Channel Point Reward Names
-                      </Label>
-                      <RedeemNamesManager
-                        redeemNames={settings.twitch?.redeemFilter?.allowedRedeemNames || []}
-                        onUpdate={(names) => updateSettings({
-                          twitch: {
-                            ...settings.twitch,
-                            redeemFilter: {
-                              ...settings.twitch?.redeemFilter,
-                              allowedRedeemNames: names
+                {(() => {
+                  const isOwnChannel = (settings.twitch?.channel || '').toLowerCase() === (twitchStatus?.username || '').toLowerCase()
+                  return (
+                    <div className={`p-4 rounded-lg border bg-card space-y-4 ${!isOwnChannel ? 'opacity-50 pointer-events-none' : ''}`}>
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-1">
+                          <Label htmlFor="redeem-filter-enabled" className="text-base">
+                            Channel Point Redeem Messages Only
+                          </Label>
+                          {!isOwnChannel && (
+                            <p className="text-xs text-muted-foreground">
+                              Only available when monitoring your own channel (@{twitchStatus?.username})
+                            </p>
+                          )}
+                        </div>
+                        <Switch
+                          id="redeem-filter-enabled"
+                          checked={!!settings.twitch?.redeemFilter?.enabled}
+                          disabled={!isOwnChannel}
+                          onCheckedChange={checked => updateSettings({
+                            twitch: {
+                              ...settings.twitch,
+                              redeemFilter: {
+                                ...settings.twitch?.redeemFilter,
+                                enabled: checked
+                              }
                             }
-                          }
-                        })}
-                      />
-                      <p className="text-sm text-muted-foreground">
-                        Enter the exact names of your channel point rewards. Names are case-insensitive. 
-                        You can find reward names in your Twitch Dashboard under Channel Points.
-                      </p>
+                          })}
+                        />
+                      </div>
+
+                      {settings.twitch?.redeemFilter?.enabled && (
+                        <div className="space-y-2">
+                          <Label>Allowed Rewards (optional)</Label>
+                          <RedeemNamesManager
+                            redeemNames={settings.twitch?.redeemFilter?.allowedRedeemNames || []}
+                            onUpdate={(names) => updateSettings({
+                              twitch: {
+                                ...settings.twitch,
+                                redeemFilter: {
+                                  ...settings.twitch?.redeemFilter,
+                                  allowedRedeemNames: names
+                                }
+                              }
+                            })}
+                            apiUrl={apiUrl}
+                          />
+                          <p className="text-sm text-muted-foreground">
+                            Leave empty to allow all channel point redeems, or select specific rewards to restrict to.
+                          </p>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
+                  )
+                })()}
               </div>
             )}
           </div>

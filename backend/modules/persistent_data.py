@@ -51,7 +51,7 @@ os.makedirs(PERSISTENT_AVATARS_DIR, exist_ok=True)
 TWITCH_CLIENT_ID = get_env_var("TWITCH_CLIENT_ID", "pker88pnps6l8ku90u7ggwvt9dmz2f")
 TWITCH_CLIENT_SECRET = get_env_var("TWITCH_CLIENT_SECRET", "")
 TWITCH_REDIRECT_URI = f"http://localhost:{os.environ.get('PORT', 8000)}/auth/twitch/callback"
-TWITCH_SCOPE = "chat:read"
+TWITCH_SCOPE = "chat:read channel:read:redemptions"
 
 # YouTube OAuth Configuration
 YOUTUBE_CLIENT_ID = get_env_var("YOUTUBE_CLIENT_ID", "")

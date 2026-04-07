@@ -144,20 +144,33 @@ def should_process_message(
     redeem_filter = twitch_settings.get("redeemFilter", {})
     if redeem_filter.get("enabled", False):
         # Twitch IRC PRIVMSG tags include custom-reward-id (UUID) for channel point redeems,
-        # but do NOT include the reward title/name. Name-based filtering is not possible
-        # from IRC events alone, so we filter only on the presence of custom-reward-id.
+        # but do NOT include the reward title/name.
         # Exception: the built-in "Highlight My Message" reward uses msg-id=highlighted-message
-        # instead of custom-reward-id, so we treat that as a valid redeem too.
-        custom_reward_id = tags.get("custom-reward-id", "") if tags else ""
+        # instead of custom-reward-id, so we treat that as a valid redeem with the
+        # identifier "highlighted-message".
+        custom_reward_id = (tags.get("custom-reward-id", "") or "") if tags else ""
         msg_id = (tags.get("msg-id", "") or "") if tags else ""
         is_highlight = msg_id.lower() == "highlighted-message"
+        redeem_identifier = custom_reward_id or ("highlighted-message" if is_highlight else "")
 
-        if not custom_reward_id and not is_highlight:
+        if not redeem_identifier:
             # No redeem ID means this is a regular chat message, not a channel point redeem
             logger.info(f"Skipping message from {username} - not from a channel point redeem")
             return False, text
 
-        logger.info(f"Processing channel point redeem from {username} (reward-id: {custom_reward_id or 'highlighted-message'})")
+        allowed_redeem_names = redeem_filter.get("allowedRedeemNames", []) or []
+        normalized_allowed = {
+            str(r).strip().lower()
+            for r in allowed_redeem_names
+            if str(r).strip()
+        }
+        if normalized_allowed and redeem_identifier.lower() not in normalized_allowed:
+            logger.info(
+                f"Skipping channel point redeem from {username} - reward ID not in allowlist: {redeem_identifier}"
+            )
+            return False, text
+
+        logger.info(f"Processing channel point redeem from {username} (reward-id: {redeem_identifier})")
 
     filtering = settings.get("messageFiltering", {})
 
